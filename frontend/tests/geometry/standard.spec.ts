@@ -26,6 +26,7 @@ const ad: Record<string, { declaration: ReportDefinitionDto }> = readJson('../..
 const gpo: { declaration: ReportDefinitionDto } = readJson('../../../server-dotnet/src/Sli.Server/Gpo/declaration.json');
 const navigation = readJson('../../../config/navigation_v3.json');
 const observed = '2026-11-10T12:00:00Z';
+const userReviewReason = { key: 'locked_out', label: 'Учётная запись заблокирована', severity: 'high' };
 const definitions = new Map(screens.map(({ key }) => {
   // Literal AD endpoints take precedence over the generic report route.
   const raw = key === 'ad.gpo.v2' ? gpo.declaration : ad[key]?.declaration ?? catalog.find(item => item.key === key);
@@ -99,6 +100,7 @@ async function installStandardFixtures(page: Page, count = 60, firstProblemEvide
   await page.route(url => url.pathname.startsWith('/api/'), async route => {
     const { pathname, searchParams } = new URL(route.request().url());
     const problemDetail = pathname.match(/^\/api\/v2\/reports\/security\.problems\/rows\/([12])\/detail$/);
+    const userDetail = pathname.match(/^\/api\/v2\/reports\/ad\.users\.v2\/rows\/(\d+)\/detail$/);
     let body: unknown;
     let status = 200;
     if (pathname === '/api/v1/ui/bootstrap') body = { api_version: 'v1', effective_role: 'admin',
@@ -129,6 +131,12 @@ async function installStandardFixtures(page: Page, count = 60, firstProblemEvide
         })),
       };
     }
+    else if (userDetail && route.request().method() === 'GET') {
+      const definition = definitions.get('ad.users.v2')!;
+      body = { ...resultFor(definition, 0), items: [
+        { ...rowFor(definition.columns, Number(userDetail[1]) - 1), entity_id: Number(userDetail[1]), enabled: true },
+      ] };
+    }
     else if (pathname === '/api/v2/reports/security.problems/password-coverage' && route.request().method() === 'GET') {
       body = {
         contract_id: 'sli.report-result.v2', report_key: 'security.problems', state: 'partial',
@@ -144,6 +152,18 @@ async function installStandardFixtures(page: Page, count = 60, firstProblemEvide
       if (definition) {
         if (match![2]) {
           const result = resultFor(definition, count);
+          if (definition.key === 'ad.users.v2' && searchParams.get('tab') === 'checks' && searchParams.get('account_rows') === 'yes') {
+            const start = Number(searchParams.get('cursor') ?? '0');
+            const end = start + Number(searchParams.get('limit') ?? '50');
+            result.items = result.items.slice(start, end).map((row, index) => ({
+              ...row, entity_id: start + index + 1, enabled: true, review_reasons: [userReviewReason],
+            }));
+            result.has_more = end < count;
+            result.next_cursor = result.has_more ? String(end) : null;
+            result.filter_options = { ...result.filter_options, check: [
+              { value: userReviewReason.key, label: userReviewReason.label, count },
+            ] };
+          }
           if (definition.key === 'ad.computers.v6' && searchParams.get('tab') === 'computers') {
             result.items.forEach((row, index) => {
               row.entity_id = index + 1;
@@ -245,11 +265,13 @@ for (const screen of screens) {
     const definition = definitions.get(screen.key)!;
     const title = screen.key === 'ad.infrastructure' ? 'Состояние AD' : definition.title;
     await expect(page.locator('main').getByRole('heading', { level: 1 })).toHaveText(title, { timeout: 30_000 });
-    // AD checks have hidden object-preview tables inside each closed row.
-    const rows = definition.views[0]?.key === 'checks' ? '.sli-ds-review-list__item' : 'tbody tr:not([data-group])';
+    // Computer checks have hidden object-preview tables inside each closed row.
+    const rows = screen.key === 'ad.computers.v6' ? '.sli-ds-review-list__item' : 'tbody tr:not([data-group])';
     const isGpo = screen.key === 'ad.gpo.v2';
-    const list = isGpo ? page.getByRole('table', { name: definition.title, exact: true }) : page.locator('main');
-    await expect(list.locator(rows)).toHaveCount(isGpo ? 50 : 60);
+    const isUsers = screen.key === 'ad.users.v2';
+    const list = isUsers ? page.getByRole('table', { name: 'Требуют проверки', exact: true })
+      : isGpo ? page.getByRole('table', { name: definition.title, exact: true }) : page.locator('main');
+    await expect(list.locator(rows)).toHaveCount(isGpo || isUsers ? 50 : 60);
     await page.evaluate(async () => {
       await document.fonts.ready;
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -269,21 +291,21 @@ for (const screen of screens) {
       const policyNames = list.locator('tbody tr > td:first-child');
       const finalOnFirst = policyNames.filter({ hasText: /^Объект 50$/ });
       const firstOnNext = policyNames.filter({ hasText: /^Объект 51$/ });
-      await expect(footer.getByRole('combobox', { name: 'Строк на странице' })).toHaveValue('50');
-      await expect(footer.getByText('1–50 из 60', { exact: true })).toBeVisible();
+      await expect(footer.getByRole('radiogroup', { name: 'Строк на странице' }).getByRole('radio', { name: '50', exact: true })).toBeChecked();
+      await expect(footer.getByText('Страница 1 из 2', { exact: true })).toBeVisible();
       await expect(finalOnFirst).toHaveCount(1);
       await expect(firstOnNext).toHaveCount(0);
       await expect(previous).toBeDisabled();
       await next.click();
       await expect(list.locator(rows)).toHaveCount(10);
-      await expect(footer.getByText('51–60 из 60', { exact: true })).toBeVisible();
+      await expect(footer.getByText('Страница 2 из 2', { exact: true })).toBeVisible();
       await expect(finalOnFirst).toHaveCount(0);
       await expect(firstOnNext).toHaveCount(1);
       await expect(policyNames.filter({ hasText: /^Объект 60$/ })).toHaveCount(1);
       await expect(next).toBeDisabled();
       await previous.click();
       await expect(list.locator(rows)).toHaveCount(50);
-      await expect(footer.getByText('1–50 из 60', { exact: true })).toBeVisible();
+      await expect(footer.getByText('Страница 1 из 2', { exact: true })).toBeVisible();
       await expect(finalOnFirst).toHaveCount(1);
       await expect(firstOnNext).toHaveCount(0);
     }
@@ -301,26 +323,31 @@ for (const screen of screens) {
       const panelScreenshot = testInfo.outputPath('problem-panel.png');
       await page.screenshot({ path: panelScreenshot });
       await testInfo.attach('problem-panel.png', { path: panelScreenshot, contentType: 'image/png' });
-      const state = panel.getByRole('combobox', { name: 'Состояние' });
-      await state.selectOption('closed');
+      const state = panel.getByRole('button', { name: /Состояние$/ });
+      await state.click();
+      await page.getByRole('option', { name: 'Решена', exact: true }).click();
       const decision = page.getByRole('dialog', { name: 'Изменить состояние' });
-      await decision.getByLabel('Причина решения').selectOption('fixed');
+      await decision.getByRole('button', { name: /Причина решения$/ }).click();
+      await page.getByRole('option', { name: 'Реальная проблема (исправлено)', exact: true }).click();
       await decision.getByRole('button', { name: 'Сохранить решение' }).click();
       await expect(decision).toBeHidden();
-      await expect(state).toHaveValue('closed');
+      await expect(state).toContainText('Решена');
       expect(decisions).toEqual([{ ids: [1], state: 'closed', classification: 'fixed' }]);
     }
-    expect(unexpected, 'all API traffic must be synthetic and handled').toEqual([]);
-    expect(errors, 'screen must render without errors even in monitoring mode').toEqual([]);
-    expect(servedData).toContain(screen.key);
-    if (screen.enforced) expect(violations, screen.key).toEqual([]);
-    else testInfo.annotations.push({ type: 'ui-standard-monitor', description: violations.join('; ') || 'Ready to enforce' });
-    if (screen.key === 'ad.users.v2') {
-      const first = page.locator('.sli-ds-review-list__item').first();
-      await expect(first.getByRole('button', { name: 'Объект 1', exact: true })).toHaveCount(0);
-      await first.locator(':scope > summary').click();
-      await expect(first.getByRole('button', { name: 'Объект 1', exact: true })).toBeVisible();
-      await first.locator(':scope > summary').click();
+    if (isUsers) {
+      const first = list.locator(rows).first();
+      await expect(first.getByText(userReviewReason.label, { exact: true })).toBeVisible();
+      const account = first.getByRole('cell').first().getByRole('button', { name: 'Объект 1', exact: true });
+      await Promise.all([
+        page.waitForResponse(response => new URL(response.url()).pathname === '/api/v2/reports/ad.users.v2/rows/1/detail' && response.ok()),
+        account.click(),
+      ]);
+      const panel = page.getByRole('dialog', { name: 'Объект 1' });
+      await expect(panel.getByRole('listitem').filter({ hasText: userReviewReason.label })).toBeVisible();
+      await expect(list).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(panel).toHaveCount(0);
+      await expect(account).toBeFocused();
       const search = page.getByRole('searchbox', { name: 'Поиск', exact: true });
       await search.fill('Объект');
       await Promise.all([
@@ -329,6 +356,11 @@ for (const screen of screens) {
       ]);
       await expect(page).toHaveURL(/q=/);
     }
+    expect(unexpected, 'all API traffic must be synthetic and handled').toEqual([]);
+    expect(errors, 'screen must render without errors even in monitoring mode').toEqual([]);
+    expect(servedData).toContain(screen.key);
+    if (screen.enforced) expect(violations, screen.key).toEqual([]);
+    else testInfo.annotations.push({ type: 'ui-standard-monitor', description: violations.join('; ') || 'Ready to enforce' });
   });
 }
 
@@ -554,7 +586,7 @@ for (const locale of ['ru', 'en']) {
       expect((await panel.boundingBox())!.x).toBeGreaterThan(listBounds.x + listBounds.width);
       const areaName = russian ? 'Область' : 'Area';
       const area = page.getByText(areaName, { exact: true });
-      const control = (await page.getByRole('combobox', { name: areaName }).boundingBox())!;
+      const control = (await page.getByRole('button', { name: new RegExp(areaName + '$') }).boundingBox())!;
       expect(control.x + control.width).toBeLessThanOrEqual(listBounds.x + listBounds.width + 1);
       expect(await area.evaluate(element => {
         const range = new Range();

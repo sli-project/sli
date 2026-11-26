@@ -2,13 +2,13 @@ import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import type { ReportColumnDto } from "../../api/report-v2-types";
-import { Chart, DataTable, DetailDrawer, FactList, Tabs, TabList, TabPanel } from "../../design-system";
+import { Chart, DataTable, DetailDrawer, FactList, SeverityBadge, Tabs, TabList, TabPanel } from "../../design-system";
 import { useDateFormatters } from "../../design-system/useDateFormatters";
 import { eventEvidenceHref, exactNavigationId } from "../../app/event-presentation";
 import { CopyFactsButton, rowFactsText } from "../../app/report-v2/DetailSection";
 import { withReturnTo } from "../../app/report-v2/legacy";
 import { t } from "../../i18n";
-import { userObject as object, userObjects as objects, userText as text } from "./UserChecks";
+import { userDeviations, UserStateMark, userObject as object, userObjects as objects, userText as text } from "./UserChecks";
 
 type Row = Record<string, unknown>;
 type UserLabel<Section extends "card" | "event"> =
@@ -136,8 +136,10 @@ export function UserCard({ selected, columns, timeZone, initialTab, historical, 
   const events = objects(row.timeline);
   const changes = objects(row.changes);
   const computers = objects(row.computers);
+  const deviations = userDeviations(row);
   const values = [
-    { key: "state", label: cardText("ad_state"), value: typeof row.enabled === "boolean" ? cardText(row.enabled ? "enabled" : "disabled") : null },
+    { key: "state", label: cardText("ad_state"), value: typeof row.enabled === "boolean"
+      ? <><UserStateMark enabled={row.enabled}/> {cardText(row.enabled ? "enabled" : "disabled")}</> : null },
     { key: "department", label: cardText("department"), value: text(row.department) },
     { key: "ou", label: "OU", value: text(row.ou) },
     { key: "password_last_set", label: cardText("password_last_set"), value: formatCell(row.password_last_set, "date") },
@@ -145,7 +147,7 @@ export function UserCard({ selected, columns, timeZone, initialTab, historical, 
     { key: "activity_source", label: cardText("activity_source"), value: text(row.activity_source)?.includes("lastLogon across all")
       ? cardText("source_dc") : text(row.activity_source) ? cardText("source_ad") : null },
   ].filter((fact) => canSee(fact.key) && (fact.key !== "department" || fact.value !== null));
-  return <DetailDrawer open inline inlineDialog title={name} subtitle={account !== name ? account : undefined} onClose={onClose} footer={<>
+  return <DetailDrawer open responsive title={name} subtitle={account !== name ? account : undefined} onClose={onClose} footer={<>
     {allowJournal && sam ? <a className="sli-ds-button" data-variant="primary" href={withReturnTo(`/app/report/events.journal?${journalParams}`, returnTo)}>{cardText("journal")}</a> : null}
     {allowProblems && id ? <a className="sli-ds-button" href={withReturnTo(`/app/report/security.problems?${problemsParams}`, returnTo)}>{cardText("problems")}</a> : null}
     <CopyFactsButton text={rowFactsText(name, columns, row, timeZone)}/>
@@ -156,6 +158,11 @@ export function UserCard({ selected, columns, timeZone, initialTab, historical, 
         {query.isError ? <div role="alert">{cardText("load_error")} <button type="button" className="sli-ds-button" onClick={() => void query.refetch()}>{t("state.retry")}</button></div> : null}
         {tab === "account" ? <>
           <FactList facts={values}/>
+          {deviations.length ? <Section title={t("reports.ad.users.list.deviation")}>
+            <ul className="sli-ds-path">{deviations.map((reason) => <li key={reason.key}>
+              {reason.severity ? <><SeverityBadge severity={reason.severity}/> </> : null}{reason.label}
+            </li>)}</ul>
+          </Section> : null}
           {computers.length ? <Section title={cardText("computers")}>
             <DataTable caption={cardText("computers")} rows={computers} rowKey={(computer) => String(computer.computer)} columns={[
               { key: "computer", label: cardText("computer") },
@@ -166,7 +173,6 @@ export function UserCard({ selected, columns, timeZone, initialTab, historical, 
               } },
             ]} wrapCells="all" stickyHeader={false} showFooter={false}/>
           </Section> : null}
-          <Privileges row={row}/>
         </> : tab === "rights" ? <Privileges row={row}/>
           : <>
             {tab === "activity" ? <LogonStrip row={row}/> : null}

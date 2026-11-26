@@ -14,7 +14,6 @@ import { exportFinding, ProblemRiskAcceptance, RiskBadge } from "./problem-risk-
 
 beforeEach(() => {
   state.manage = true;
-  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { callback(0); return 0; });
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
   setLocale("en");
   vi.spyOn(api, "riskResponsibles").mockResolvedValue({ items: [{ id: 12, username: "fixture-owner" }] });

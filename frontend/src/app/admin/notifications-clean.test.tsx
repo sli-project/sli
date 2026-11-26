@@ -42,20 +42,17 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.clearAllMocks(); });
 
-it("separates configuration from history in five columns", async () => {
+it("separates channel configuration from recorded attempts and deliveries", async () => {
   const view = mount();
   const table = await screen.findByRole("table", { name: "Каналы" });
   const row = within(table).getByRole("button", { name: "Telegram" }).closest("tr")!;
-  const state = within(row).getAllByRole("cell")[1];
-  expect(await within(state).findByText("Не подключён")).toBeTruthy();
-  expect(within(table).getAllByRole("columnheader")).toHaveLength(5);
+  const state = (await within(row).findByText("Не подключён")).closest("td")!;
   expect(within(table).queryByRole("columnheader", { name: "Куда" })).toBeNull();
   expect(within(row).queryByText("Не подтверждена")).toBeNull();
-  expect(within(row).getAllByRole("cell")[3].textContent).toBe("—");
   expect(state.querySelectorAll("div, .sli-ds-badge")).toHaveLength(0);
   expect(row.textContent).not.toMatch(/Токен не задан|Чат не подключён/);
   expect(view.container.querySelector(".sli-ds-callout, .sli-ds-header__subtitle")).toBeNull();
-  expect(within(table).getByRole("columnheader", { name: "Последняя доставка" })).toBeTruthy();
+  expect(within(table).queryByRole("columnheader", { name: "Последняя доставка" })).toBeNull();
 });
 
 it("keeps only actionable rules named after their content and destination", async () => {
@@ -99,5 +96,5 @@ it.each(["ru", "en"] as const)("keeps configured channels separate from an old f
   const cells = within(row).getAllByRole("cell");
   expect(cells[2].textContent).toMatch(/2026.*9:01|09:01/);
   expect(cells[2].textContent).toContain(t("reports.v2.notifications.deliveries.columns.result_code.labels.telegram_chat_denied"));
-  expect(cells[3].textContent).toBe("—");
+  expect(within(table).queryByRole("columnheader", { name: t("notify.lastDelivery") })).toBeNull();
 });

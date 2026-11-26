@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { chooseOption } from "../../../tests/select-option";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -192,7 +193,7 @@ it("applies search and result filters in the current domain", async () => {
   await screen.findByText("Logon succeeded");
   fireEvent.change(screen.getByRole("searchbox"), { target: { value: "synthetic.user" } });
   await waitFor(() => expect(requests.some((url) => url.searchParams.get("q") === "synthetic.user")).toBe(true));
-  fireEvent.change(screen.getByRole("combobox", { name: "Result" }), { target: { value: "failure" } });
+  await chooseOption(screen.getByLabelText("Result", { selector: "button" }), "failure");
   await waitFor(() => expect(requests.some((url) => url.searchParams.get("q") === "synthetic.user" &&
     url.searchParams.get("result") === "failure" && url.searchParams.get("domain") === "7")).toBe(true));
 });

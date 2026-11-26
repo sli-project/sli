@@ -39,7 +39,7 @@ import { FileAuditReport } from "../../plugins/file-audit/FileAuditReport";
 import { WorkstationsReport } from "../../plugins/workstations/WorkstationsReport";
 import { isFileAuditReport } from "../../plugins/file-audit/report";
 import { ComputerChecks, computerTableColumns } from "../../plugins/ad/ComputerChecks";
-import { UserChanges, UserChecks, userTableColumns } from "../../plugins/ad/UserChecks";
+import { UserChanges, UserCheckFilters, userTableColumns } from "../../plugins/ad/UserChecks";
 import { UserCard } from "../../plugins/ad/UserCard";
 import { gpoReportDefinition } from "../../plugins/ad/gpo-report";
 import { GpoPolicyReport } from "../../plugins/ad/GpoPolicyReport";
@@ -199,6 +199,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     if (problemQueue && typeof initial.status === "string") initial.status = queueStatus(initial.status);
     if (independentUsers && ["active", "disabled"].includes(search.get("tab") ?? "")) initial.account_state = search.get("tab") === "disabled" ? "disabled" : "enabled";
     if (independentUsers && initial.domain_id && !initial.domain) { initial.domain = initial.domain_id; delete initial.domain_id; }
+    if (independentUsers && initial.account_state === "unknown") delete initial.account_state;
     return initial;
   });
   const [sort, setSort] = useState<SortState | null>(() => {
@@ -226,6 +227,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     return views.some((view) => view.key === requested) ? requested! : computerReport ? "computers" : views[0].key;
   });
   const view = views.find((item) => item.key === activeView) ?? views[0];
+  const userReview = independentUsers && view.key === "checks";
   const canLinkReport = (key: string) => !access || access.reports.some((report) => report.allowed
     && (report.report_key === key || report.target_path === `/app/report/${key}`));
   const selectUser = (row: Row, tab = view.key === "changes" ? "changes" : "account") => {
@@ -259,7 +261,9 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
       const search = new URLSearchParams(window.location.search);
       const tab = independentUsers && search.get("tab") === "users" ? "all" : search.get("tab");
       setActiveView(views.some((item) => item.key === tab) ? tab! : computerReport ? "computers" : views[0].key);
-      setValues(valuesFromSearch(definition, search));
+      const restored = valuesFromSearch(definition, search);
+      if (independentUsers && restored.account_state === "unknown") delete restored.account_state;
+      setValues(restored);
       setSort(search.get("sort") ? { field: search.get("sort")!, direction: search.get("direction") === "desc" ? "desc" : "asc" } : null);
       setSelected(null);
     };
@@ -307,7 +311,8 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   const baseParams = useMemo(() => {
     const params = apiParams(definition, values, { sort, timeZone, view: activeView, ...(computersScreen || independentUsers || domainEvents ? { limit: computersScreen ? computerPageSize : independentUsers ? userPageSize : 50 } : {}) });
     if (independentUsers) {
-      params.delete("check");
+      if (activeView === "checks") params.set("account_rows", "yes");
+      else { params.delete("account_rows"); params.delete("check"); }
       if (activeView !== "privileged") params.delete("as_of");
     }
     if (vpnPeriod) {
@@ -336,7 +341,14 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     retry: false,
     // On refetch (new filters/sort) keep the previous result visible with a
     // busy indicator instead of blanking to a skeleton.
-    placeholderData: independentUsers || computersScreen ? undefined : keepPreviousData,
+    placeholderData: userReview ? (previous, query) => {
+      const scope = (params: string) => {
+        const filters = new URLSearchParams(params);
+        filters.delete("check");
+        return filters.toString();
+      };
+      return scope(String(query?.queryKey[3] ?? "")) === scope(baseParams) ? previous : undefined;
+    } : independentUsers || computersScreen ? undefined : keepPreviousData,
     // Report queries are heavy and an infinite query refetches every loaded
     // page: do not repeat them on each window focus; a minute is fresh enough
     // (filters, paging and retries still request explicitly).
@@ -381,14 +393,16 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   const branchDetail = branch?.limitations.map((item) => item.text).join(" ") || undefined;
   const rows = useMemo(() => {
     const page = data.data?.pages[userPage];
-    const items = independentUsers
+    const items = userReview
+      ? data.isPlaceholderData ? [] : page?.items ?? []
+      : independentUsers
       ? ((view.source !== "items" && view.source ? page?.collections?.[view.source] : undefined) ?? page?.items ?? []) as Row[]
       : computersScreen ? (page?.items ?? []) as Row[]
       : data.data?.pages.flatMap((item) => item.items as Row[]) ?? [];
     if (!infrastructure || view.key !== "controls") return items;
     return items.filter((row) => ["passed", "failed"].includes(String(row.qualification))
       || (row.actual_text != null && String(row.actual_text).trim() !== "" && row.actual_text !== "—"));
-  }, [data.data, independentUsers, infrastructure, view.key, view.source, userPage, computersScreen]);
+  }, [data.data, data.isPlaceholderData, independentUsers, userReview, infrastructure, view.key, view.source, userPage, computersScreen]);
   const rowKey = (row: Row) => String(row[computerReport && view.key === "changes" ? "row_id" : definition.row_key] ?? JSON.stringify(row));
   const activeComputer = computersScreen && detailsVisible ? (selected && rows.find((row) => rowKey(row) === rowKey(selected)))
     || (view.key === "checks" ? selected : rows[0]) : undefined;
@@ -411,11 +425,15 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     ? { ...definition, params: definition.params.map((param) => param.key === "domain" ? { ...param, hidden: false } : param) }
     : definition, liveOptions, activeView).filter((field) =>
     independentUsers ? (["domain", "q"].includes(field.key)
+      || field.key === "account_state" && userReview
       || ["account_state", "department", "ou"].includes(field.key) && (view.key === "all" || view.key === "privileged"))
       : !computerReport || (field.key === "domain" || field.key === "domain_id" || field.key === "q" && view.key !== "checks"
         || view.key === "computers" && ["type", "enabled", "activity"].includes(field.key))).map((field) => {
       if (independentUsers && field.key === "q" && field.kind === "text") return { ...field,
         placeholder: t(view.key === "all" || view.key === "privileged" ? "reports.ad.users.list.search" : "reports.ad.users.list.search_account") };
+      if (independentUsers && field.kind === "select" && field.key !== "domain") return { ...field,
+        options: [{ value: "", label: t("reports.ad.users.list.all") }, ...field.options.filter((option) => option.value !== ""
+          && (field.key !== "account_state" || option.value !== "unknown"))] };
       if (computerLogons && field.key === "with_logons") return { key: field.key, kind: "checkbox" as const, label: t("reports.computers.only_logons"), onValue: "yes", offValue: "no" };
       if (computersScreen && field.kind === "text" && ["q", "user"].includes(field.key)) {
         const label = field.key === "user" ? t("reports.computers.user") : computerLogons ? t("reports.computers.computer") : t("reports.computers.search");
@@ -428,7 +446,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
           count: counts ? counts.find((bucket) => bucket.value === option.value)?.count ?? (first?.state === "ok" ? 0 : undefined) : undefined })) };
       }
       return field;
-    }), [definition, liveOptions, activeView, computerReport, computerLogons, computersScreen, independentUsers, view.key, first?.state]);
+    }), [definition, liveOptions, activeView, computerReport, computerLogons, computersScreen, independentUsers, userReview, view.key, first?.state]);
   const headerPeriodField = fields.find((field) => field.kind === "period");
   const hasDepartment = !independentUsers || !!values.department || !!liveOptions?.department?.length || rows.some((row) => Boolean(row.department));
   const computerDomainField = computerReport ? fields.find((field) => field.kind === "select" && field.key === "domain") : undefined;
@@ -454,7 +472,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   let stateDetail: string | undefined;
   if (viewDenied) { state = "denied"; stateDetail = accessReason(view.access); }
   else if (!ready) { state = "empty"; stateDetail = t("reports.renderer.required_conditions"); }
-  else if (data.isLoading) state = "loading";
+  else if (data.isLoading || userReview && data.isPlaceholderData) state = "loading";
   else if (data.error) {
     ({ state, detail: stateDetail } = errorState(data.error));
     if (definition.key === "vpn.connections" && data.error instanceof ApiResponseError
@@ -668,7 +686,15 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
           const count = !data.isPlaceholderData ? first?.metrics.find((metric) => metric.filter?.view === preset.params.view)?.value : undefined;
           return <button key={preset.params.view} type="button" className="sli-ds-chip" aria-pressed={isPresetActive(definition, values, preset.params)} onClick={() => selectPreset(preset.params)}>{preset.label}{typeof count === "number" && count > 0 ? ` ${count}` : ""}</button>;
         })}
-      </div> : undefined}/> : null}
+        </div> : undefined}/> : null}
+      {userReview && !data.error && first && first.state !== "denied" ? <UserCheckFilters
+        options={first.filter_options?.check ?? []} selected={String(values.check ?? "")}
+        total={typeof first.coverage.affected_objects === "number" ? first.coverage.affected_objects : undefined}
+        onChange={(check) => {
+          if (check === (values.check ?? "")) return;
+          setSelected(null);
+          setValues((current) => ({ ...current, check: check || undefined }));
+        }}/> : null}
     </>}
     tabs={computersScreen ? <div className="sli-ds-header__row">
       {views.length + linkedViews.length > 1 ? <TabList label={t("reports.views.tabs_aria")}/> : null}
@@ -685,17 +711,17 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
           <option value="comfortable">{t("reports.ad.users.list.comfortable")}</option>
         </select>
         <span ref={setUserColumnsTarget}/>
-        <button type="button" className="sli-ds-button" aria-pressed={!!selected} disabled={!selected && (view.key === "checks" || !rows.length)} onClick={() => selected ? setSelected(null) : selectUser(rows[0])}>{t("reports.ad.users.list.details")}</button>
+        <button type="button" className="sli-ds-button" aria-pressed={!!selected} disabled={!selected && !rows.length} onClick={() => selected ? setSelected(null) : selectUser(rows[0])}>{t("reports.ad.users.list.details")}</button>
       </div>
     </div> : <ViewTabs views={displayedViews}/>}
     tabbed={views.length + (computersScreen ? linkedViews.length : 0) > 1}
     // A custom view loads its own data: an empty main table is not its state.
-    state={state === "denied" || ((view.kind === "custom" || (view.source ?? "items") !== "items") && state === "empty" && ready) ? "ok" : state === "not_collected" ? "partial" : state}
+    state={state === "denied" || (!userReview && (view.kind === "custom" || (view.source ?? "items") !== "items") && state === "empty" && ready) ? "ok" : state === "not_collected" ? "partial" : state}
     stateMessage={first?.state === state ? first.state_message : undefined}
     stateDetail={state === "empty" ? <>{stateDetail}{emptyDetail}</> : stateDetail}
     stateActions={state === "empty" ? emptyActions : vpnTimeoutRetry}
     stateView={independentUsers && (state === "error" || state === "unavailable") ? <div role="alert">{t("reports.ad.users.list.load_error")} <button type="button" className="sli-ds-button" onClick={() => void data.refetch()}>{t("state.retry")}</button></div>
-      : independentUsers && state === "empty" ? <p>{t("table.noValue")}</p>
+      : independentUsers && state === "empty" ? <p>{t(userReview ? "reports.ad.users.no_checks" : "reports.ad.users.list.empty")}</p>
       : eventListFailure ? <EventListError reportKey={definition.key} onRetry={() => void data.refetch()}/>
       : domainEvents && state === "empty" ? domainEventsEmpty
       : computersScreen && state === "empty" ? computerEmptyView
@@ -711,7 +737,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     side={activeComputer && (logonsNotCollected || !["denied", "loading", "error", "unavailable", "not_collected", "empty"].includes(state)) ? <ComputerPanel key={`${rowKey(activeComputer)}:${baseParams}:${refreshWindow}`} row={activeComputer} logons={computerLogons} logonsNotCollected={logonsNotCollected}
       logonParams={computerLogons ? baseParams : cardLogonParams.toString()} changes={compareView?.columns ?? []}
       canCompare={Boolean(compareView)} onClose={() => setDetailsVisible(false)} timeZone={timeZone}/> : undefined}
-    split={independentUsers ? "inline" : undefined}
+    split={independentUsers}
     drawer={computersScreen ? undefined : independentUsers ? selected ? <UserCard key={`${selected.domain_id}:${selected.entity_id ?? selected.id}:${userDetailTab}`} selected={selected} columns={definition.columns} timeZone={timeZone}
       initialTab={userDetailTab} historical={view.key === "privileged" && Boolean(values.as_of)}
       allowJournal={canLinkReport("events.journal")} allowProblems={canLinkReport("security.problems")} onClose={() => setSelected(null)}/> : undefined
@@ -737,14 +763,13 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
       : branch && (branch.state === "error" || branch.state === "denied")
       ? <ReportState state={branch.state} details={{ reason: branch.reason, limitations: branch.limitations }}
         detail={branchDetail} subject={view.title || definition.title} canDiagnose={access?.capabilities.includes("operations.view") ?? false} onRetry={() => void data.refetch()}/>
-      : independentUsers && view.key === "checks"
-      ? <UserChecks key={baseParams} result={first} baseParams={baseParams} onSelect={selectUser}/>
       : independentUsers && ["changes", "disabled_active"].includes(view.key)
       ? <UserChanges columns={view.columns ?? []} rows={rows} title={view.title ?? view.key} onSelect={selectUser} paging={userTablePaging}/>
       : independentUsers
-      ? rows.length ? <DataTable key={view.key} caption={view.title ?? definition.title} columns={userTableColumns(definition.columns.filter((column) => column.key !== "department" || hasDepartment), selectUser, timeZone)}
+      ? rows.length ? <DataTable key={view.key} caption={view.title ?? definition.title} columns={userTableColumns(definition.columns.filter((column) => column.key !== "department" || hasDepartment), selectUser, timeZone, userReview)}
         rows={rows} rowKey={(row) => String(row[definition.row_key])} sort={sort} onSort={toggleSort} onRowClick={selectUser}
-        selectedKey={selected ? String(selected[definition.row_key]) : null} columnsControlTarget={userColumnsTarget} wrapCells="all" {...userTablePaging}/> : <p>{t("table.noValue")}</p>
+        selectedKey={selected ? String(selected[definition.row_key]) : null} columnsControlTarget={userColumnsTarget} wrapCells="all" {...userTablePaging}/>
+        : <p>{t(state === "not_collected" ? "reports.ad.users.list.not_collected" : userReview ? "reports.ad.users.no_checks" : "reports.ad.users.list.empty")}</p>
       : computerReport && view.key === "checks"
       ? <ComputerChecks result={first} onSelect={chooseComputer} onInventory={() => selectView("computers")}/>
       : computersScreen

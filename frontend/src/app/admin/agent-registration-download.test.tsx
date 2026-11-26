@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { chooseOption } from "../../../tests/select-option";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -27,10 +28,9 @@ function view(sessionKey = "owner-one") { return <QueryClientProvider client={cl
 async function prepare() {
   const result = render(view());
   const details = screen.getByText(t("agents.deployment.title")).closest("details")!; details.open = true; fireEvent(details, new Event("toggle"));
-  await screen.findByRole("option", { name: "example.test" });
-  fireEvent.change(screen.getByLabelText(t("agents.deployment.domain")), { target: { value: "1" } });
+  await chooseOption(screen.getByLabelText(t("agents.deployment.domain"), { selector: "button" }), "1");
   await screen.findByLabelText(t("agents.deployment.allComputers"));
-  fireEvent.change(screen.getByLabelText(t("agents.deployment.template")), { target: { value: id } });
+  await chooseOption(screen.getByLabelText(t("agents.deployment.template"), { selector: "button" }), id);
   fireEvent.click(screen.getByLabelText(t("agents.deployment.allComputers")));
   fireEvent.click(await screen.findByLabelText("synthetic-one")); fireEvent.click(screen.getByLabelText("synthetic-two"));
   fireEvent.change(screen.getByLabelText(t("agents.deployment.registrationOrigin")), { target: { value: "https://sli.example.test:8443" } });

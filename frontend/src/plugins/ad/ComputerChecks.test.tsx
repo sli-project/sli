@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { chooseOption } from "../../../tests/select-option";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReportDefinitionDto, ReportResultDto } from "../../api/report-v2-types";
@@ -178,7 +179,7 @@ it("requests each tab in domain scope and exports changes, with role and compact
   fireEvent.click(screen.getByRole("tab", { name: "Все компьютеры" }));
   await screen.findByRole("button", { name: "synthetic-host" });
   expect(screen.queryByText("unknown")).toBeNull();
-  expect(screen.getByRole("columnheader", { name: "Windows LAPS" })).toBeTruthy();
+  expect(screen.queryByRole("columnheader", { name: "Windows LAPS" })).toBeNull();
 });
 
 it("retains cursor pagination on inventory and never shows another tab's rows", async () => {
@@ -243,8 +244,8 @@ it("shows server filter counts and reloads the inventory with the selected role"
   respond = (params) => page({ state: "ok", items: [{ ...host, display_name: params.has("type") ? "synthetic-matching-host" : host.display_name }],
     filter_options: { type: [{ value: "domain_controller", label: "Controller", count: 4 }] } });
   show();
-  await screen.findByRole("option", { name: "Контроллер домена (4)" });
-  fireEvent.change(screen.getByRole("combobox", { name: "Тип" }), { target: { value: "domain_controller" } });
+  await chooseOption(await screen.findByLabelText("Тип", { selector: "button" }), "domain_controller");
+  expect(screen.getByLabelText("Тип", { selector: "button" }).textContent).toContain("Контроллер домена (4)");
   await screen.findByRole("button", { name: "synthetic-matching-host" });
   expect(requests.at(-1)?.get("type")).toBe("domain_controller");
 });
@@ -393,7 +394,7 @@ it.each([
 
   fireEvent.click(screen.getByRole("checkbox", { name: "Только ПК со входами" }));
   const station = await screen.findByRole("row", { name: /synthetic-host/ });
-  expect(within(station).getAllByRole("cell").slice(1).map((cell) => cell.textContent)).toEqual([count, "—"]);
+  expect(within(station).getAllByRole("cell").slice(1).map((cell) => cell.textContent)).toEqual([count]);
   fireEvent.click(station);
   const panel = await screen.findByRole("complementary", { name: "synthetic-host" });
   expect(await within(panel).findByText(message)).toBeTruthy();

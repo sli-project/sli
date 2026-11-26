@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { chooseOption } from "../../../tests/select-option";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { AgentItem } from "../../api/client";
@@ -79,10 +80,10 @@ it("keeps rollback available when the workstation module has been disabled", () 
   expect(change).toHaveBeenCalledWith("file-audit", expect.objectContaining({ action: "restore", enabled: false }));
 });
 
-it("activates a deliberately selected server from zero with explicit share and scope", () => {
+it("activates a deliberately selected server from zero with explicit share and scope", async () => {
   const change = vi.fn();
   render(<AgentFileAuditControls agents={[{ ...first, assigned_modules: [] }, second]} busy={false} change={change}/>);
-  fireEvent.change(screen.getByLabelText(t("agents.fileAudit.sourceKind")), { target: { value: "server" } });
+  await chooseOption(screen.getByLabelText(t("agents.fileAudit.sourceKind"), { selector: "button" }), "server");
   fireEvent.click(screen.getByLabelText(t("agents.fileAudit.agent", { host: first.host_name! })));
   fireEvent.change(screen.getByLabelText(t("agents.fileAudit.paths")), { target: { value: "C:\\Synthetic" } });
   fireEvent.change(screen.getByLabelText(t("agents.fileAudit.shares")), { target: { value: "Synthetic" } });
@@ -98,24 +99,24 @@ it("activates a deliberately selected server from zero with explicit share and s
   expect(change.mock.calls[0][1]).not.toHaveProperty("action");
 });
 
-it.each(["check", "apply", "restore"] as const)("emits the strict singleton %s command from the shared boundary fixture and preserves config", (action) => {
+it.each(["check", "apply", "restore"] as const)("emits the strict singleton %s command from the shared boundary fixture and preserves config", async (action) => {
   const change = vi.fn();
   const body = serverRequests[action];
   const uuid = vi.spyOn(crypto, "randomUUID").mockReturnValue(body.command.command_id as `${string}-${string}-${string}-${string}-${string}`);
   try {
     render(<AgentFileAuditControls agents={[{ ...first, assigned_modules: [
       { module_id: "sli.file-audit", enabled: true, config: body.config }] }]} busy={false} change={change}/>);
-    fireEvent.change(screen.getByLabelText(t("agents.fileAudit.sourceKind")), { target: { value: "server" } });
+    await chooseOption(screen.getByLabelText(t("agents.fileAudit.sourceKind"), { selector: "button" }), "server");
     fireEvent.click(screen.getByLabelText(t("agents.fileAudit.agent", { host: first.host_name! })));
     fireEvent.click(screen.getByRole("button", { name: t(`agents.fileAudit.${action}`) }));
     expect(change).toHaveBeenCalledExactlyOnceWith("file-audit", body);
     expect(uuid).toHaveBeenCalledTimes(1);
   } finally { uuid.mockRestore(); }
 });
-it("requires server share and scope and never enables management implicitly", () => {
+it("requires server share and scope and never enables management implicitly", async () => {
   const change = vi.fn();
   render(<AgentFileAuditControls agents={[{ ...first, assigned_modules: [], collection_policy: undefined }]} busy={false} change={change}/>);
-  fireEvent.change(screen.getByLabelText(t("agents.fileAudit.sourceKind")), { target: { value: "server" } });
+  await chooseOption(screen.getByLabelText(t("agents.fileAudit.sourceKind"), { selector: "button" }), "server");
   fireEvent.click(screen.getByLabelText(t("agents.fileAudit.agent", { host: first.host_name! })));
   fireEvent.change(screen.getByLabelText(t("agents.fileAudit.paths")), { target: { value: "C:\\Synthetic" } });
   fireEvent.click(screen.getByLabelText(t("agents.fileAudit.enabled")));
@@ -126,7 +127,7 @@ it("requires server share and scope and never enables management implicitly", ()
   expect((screen.getByRole("button", { name: t("agents.fileAudit.apply") }) as HTMLButtonElement).disabled).toBe(true);
 });
 
-it("rejects heterogeneous bound workstation configurations and never offers them in server mode", () => {
+it("rejects heterogeneous bound workstation configurations and never offers them in server mode", async () => {
   const change = vi.fn();
   const configured = [first, second].map((item, index) => ({ ...item, assigned_modules: [...item.assigned_modules,
     { module_id: "sli.file-audit", enabled: true, config: { source_kind: "workstation", roots: [{
@@ -137,7 +138,7 @@ it("rejects heterogeneous bound workstation configurations and never offers them
   expect(screen.getByText(t("agents.fileAudit.incompatible"))).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: t("agents.fileAudit.apply") }));
   expect(change).not.toHaveBeenCalled();
-  fireEvent.change(screen.getByLabelText(t("agents.fileAudit.sourceKind")), { target: { value: "server" } });
+  await chooseOption(screen.getByLabelText(t("agents.fileAudit.sourceKind"), { selector: "button" }), "server");
   expect(screen.queryByLabelText(t("agents.fileAudit.agent", { host: first.host_name! }))).toBeNull();
 });
 
@@ -160,14 +161,14 @@ it.each([true, false])("blocks mixed bound and unbound workstations in either se
 });
 
 
-it.each(["shares", "scopes"] as const)("rejects edited existing server %s without dispatching a different or silently retained identity", (field) => {
+it.each(["shares", "scopes"] as const)("rejects edited existing server %s without dispatching a different or silently retained identity", async (field) => {
   const change = vi.fn();
   const roots = [{ collection_scope_id: "server:original", share_name: "Original", path: "C:\\Synthetic", important: true,
     sacl: { trustee_sids: ["S-1-5-11"], inherit_files: false, inherit_directories: true } }];
   const configured = { ...first, assigned_modules: [
     { module_id: "sli.file-audit", enabled: true, config: { source_kind: "server", roots } }] };
   render(<AgentFileAuditControls agents={[configured]} busy={false} change={change}/>);
-  fireEvent.change(screen.getByLabelText(t("agents.fileAudit.sourceKind")), { target: { value: "server" } });
+  await chooseOption(screen.getByLabelText(t("agents.fileAudit.sourceKind"), { selector: "button" }), "server");
   fireEvent.click(screen.getByLabelText(t("agents.fileAudit.agent", { host: first.host_name! })));
   fireEvent.change(screen.getByLabelText(t(`agents.fileAudit.${field}`)), { target: { value: "Changed" } });
   for (const action of ["check", "apply"] as const) {
@@ -199,10 +200,10 @@ it("distinguishes unnamed agents through linked technical details without using 
   expect(change).not.toHaveBeenCalled();
 });
 
-it("keeps a new server draft after check advances its revision and clears it for another agent", () => {
+it("keeps a new server draft after check advances its revision and clears it for another agent", async () => {
   const change = vi.fn();
   const view = render(<AgentFileAuditControls agents={[first, second]} busy={false} change={change}/>);
-  fireEvent.change(screen.getByLabelText(t("agents.fileAudit.sourceKind")), { target: { value: "server" } });
+  await chooseOption(screen.getByLabelText(t("agents.fileAudit.sourceKind"), { selector: "button" }), "server");
   fireEvent.click(screen.getByLabelText(t("agents.fileAudit.agent", { host: first.host_name! })));
   const draft = [
     [t("agents.fileAudit.paths"), "C:/Synthetic"],
