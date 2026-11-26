@@ -253,7 +253,13 @@ public sealed partial class HomeSummaryEndpointTests
         Assert.Contains(error, Encoding.UTF8.GetString(((MemoryStream)context.Response.Body).ToArray()));
     }
 
-    private static readonly DateTimeOffset Now = DateTimeOffset.UtcNow;
+    private static readonly DateTimeOffset Now = new(2026, 11, 25, 12, 0, 0, TimeSpan.Zero);
+
+    private sealed class Clock : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
     private static string Stamp(DateTimeOffset at) => at.ToString("O");
     private sealed class Domains(bool populated, bool archived = false) : IDomainRepository
     {
@@ -390,6 +396,7 @@ public sealed partial class HomeSummaryEndpointTests
             .AddSingleton<IPrincipalAuthenticator>(new Authentication()).AddSingleton<IDomainAccessService>(new Access(true))
             .AddSingleton<IHomeSummaryAccess>(new Reports(reports.Length > 0 ? reports : [Report("security.problems"), Report("ad.infrastructure"), Report("ad.computers.v6"), Report("vpn.connections")]))
             .AddSingleton<IDomainRepository>(new Domains(populated, archived)).AddSingleton<IHomeSummaryRepository>(rows)
+            .AddSingleton<TimeProvider>(new Clock())
             .AddSingleton(rows.Links).AddSingleton<HomeSummaryReaders>().AddSingleton<HomeSummaryService>().BuildServiceProvider();
         var context = new DefaultHttpContext { RequestServices = services };
         context.Request.Path = "/api/v1/home/summary"; context.Request.QueryString = new QueryString(query); context.Response.Body = new MemoryStream();

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { createMemoryHistory, createRootRoute, createRouter, RouterProvider } from "@tanstack/react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ApiResponseError, type PluginState } from "../../api/client";
 
@@ -10,16 +11,23 @@ vi.mock("../../api/client", async (importOriginal) => {
   return { ...original, api: { ...original.api, plugins: () => mocks.list(), setPluginEnabled: (item: PluginState, enabled: boolean) => mocks.change(item, enabled) } };
 });
 import { localeRuntime, setLocale, t } from "../../i18n";
+import { createAdminPlaceholderRoutes } from "./navigation-pages";
 import { PluginsPage } from "./plugins";
 
-const item: PluginState = { plugin_id: "sli.remote-access", package_version: "0.1.0", installed: true,
+const item: PluginState = { plugin_id: "sli.ad", package_version: "0.1.0", installed: true,
   configured: true, enabled: true, receiving_data: false, component_runtime: "running", queue_state: "drained", revision: 4, last_data_at_utc: null,
+  source_names: ["DC01"], source_count: 1,
   status: { state: "waiting", last_data_at: null, error_at: null, error_object: null } };
+vi.mock("../App", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../App")>(),
+  useEffectiveAccess: () => ({ capabilities: ["operations.view"], reports: [] }),
+}));
+
 const disabledStatus = { ...item.status!, state: "disabled" as const };
 
-function mount() {
+function mount(content = <PluginsPage/>) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  return render(<QueryClientProvider client={client}><PluginsPage/></QueryClientProvider>);
+  return render(<QueryClientProvider client={client}>{content}</QueryClientProvider>);
 }
 beforeEach(() => { vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined); });
 afterEach(() => {
@@ -29,15 +37,36 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-it("does not present the worker process as evidence that the plugin is working", async () => {
-  mocks.list.mockResolvedValue({ items: [item], can_manage: false });
-  mount();
-  await screen.findByText("Версия");
-  expect(screen.getByText("0.1.0")).toBeTruthy();
-  expect(screen.getByText(t("plugins.status.waiting"))).toBeTruthy();
-  expect(screen.queryByText(/^Работает/)).toBeNull();
-  expect(screen.getByRole("link", { name: "Открыть диагностику" }).getAttribute("href")).toBe("/app/operations#runtime-workers");
-  expect(screen.queryByText("Ошибка сбора")).toBeNull();
+async function openDisableDialog() {
+  fireEvent.click(await screen.findByRole("button", { name: "Выключить" }));
+  return screen.findByRole("dialog");
+}
+
+async function confirmDisable() {
+  fireEvent.click(within(await openDisableDialog()).getByRole("button", { name: "Выключить" }));
+}
+
+it("opens the failing module row on System status", async () => {
+  const errorAt = "2026-11-26T08:00:00Z";
+  mocks.list.mockResolvedValue({ items: [{ ...item,
+    status: { state: "error", last_data_at: null, error_at: errorAt, error_object: "DC01" },
+  }], can_manage: false });
+  const view = mount();
+  const link = await screen.findByRole("link", { name: /^Ошибка · DC01 · 26/ });
+  const href = link.getAttribute("href")!;
+  view.unmount();
+
+  const root = createRootRoute();
+  const router = createRouter({
+    routeTree: root.addChildren(createAdminPlaceholderRoutes(root)),
+    history: createMemoryHistory({ initialEntries: [href] }),
+    basepath: "/app",
+  });
+  mount(<RouterProvider router={router}/>);
+  expect(await screen.findByRole("heading", { name: t("shell.adminNav.status") })).toBeTruthy();
+  const table = await screen.findByRole("table", { name: t("plugins.title") });
+  const row = within(table).getByRole("row", { name: /Active Directory Ошибка · DC01/ });
+  expect(row.contains(document.getElementById(new URL(href, "http://localhost").hash.slice(1)))).toBe(true);
 });
 
 it("disables through the current revision and reads the new status from the server", async () => {
@@ -45,7 +74,13 @@ it("disables through the current revision and reads the new status from the serv
   mocks.list.mockResolvedValueOnce({ items: [item], can_manage: true }).mockResolvedValue({ items: [drained], can_manage: true });
   mocks.change.mockResolvedValue({ item: drained });
   mount();
-  fireEvent.click(await screen.findByRole("button", { name: "Выключить" }));
+  const dialog = await openDisableDialog();
+  expect(dialog.textContent).toContain("Сбор и проверки Active Directory остановятся на всех агентах.");
+  expect(mocks.change).not.toHaveBeenCalled();
+  fireEvent.click(within(dialog).getByRole("button", { name: t("agents.cancel") }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(mocks.change).not.toHaveBeenCalled();
+  await confirmDisable();
   await waitFor(() => expect(mocks.change).toHaveBeenCalledWith(item, false));
   expect((await screen.findByRole("button", { name: "Включить" }) as HTMLButtonElement).disabled).toBe(true);
   expect(screen.getByText(t("plugins.status.disabled"))).toBeTruthy();
@@ -57,7 +92,8 @@ it("keeps delegated readers from mutating", async () => {
   mount();
   await screen.findByText(t("plugins.status.waiting"));
   expect(screen.queryByRole("button", { name: "Выключить" })).toBeNull();
-  expect(screen.getByRole("note").textContent).toContain("только владелец");
+  expect(screen.queryByRole("button", { name: "Включить" })).toBeNull();
+  expect(screen.queryByText(/^Работает/)).toBeNull();
 });
 
 it("cannot enable an unconfigured plugin", async () => {
@@ -70,7 +106,7 @@ it("shows a rejected mutation without claiming a disabled plugin", async () => {
   mocks.list.mockResolvedValue({ items: [item], can_manage: true });
   mocks.change.mockRejectedValue(new Error("plugin_state_conflict"));
   mount();
-  fireEvent.click(await screen.findByRole("button", { name: "Выключить" }));
+  await confirmDisable();
   expect((await screen.findByRole("alert")).textContent).toContain("Состояние не изменено");
   expect(screen.queryByText("Плагин выключен")).toBeNull();
 });
@@ -86,12 +122,12 @@ it("names workstations and enables then disables from the registered drained sta
     return { item: current };
   });
   mount();
-  expect((await screen.findByRole("heading", { level: 2 })).textContent).toContain("Рабочие станции");
+  expect(await screen.findByRole("row", { name: /Рабочие станции/ })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Включить" }));
   const disable = await screen.findByRole("button", { name: "Выключить" });
   expect(mocks.change).toHaveBeenNthCalledWith(1, stopped, true);
   await waitFor(() => expect((disable as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(disable);
+  await confirmDisable();
   await waitFor(() => expect((screen.getByRole("button", { name: "Включить" }) as HTMLButtonElement).disabled).toBe(false));
   expect(mocks.change).toHaveBeenNthCalledWith(2, running, false);
   expect(screen.getByText(t("plugins.status.disabled"))).toBeTruthy();
@@ -115,7 +151,7 @@ it.each([
   mocks.list.mockResolvedValue({ items: [item], can_manage: true });
   mocks.change.mockRejectedValue(new ApiResponseError(409, code, "private-marker"));
   mount();
-  fireEvent.click(await screen.findByRole("button", { name: "Выключить" }));
+  await confirmDisable();
   expect((await screen.findByRole("alert")).textContent).toContain(message);
   expect(screen.getByRole("alert").textContent).not.toContain("private-marker");
   expect(screen.queryByText("Плагин выключен")).toBeNull();
@@ -125,47 +161,42 @@ it("keeps unknown server details out of the fallback error", async () => {
   mocks.list.mockResolvedValue({ items: [item], can_manage: true });
   mocks.change.mockRejectedValue(new ApiResponseError(500, "unknown_reason", "private-marker"));
   mount();
-  fireEvent.click(await screen.findByRole("button", { name: "Выключить" }));
+  await confirmDisable();
   expect((await screen.findByRole("alert")).textContent).toContain("Состояние не изменено");
   expect(screen.getByRole("alert").textContent).not.toContain("private-marker");
 });
 
-
-
-it.each(["ru", "en"] as const)("keeps prior receipt timestamps readable for a disabled plugin in %s", async (locale) => {
+it.each(["ru", "en"] as const)("keeps only the latest received data visible when a plugin is disabled in %s", async (locale) => {
   setLocale(locale);
-  mocks.list.mockResolvedValue({ items: [{ ...item, enabled: false, status: disabledStatus, receiving_data: true,
-    data_receipts: { state: "observed", last_received_at: "2026-01-01T00:00:00Z", last_imported_at: null, last_snapshot_completed_at: null },
-  }], can_manage: false });
+  mocks.list.mockResolvedValue({ items: [{ ...item, enabled: false, status: disabledStatus,
+    data_receipts: { state: "observed", last_received_at: "2025-01-01T12:00:00Z", last_imported_at: null,
+      last_snapshot_completed_at: "2026-01-02T12:00:00Z" } }], can_manage: false });
   mount();
-  await screen.findByText(t("plugins.lastReceipt"));
-  expect(screen.getByText(t("plugins.status.disabled"))).toBeTruthy();
-  expect(screen.getByText(/2026/)).toBeTruthy();
+  expect(await screen.findByText(/2026/)).toBeTruthy();
+  expect(screen.queryByText(/2025|0\.1\.0/)).toBeNull();
+  expect(screen.getByRole("link", { name: t("plugins.status.disabled") })).toBeTruthy();
+});
+
+it("shows an unassigned file-server module as disabled and opens Agents without mutating state", async () => {
+  const fileServers: PluginState = { ...item, plugin_id: "sli.file-audit", source_names: [], source_count: 0,
+    status: { ...item.status!, state: "no_sources" } };
+  const gpo = { ...item, plugin_id: "sli.gpo", source_names: ["DC01", "DC02", "DC03", "DC04"], source_count: 4 };
+  mocks.list.mockResolvedValue({ items: [gpo, item, fileServers], can_manage: true });
+  mount();
+  const fileRow = await screen.findByRole("row", { name: /Файловые серверы/ });
+  expect(within(fileRow).getByRole("link", { name: "Выключен" })).toBeTruthy();
+  expect(within(fileRow).getAllByText("—")).toHaveLength(2);
+  expect(within(fileRow).getByRole("link", { name: "Включить" }).getAttribute("href")).toBe("/app/agents");
+  expect(within(fileRow).queryByRole("button", { name: "Выключить" })).toBeNull();
+  expect(screen.getByText("DC01, DC02 и ещё 2")).toBeTruthy();
   expect(mocks.change).not.toHaveBeenCalled();
 });
 
-it.each(["ru", "en"] as const)("describes the plugins returned by the server in %s", async (locale) => {
-  setLocale(locale);
-  const ids = ["sli.ad", "sli.gpo", "sli.file-audit", "sli.workstations", "sli.remote-access", "sli.sigma", "sli.future"];
-  mocks.list.mockResolvedValue({ items: ids.map((plugin_id) => ({ ...item, plugin_id })), can_manage: false });
+it("keeps file-server setup and disable hidden for delegated readers", async () => {
+  mocks.list.mockResolvedValue({ items: [{ ...item, plugin_id: "sli.file-audit", source_names: [], source_count: 0 }], can_manage: false });
   mount();
-  await screen.findByText(t("plugins.description.ad"));
-  for (const key of ["gpo", "fileAudit", "workstations", "remoteAccess", "sigma", "unknown"]) {
-    expect(screen.getByText(t(`plugins.description.${key}` as Parameters<typeof t>[0]))).toBeTruthy();
-  }
-  expect(screen.getByRole("heading", { name: /sli.future/ })).toBeTruthy();
-  if (locale === "en") expect(document.body.textContent).not.toMatch(/[А-Яа-яЁё]/);
-  expect(screen.queryByRole("button")).toBeNull();
-});
-
-it.each(["ru", "en"] as const)("shows independent receipt, import and completed snapshot facts in %s", async (locale) => {
-  setLocale(locale);
-  mocks.list.mockResolvedValue({ items: [{ ...item, plugin_id: "sli.ad", enabled: false,
-    data_receipts: { state: "observed", last_received_at: "2026-01-01T00:00:00Z", last_imported_at: null,
-      last_snapshot_completed_at: "2026-01-02T00:00:00Z" } }], can_manage: false });
-  mount();
-  await screen.findByText(t("plugins.lastSnapshotCompleted"));
-  expect(screen.queryByText(t("plugins.lastImport"))).toBeNull();
-  expect(screen.queryByText("Ошибка сбора")).toBeNull();
-  expect(mocks.change).not.toHaveBeenCalled();
+  const row = await screen.findByRole("row", { name: /Файловые серверы/ });
+  expect(within(row).getByRole("link", { name: "Открыть" }).getAttribute("href")).toBe("/app/admin/plugins/sli.file-audit");
+  expect(within(row).queryByRole("link", { name: "Включить" })).toBeNull();
+  expect(within(row).queryByRole("button", { name: "Выключить" })).toBeNull();
 });

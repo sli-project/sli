@@ -34,7 +34,8 @@ public static class HomeSummaryEndpoints
                 await DomainHttp.WriteAsync(context, new { error = "workspace_view_required" }, 403, ct);
                 return;
             }
-            var query = HomeSummaryQuery.Parse(context.Request.Query, DateTimeOffset.UtcNow) with { Language = context.Request.Headers.AcceptLanguage.ToString() };
+            var clock = services.GetService<TimeProvider>() ?? TimeProvider.System;
+            var query = HomeSummaryQuery.Parse(context.Request.Query, clock.GetUtcNow()) with { Language = context.Request.Headers.AcceptLanguage.ToString() };
             var payload = await services.GetRequiredService<HomeSummaryService>().BuildAsync(principal, query, ct);
             await DomainHttp.WriteAsync(context, payload, 200, ct);
         }
