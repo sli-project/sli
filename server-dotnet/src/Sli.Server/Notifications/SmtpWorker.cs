@@ -6,13 +6,14 @@ public sealed class SmtpWorker(NotificationDatabase database,SmtpSender sender,I
 {
     public const string ClaimSql="""
         with candidate as (
-          select id from notification_outbox where
+          select id,state from notification_outbox where
            ((state in ('pending','retry') and available_at<=clock_timestamp()) or (state='sending' and lease_until<=clock_timestamp()))
            and channel='smtp' and object_kind in ('test_problem','semantic_finding','report_schedule')
           order by created_at,id for update skip locked limit 1)
         update notification_outbox j set state='sending',lease_token=@token,lease_until=clock_timestamp()+interval '60 seconds',
           attempts=attempts+1,updated_at=clock_timestamp() from candidate where j.id=candidate.id
-        returning j.id,j.subscription_id,j.subscription_revision,j.object_kind,j.object_id,j.recipient_user_id,j.attempts,j.lease_token,j.created_at,j.object_severity,j.delivery_reason,j.delay_minutes
+        returning j.id,j.subscription_id,j.subscription_revision,j.object_kind,j.object_id,j.recipient_user_id,j.attempts,j.lease_token,j.created_at,j.object_severity,j.delivery_reason,j.delay_minutes,
+          candidate.state='sending' and j.object_kind='semantic_finding'
         """;
     public async Task<bool> ProcessAsync(CancellationToken ct)
     {
@@ -22,7 +23,7 @@ public sealed class SmtpWorker(NotificationDatabase database,SmtpSender sender,I
             await using var cmd=new NpgsqlCommand(ClaimSql,db,tx);cmd.Parameters.AddWithValue("token",Guid.NewGuid());
             await using(var r=await cmd.ExecuteReaderAsync(ct)) {
                 if(!await r.ReadAsync(ct))job=null;
-                else job=new(r.GetGuid(0),r.GetGuid(1),r.GetInt64(2),r.GetString(3),r.GetGuid(4),r.GetInt64(5),r.GetInt32(6),r.GetGuid(7),r.GetDateTime(8),r.IsDBNull(9)?null:r.GetString(9),r.GetString(10),r.GetInt32(11));
+                else job=new(r.GetGuid(0),r.GetGuid(1),r.GetInt64(2),r.GetString(3),r.GetGuid(4),r.GetInt64(5),r.GetInt32(6),r.GetGuid(7),r.GetDateTime(8),r.IsDBNull(9)?null:r.GetString(9),r.GetString(10),r.GetInt32(11)) { Abandoned=r.GetBoolean(12) };
             }
             await tx.CommitAsync(ct);
         }
@@ -53,7 +54,9 @@ public sealed class SmtpWorker(NotificationDatabase database,SmtpSender sender,I
             }
             string state=job.Kind=="report_schedule"?"blocked":"cancelled",code=job.Kind=="report_schedule"?"recipient_denied":"subscription_changed";int retryAfter=0;bool internalSendError=false,recorded=false;
             ProblemAccess? recipientAccess = null;
-            if(valid) {
+            // The previous process may have reached the provider before it stopped.
+            if(job.Abandoned) {state="delivery_unknown";code="smtp_outcome_unknown";}
+            else if(valid) {
                 try {
                     if(job.Kind=="report_schedule") {
                         if(preparationFailed)throw new InvalidOperationException();

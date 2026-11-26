@@ -9,11 +9,12 @@ public sealed record NotificationJob(Guid Id,Guid Subscription,long Revision,str
     public string? Channel {get;init;}
     public JsonElement? ReportRun {get;init;}
     public long? ReportChannelRevision {get;init;}
+    internal bool Abandoned {get;init;}
 }
 public static class NotificationMessage
 {
     public static string Format(NotificationJob job, string baseUrl, JsonObject? finding, ProblemAccess? access,
-        string language = "ru", TimeZoneInfo? zone = null)
+        string language = "en", TimeZoneInfo? zone = null)
     {
         if (job.Kind == "report_schedule") return ReportScheduleDelivery.Digest(job, baseUrl);
         baseUrl = baseUrl.TrimEnd('/');
@@ -23,17 +24,12 @@ public static class NotificationMessage
         if (job.Kind != "semantic_finding" || finding is null || access is null || ProblemJson.Long(finding["id"]) is not > 0)
             throw new FormatException();
 
+        ApplySeverity(finding, job.Severity);
         var row = ProblemPresentation.Finding(finding, access, language, queue: true, includeDescription: true);
         string rule = ProblemJson.Text(finding["rule_code"]);
-        string title = ProblemPresentation.HasRuleMessage(rule, "title", language)
-            ? Line(ProblemJson.Text(row["title_text"]), 384) : M("problem");
-        if (title.Length == 0) title = M("problem");
-        string severity = ProblemJson.Text(row["severity"]);
-        string label = severity is "critical" or "high" or "medium" or "low"
-            ? ProblemJson.Text(row["severity_message"]?["text"]) : M("info");
-        var lines = new List<string> { $"{label} · {title}" };
         var facts = new List<string>();
         var parameters = ProblemPresentation.RuleParameters(finding, access, language);
+        var lines = new List<string> { Headline(finding, row, parameters, language) };
         void Fact(string key, string value)
         {
             value = Line(value, 160);
@@ -68,9 +64,39 @@ public static class NotificationMessage
         return string.Join('\n', lines);
     }
 
+    internal static string ProblemHeadline(JsonObject finding, string? severity, ProblemAccess access, string language)
+    {
+        ApplySeverity(finding, severity);
+        return Headline(finding, ProblemPresentation.Finding(finding, access, language, queue: true, includeDescription: true),
+            ProblemPresentation.RuleParameters(finding, access, language), language);
+    }
+
+    private static void ApplySeverity(JsonObject finding, string? severity)
+    {
+        if (severity is not ("critical" or "high" or "medium" or "low")) return;
+        finding["severity"] = severity;
+        if (severity != "critical" && finding["presentation_facts"] is JsonObject facts) facts.Remove("password_success");
+    }
+
+    private static string Headline(JsonObject finding, JsonObject row, JsonObject parameters, string language)
+    {
+        string rule = ProblemJson.Text(finding["rule_code"]);
+        string title = ProblemPresentation.HasRuleMessage(rule, "title", language) ? ProblemJson.Text(row["title_text"]) : "";
+        if (title.Length == 0) title = ProblemJson.Text(ProblemPresentation.Message("notifications.message.problem", language)["text"]);
+        string label = ProblemJson.Text(row["severity_message"]?["text"]);
+        if (label.Length == 0) label = ProblemJson.Text(ProblemPresentation.Message("notifications.message.info", language)["text"]);
+
+        var subjects = new[] { row["entity_text"], parameters["account"], parameters["target"], parameters["member"], parameters["source"], parameters["computer"], parameters["actor"] }
+            .Select(value => Line(ProblemJson.Text(value), 120)).Where(value => value.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase).Where(value => !title.Contains(value, StringComparison.OrdinalIgnoreCase)).Take(2);
+        return Line(string.Join(" · ", new[] { label, title }.Concat(subjects)), 384);
+    }
+
     internal static string Line(string value, int limit)
     {
         value = Regex.Replace(value, @"\b[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\b", "", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        // Transport bodies are plain text. Keep host strings from introducing another URI scheme.
+        value = value.Replace("://", ":∕∕", StringComparison.Ordinal);
         return string.Concat(value.EnumerateRunes().Where(r => System.Text.Rune.GetUnicodeCategory(r) is not
             (UnicodeCategory.Format or UnicodeCategory.Surrogate)).Take(limit).Select(r =>
                 System.Text.Rune.IsControl(r) || System.Text.Rune.IsWhiteSpace(r) ? " " : r.ToString())).Trim();
