@@ -1,7 +1,11 @@
+using System.Globalization;
+using System.Net;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json.Nodes;
+using System.Text.Unicode;
 using System.Text.RegularExpressions;
 using NpgsqlTypes;
 using Npgsql;
@@ -54,26 +58,29 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         if (keyFingerprint is not null && !CryptographicOperations.FixedTimeEquals(received, Convert.FromHexString(keyFingerprint))) throw new AgentCertificateException("agent_csr_key_mismatch");
         keyFingerprint ??= Convert.ToHexStringLower(received);
         var hostName = HostName(StringValue(body, "reported_hostname"));
+        if (hostName is null && (consoleToken is not null || body.ContainsKey("reported_hostname")))
+            throw new AgentCertificateException("invalid_agent_registration_name");
         var role = body.ContainsKey("machine_role") ? StringValue(body, "machine_role") : "workstation";
         if (role is not ("workstation" or "domain_controller")) throw new AgentCertificateException("invalid_agent_module_config");
         var dc=role=="domain_controller" && hostName is not null ? await ResolveDcAsync(connection,transaction,hostName,ct) : null;
         if(dc is {} configuredDc && configuredDc.Name.Length>128)throw new AgentCertificateException("invalid_agent_module_config");
         if (consoleToken is { } grant)
         {
-            if (hostName is null) throw new AgentCertificateException("invalid_agent_registration_name");
             await using var used = new NpgsqlCommand("""
-                select 1 from sli_agent_enrollment_tokens e left join sli_agents a on a.id=e.enrolled_agent_id
-                where e.console_token_id=@id and (e.host_id=@host or e.key_fingerprint=@key
-                    or lower(a.registration_host_name)=lower(@name)
+                select a.registration_host_name, e.host_id=@host or e.key_fingerprint=@key
                     or exists(select 1 from sli_agent_audit issued where issued.target=a.id::text and issued.action='issue'
-                        and issued.details->>'server_id'=@server::text)) limit 1
+                        and issued.details->>'server_id'=@server::text)
+                from sli_agent_enrollment_tokens e left join sli_agents a on a.id=e.enrolled_agent_id
+                where e.console_token_id=@id
                 """, connection, transaction);
             used.Parameters.AddWithValue("id", grant);
             used.Parameters.AddWithValue("host", hostId);
             used.Parameters.AddWithValue("key", keyFingerprint);
-            used.Parameters.AddWithValue("name", hostName);
             used.Parameters.Add("server", NpgsqlDbType.Bigint).Value = (object?)dc?.Server ?? DBNull.Value;
-            if (await used.ExecuteScalarAsync(ct) is not null) throw RejectToken();
+            await using var claims = await used.ExecuteReaderAsync(ct);
+            while (await claims.ReadAsync(ct))
+                if (claims.GetBoolean(1) || !claims.IsDBNull(0) && SameHostName(claims.GetString(0), hostName))
+                    throw RejectToken();
         }
         string? versionText=StringValue(body,"agent_version"); Version? agentVersion=null;
         if(body.ContainsKey("agent_version") && (versionText is null || versionText.Length>32 || !Version.TryParse(versionText,out agentVersion) || agentVersion.Build<0 || agentVersion.Revision>=0))
@@ -81,12 +88,12 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         string? approved;
         await using (var q = new NpgsqlCommand("select details->>'registration_host_name' from sli_agent_audit where target=@id and action='token_create' order by id desc limit 1", connection, transaction))
         { q.Parameters.AddWithValue("id", tokenId.ToString()); approved = await q.ExecuteScalarAsync(ct) as string; }
-        if (approved is not null && !string.Equals(approved,hostName,StringComparison.OrdinalIgnoreCase))
+        if (approved is not null && !SameHostName(approved, hostName))
         {
             var approvedDc=dc is not null ? await ResolveDcAsync(connection,transaction,approved,ct) : null;
             if(approvedDc is null || approvedDc.Value.Server!=dc!.Value.Server) throw new AgentCertificateException("agent_registration_name_mismatch");
         }
-        if (hostName is not null) await AdvisoryAsync(connection, transaction, $"sli-agent-registration:{ca.RootFingerprint}:{hostName.ToLowerInvariant()}:{instance ?? ""}", ct);
+        if (hostName is not null) await AdvisoryAsync(connection, transaction, $"sli-agent-registration:{ca.RootFingerprint}:{HostNameKey(hostName)}:{instance ?? ""}", ct);
         if(dc is not null) await AdvisoryAsync(connection,transaction,$"sli-agent-dc:{ca.RootFingerprint}:{dc.Value.Server}",ct);
         await AdvisoryAsync(connection, transaction, "sli-agent-host:" + hostId, ct);
         Guid? duplicate=null;
@@ -444,6 +451,23 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
     }
     private async Task<Guid?> ReplaceRegistrationAsync(NpgsqlConnection c,NpgsqlTransaction t,Guid agent,string hostName,string? instance,Guid token,CancellationToken ct,long? server,Version? version,bool consoleEnrollment)
     {
+        var matchingNames = new List<Guid>();
+        if (server is null)
+        {
+            // The registry lock serializes enrollment. Compare names here so a
+            // database created with the C locale also matches Unicode case variants.
+            await using var names = new NpgsqlCommand("""
+                select id,registration_host_name from sli_agents
+                where id<>@id and status='active' and instance_name is not distinct from @instance
+                    and registration_host_name is not null
+                """, c, t);
+            names.Parameters.AddWithValue("id", agent);
+            names.Parameters.Add("instance", NpgsqlDbType.Text).Value = (object?)instance ?? DBNull.Value;
+            await using var rows = await names.ExecuteReaderAsync(ct);
+            while (await rows.ReadAsync(ct))
+                if (SameHostName(rows.GetString(1), hostName))
+                    matchingNames.Add(rows.GetGuid(0));
+        }
         var others=new List<(Guid Id,Version? Version,bool Live,bool DotNet,DateTime? Packet,bool ConsoleReplacementAllowed)>();
         await using (var q=new NpgsqlCommand("""
             select a.id,coalesce(a.rights_probe->>'agent_version',
@@ -460,10 +484,12 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
                     and not exists(select 1 from sli_agent_snapshot_bindings s where s.agent_id=a.id and s.enabled)
             from sli_agents a where a.id<>@id and a.status='active' and
             """ + " " +
-            (server is null ? "lower(a.registration_host_name)=lower(@name) and a.instance_name is not distinct from @instance" : "exists(select 1 from sli_agent_module_bindings b where b.agent_id=a.id and b.module_id='sli.windows.ad-dc')") +
+            (server is null ? "a.id=any(@matches)" : "exists(select 1 from sli_agent_module_bindings b where b.agent_id=a.id and b.module_id='sli.windows.ad-dc')") +
             " and exists(select 1 from sli_agent_audit issued where issued.target=a.id::text and issued.action='issue' and issued.details->>'registration_ca_sha256'=@scope) order by a.id for update of a",c,t))
         {
-            q.Parameters.AddWithValue("id",agent); q.Parameters.AddWithValue("name",hostName); q.Parameters.Add("instance",NpgsqlDbType.Text).Value=(object?)instance??DBNull.Value; q.Parameters.AddWithValue("scope",ca.RootFingerprint);
+            q.Parameters.AddWithValue("id", agent);
+            if (server is null) q.Parameters.AddWithValue("matches", matchingNames.ToArray());
+            q.Parameters.AddWithValue("scope", ca.RootFingerprint);
             await using var reader=await q.ExecuteReaderAsync(ct); while(await reader.ReadAsync(ct)) others.Add((reader.GetGuid(0),!reader.IsDBNull(1) && Version.TryParse(reader.GetString(1),out var prior) ? prior : null,RecentContact(reader.IsDBNull(2)?null:reader.GetDateTime(2),reader.GetInt64(3),DateTime.UtcNow),reader.GetBoolean(4),reader.IsDBNull(5)?null:reader.GetDateTime(5),reader.GetBoolean(6)));
         }
         var matching=new List<(Guid Id,Version? Version,bool Live,bool DotNet,DateTime? Packet,bool ConsoleReplacementAllowed)>();
@@ -508,13 +534,79 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
     {
         if (name is not null && !Regex.IsMatch(name, "^[a-z0-9][a-z0-9_-]{0,47}\\z", RegexOptions.CultureInvariant)) throw new AgentCertificateException("invalid_agent_instance_name");
     }
-    private static string? HostName(string? value)
+    internal static string? HostName(string? value)
     {
-        if (value is null || value.Length is < 1 or > 253 || Guid.TryParse(value, out _) ||
-            value.Equals("localhost", StringComparison.OrdinalIgnoreCase) || value.Equals("localhost.localdomain", StringComparison.OrdinalIgnoreCase) || value.Equals("unknown", StringComparison.OrdinalIgnoreCase) ||
-            Regex.IsMatch(value, "^[0-9]+(?:\\.[0-9]+){3}\\z", RegexOptions.CultureInvariant) ||
-            value.Split('.').Any(label => !Regex.IsMatch(label, "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\z", RegexOptions.CultureInvariant))) return null;
+        if (string.IsNullOrEmpty(value)) return null;
+        try { value = value.Normalize(NormalizationForm.FormC); }
+        catch (ArgumentException) { return null; }
+        if (Guid.TryParse(value, out _) || IPAddress.TryParse(value, out _) ||
+            SameHostName(value, "localhost") || SameHostName(value, "localhost.localdomain") || SameHostName(value, "unknown") ||
+            Regex.IsMatch(value, @"\A[0-9]+(?:\.[0-9]+){3}\z", RegexOptions.CultureInvariant))
+            return null;
+        var total = 0;
+        foreach (var label in value.Split('.'))
+        {
+            var length = 0;
+            foreach (var rune in label.EnumerateRunes())
+            {
+                if (rune.Value is not ('-' or '_') && Rune.GetUnicodeCategory(rune) is not
+                    (UnicodeCategory.UppercaseLetter or UnicodeCategory.LowercaseLetter or UnicodeCategory.TitlecaseLetter
+                     or UnicodeCategory.ModifierLetter or UnicodeCategory.OtherLetter or UnicodeCategory.DecimalDigitNumber
+                     or UnicodeCategory.LetterNumber or UnicodeCategory.OtherNumber))
+                    return null;
+                if (++length > 63) return null;
+            }
+            if (length == 0) return null;
+            total += length + 1;
+            if (total > 254) return null;
+        }
         return value;
+    }
+    private static bool SameHostName(string? left, string? right) =>
+        string.Equals(left, right, StringComparison.InvariantCultureIgnoreCase);
+    private static string HostNameKey(string hostName) => Convert.ToHexString(
+        CultureInfo.InvariantCulture.CompareInfo.GetSortKey(hostName, CompareOptions.IgnoreCase).KeyData);
+
+    private static readonly JavaScriptEncoder AuditHostEncoder = JavaScriptEncoder.Create(UnicodeRanges.All);
+
+    internal static async Task RecordRejectionAsync(NpgsqlConnection connection, NpgsqlTransaction transaction,
+        JsonObject request, string code, IPAddress? sourceAddress, CancellationToken ct)
+    {
+        var host = StringValue(request, "reported_hostname");
+        var token = StringValue(request, "token");
+        if (host is not null && !string.IsNullOrEmpty(token) && host.Contains(token, StringComparison.Ordinal))
+            host = null;
+        // Keep the whole claim in the rate-limit key. The displayed claim is
+        // bounded and escaped independently, including NUL, format characters and markup.
+        host = host is null ? null : string.Concat(host.EnumerateRunes());
+        var key = host is null ? "" : HostNameKey(host.Normalize(NormalizationForm.FormC));
+        var target = Convert.ToHexStringLower(SHA256.HashData(Encoding.ASCII.GetBytes(key)));
+        await AdvisoryAsync(connection, transaction, $"sli-agent-enroll-rejected:{target}:{code}", ct);
+        var displayHost = host is null ? null : string.Concat(host.EnumerateRunes().Take(253).Select(rune =>
+            (Rune.GetUnicodeCategory(rune) == UnicodeCategory.Format ? JavaScriptEncoder.Default : AuditHostEncoder)
+                .Encode(rune.ToString())));
+        var details = new JsonObject
+        {
+            ["outcome"] = "rejected",
+            ["code"] = code,
+            ["reported_hostname"] = displayHost,
+            ["source_address"] = sourceAddress?.ToString()
+        };
+        // The audit schema uses 'issue' for certificate issuance. Rejections
+        // use a host digest and a generic actor in place of agent and token IDs.
+        await using var insert = new NpgsqlCommand("""
+            insert into sli_agent_audit(action,actor,target,details)
+            select 'issue','enrollment',@target,@details::jsonb
+            where not exists (
+                select 1 from sli_agent_audit where action='issue' and actor='enrollment' and target=@target
+                    and details->>'outcome'='rejected' and details->>'code'=@code
+                    and occurred_at > clock_timestamp() - interval '10 minutes'
+            )
+            """, connection, transaction);
+        insert.Parameters.AddWithValue("target", target);
+        insert.Parameters.AddWithValue("code", code);
+        insert.Parameters.AddWithValue("details", details.ToJsonString());
+        await insert.ExecuteNonQueryAsync(ct);
     }
     private static async Task AdvisoryAsync(NpgsqlConnection c, NpgsqlTransaction t, string value, CancellationToken ct)
     { await using var q = new NpgsqlCommand("select pg_advisory_xact_lock(hashtext(@value))", c, t); q.Parameters.AddWithValue("value", value); await q.ExecuteNonQueryAsync(ct); }

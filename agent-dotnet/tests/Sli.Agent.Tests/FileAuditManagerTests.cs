@@ -19,6 +19,30 @@ public sealed class FileAuditManagerTests : IDisposable
     private AgentPolicy Policy(JsonObject? request, bool manage = true) => new(1,new CollectionControl("active",60,32,120,10000000,manage,false),new JsonArray(),null,null,null) { FileAuditRequest = request };
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ACheckWithoutNativeSupportStopsAfterItsDurableReceipt(bool missingEntryPoint)
+    {
+        var api = new FakeFileApi(_dir) {
+            Owner = missingEntryPoint ? "ok" : "native_unavailable",
+            FailedRead = missingEntryPoint ? "native_unavailable" : null
+        };
+        var request = Policy(Request("check"));
+        var manager = new FileAuditManager(_dir, _files, api);
+        var report = manager.Reconcile(request, new FakeAudit(), Helpers.Now).Report!;
+        var scope = Assert.Single(report["scopes"]!.AsArray())!;
+        Assert.Equal("failed", scope["state"]!.ToString());
+        Assert.Equal("native_unavailable", scope["reason_code"]!.ToString());
+        var restarted = new FileAuditManager(_dir, _files, api);
+        Assert.True(JsonNode.DeepEquals(report, restarted.Reconcile(request, new FakeAudit(), Helpers.Now).Report));
+        restarted.Acknowledge(report);
+        Assert.Null(restarted.Reconcile(request, new FakeAudit(), Helpers.Now.AddDays(2)).Report);
+        Assert.Equal(1, api.CheckPreflightCalls);
+        Assert.NotNull(restarted.Reconcile(Policy(Request("check", "new-check")), new FakeAudit(), Helpers.Now.AddDays(2)).Report);
+        Assert.Equal(2, api.CheckPreflightCalls);
+    }
+
+    [Theory]
     [InlineData("audit_policy", "audit_policy_read_unavailable:5")]
     [InlineData("share", "share_read_unavailable:5")]
     [InlineData("directory", "directory_read_unavailable:5")]
@@ -423,6 +447,7 @@ public sealed class FileAuditManagerTests : IDisposable
         }
         public string Preflight(JsonArray roots)
         {
+            if (FailedRead == "native_unavailable") throw new EntryPointNotFoundException();
             if (FailedRead == "preflight_privilege_missing") throw new FileAuditNativeReadException("agent_audit_privilege_unavailable", 1300);
             return Owner;
         }

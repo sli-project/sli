@@ -49,11 +49,12 @@ public sealed class JournalPagePerformanceTests(ITestOutputHelper output)
         await using var fixture = new SqlPostgresFixture();
         // Exercise the index migration against the actual preceding schema.
         await fixture.InstallAsync(ct, throughVersion: 424);
-        await SeedAsync(fixture, ct);
+        // Keep the seed and query windows aligned if setup crosses UTC midnight.
+        var end = new DateTimeOffset(DateTime.UtcNow.Date, TimeSpan.Zero);
+        await SeedAsync(fixture, end, ct);
         var connections = new Connections(fixture);
         var reportDatabase = new ReportDatabase(connections);
         var semanticDatabase = new SemanticDatabase(connections);
-        var end = new DateTimeOffset(DateTime.UtcNow.Date, TimeSpan.Zero);
         var boundary = end.AddDays(-14);
         var baseline = new List<(JsonObject Page, JsonArray Links)>();
         for (int i = 0; i < Periods.Length; i++)
@@ -162,14 +163,14 @@ public sealed class JournalPagePerformanceTests(ITestOutputHelper output)
             ["id", "event_id", "time_created_utc", "channel", "subject_user_name", "target_user_name"], query, options, 50, boundary, ct);
     }
 
-    private static async Task SeedAsync(SqlPostgresFixture fixture, CancellationToken ct)
+    private static async Task SeedAsync(SqlPostgresFixture fixture, DateTimeOffset end, CancellationToken ct)
     {
         await using var db = await fixture.Pg.OpenAsync(ct);
         await using var seed = new NpgsqlCommand("""
             insert into servers(id,domain_id,hostname,fqdn,role) values (900001,1,'dc01','dc01.example.test','domain_controller');
-            select create_event_storage_partitions(current_date-1,current_date);
+            select create_event_storage_partitions((@end at time zone 'UTC')::date-1,(@end at time zone 'UTC')::date);
             insert into event_hot(event_id,time_created_utc,event_kind,domain_id,actor,target,source,computer,method,outcome,fields)
-            select n,(current_date-1)::timestamptz+n*interval '171 milliseconds',
+            select n,@end-interval '24 hours'+n*interval '171 milliseconds',
                 case pair_position when 1 then 4776 when 2 then 4625 when 3 then 4672
                     else case when n%10=5 then 4728 else 4624 end end,
                 1,'test-'||(n/10%97),'dc01.example.test','192.0.2.10','dc01.example.test',
@@ -187,7 +188,7 @@ public sealed class JournalPagePerformanceTests(ITestOutputHelper output)
             -- The validation witness crosses the repeat bucket boundary. The
             -- two failures inside the later bucket must still collapse together.
             insert into event_hot(event_id,time_created_utc,event_kind,domain_id,actor,target,source,computer,method,outcome,fields)
-            select id,current_date::timestamptz-interval '10 minutes'+offset_seconds*interval '1 second',
+            select id,@end-interval '10 minutes'+offset_seconds*interval '1 second',
                 kind,1,'boundary-test','dc01.example.test','192.0.2.20','dc01.example.test',
                 '{"$server_id":900001,"$channel":"Security","$provider":"Microsoft-Windows-Security-Auditing","$principals":{"TargetUserName":"boundary-test","IpAddress":"192.0.2.20"}}',
                 '{"Status":"0xc000006a"}','{"LogonType":"3"}'
@@ -214,6 +215,7 @@ public sealed class JournalPagePerformanceTests(ITestOutputHelper output)
             insert into semantic_finding_publications(scenario_id,finding_id,first_job_id,finding_fingerprint,published_evidence_count)
             values(md5('journal-scenario')::uuid,900001,md5('journal-job')::uuid,'semantic:'||encode(sha256('journal-finding'::bytea),'hex'),50001);
             """, db) { CommandTimeout = 0 };
+        seed.Parameters.AddWithValue("end", end);
         await seed.ExecuteNonQueryAsync(ct);
         foreach (string statement in new[]
         {

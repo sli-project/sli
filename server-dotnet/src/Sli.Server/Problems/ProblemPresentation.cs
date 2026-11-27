@@ -367,8 +367,8 @@ public static class ProblemPresentation
             string? Decision(string note)
             {
                 if (note == "password_rule_replaced420") return ProblemJson.Text(M("security.problems.presentation.password_replaced")["text"]);
-                if (note == "password_campaign_quiet440") return ProblemJson.Text(M("security.problems.presentation.campaign_quiet")["text"]);
-                foreach (var (prefix, key) in new[] { ("password_rule_merged420:", "password_merged"), ("problem_campaign_merged440:", "campaign_merged") })
+                if (note == "password_campaign_quiet444") return ProblemJson.Text(M("security.problems.presentation.campaign_quiet")["text"]);
+                foreach (var (prefix, key) in new[] { ("password_rule_merged420:", "password_merged"), ("problem_campaign_merged444:", "campaign_merged") })
                     if (note.StartsWith(prefix, StringComparison.Ordinal) &&
                         long.TryParse(note.AsSpan(prefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out long id) && id > 0)
                         return ProblemJson.Text(M("security.problems.presentation." + key, new() { ["id"] = id })["text"]);

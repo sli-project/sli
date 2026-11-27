@@ -259,7 +259,7 @@ public sealed class PasswordThresholdPostgresTests(ITestOutputHelper output)
     {
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new SqlPostgresFixture();
-        await fixture.StartAsync(ct, throughVersion: upgrade ? 435 : null);
+        await fixture.StartAsync(ct, throughVersion: upgrade ? 442 : null);
         await using var owner = await fixture.Pg.OpenAsync(ct);
         var start = DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.AddHours(-7).ToUnixTimeSeconds());
         await ShortEventAdmissionPostgresTests.WriteAsync(fixture,
@@ -346,11 +346,13 @@ public sealed class PasswordThresholdPostgresTests(ITestOutputHelper output)
                 insert into finding_status_history(finding_id,old_status,new_status,changed_by,note)
                 select id,'new','closed','fixture-operator','Reviewed before upgrade' from retired
                 """, ct);
+            Assert.Equal(442L, await Count("select max(version)::bigint from schema_migrations"));
+            await PostCollectionPostgres.Sql(owner, "revoke temporary on database postgres from public", ct);
             long before = await Count(history);
-            string path = Path.Combine(PostCollectionPostgres.Repository(), "config/postgres_migrations/440_detection_campaigns.sql");
+            string path = Path.Combine(PostCollectionPostgres.Repository(), "config/postgres_migrations/444_detection_campaigns.sql");
             await fixture.Pg.ApplyFileAsync(path, null, ct);
             Assert.Equal(5L, await Count(open));
-            Assert.Equal(54L, await Count("select count(*) from findings where status='closed' and status_reason like 'problem_campaign_merged440:%'"));
+            Assert.Equal(54L, await Count("select count(*) from findings where status='closed' and status_reason like 'problem_campaign_merged444:%'"));
             Assert.Equal(before + 54, await Count(history));
             Assert.Equal(1L, await Count("""
                 select count(*) from finding_status_history h join findings f on f.id=h.finding_id
@@ -395,8 +397,8 @@ public sealed class PasswordThresholdPostgresTests(ITestOutputHelper output)
             await Pass(runtime, worker, scope, PasswordAttacks.Spray, later.AddMinutes(1), ct);
             Assert.Equal(6L, await Count(notifications));
             Assert.Equal(5L, await Count(open));
-            Assert.Equal(1L, await Count("select count(*) from finding_status_history where note='password_campaign_quiet440'"));
-            await using var expire = new NpgsqlCommand("select public.expire_password_campaigns440()", worker);
+            Assert.Equal(1L, await Count("select count(*) from finding_status_history where note='password_campaign_quiet444'"));
+            await using var expire = new NpgsqlCommand("select public.expire_password_campaigns444()", worker);
             Assert.Equal(1, await expire.ExecuteScalarAsync(ct));
             Assert.Equal(4L, await Count(open));
         }

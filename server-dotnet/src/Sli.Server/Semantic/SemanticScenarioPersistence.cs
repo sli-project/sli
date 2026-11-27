@@ -189,7 +189,7 @@ internal sealed partial class SemanticProduction
         var created = await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding7, ct, fingerprint, rule, scenario.Text("title"), scenario.Text("risk_class"), scenario.Number("confidence_score") / 100.0, scenario.Text("first_seen_utc"), scenario.Text("last_seen_utc"), actor, target, source, scenario.Text("explanation"), scenario.Text("explanation"), "Review the linked evidence and validate the security impact.");
         var finding = (await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding8, ct, fingerprint)).Single()!; if (finding.Text("rule_code") != rule) throw new InvalidDataException("finding_fingerprint_conflict"); long id = finding.Number("id");
         if (!passwordThreshold && campaign is not null &&
-            !string.Equals((await session.QueryAsync("select public.problem_campaign_route440($1,$2) as fingerprint", ct, job, id)).Single().Text("fingerprint"), campaign, StringComparison.Ordinal))
+            !string.Equals((await session.QueryAsync("select public.problem_campaign_route444($1,$2) as fingerprint", ct, job, id)).Single().Text("fingerprint"), campaign, StringComparison.Ordinal))
             throw new InvalidDataException("finding_campaign_conflict");
         await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding9, ct, id, sid);
         int? dcRepeats = null;
@@ -261,9 +261,9 @@ internal sealed partial class SemanticProduction
 
     private static async Task<string?> CampaignFingerprint(ISemanticSession session, Guid job, CancellationToken ct)
     {
-        var available = await session.QueryAsync("select to_regprocedure('public.problem_campaign_route440(uuid,bigint)') is not null as available", ct);
+        var available = await session.QueryAsync("select to_regprocedure('public.problem_campaign_route444(uuid,bigint)') is not null as available", ct);
         return available.Single().Flag("available")
-            ? (await session.QueryAsync("select public.problem_campaign_route440($1,null) as fingerprint", ct, job)).Single().Text("fingerprint")
+            ? (await session.QueryAsync("select public.problem_campaign_route444($1,null) as fingerprint", ct, job)).Single().Text("fingerprint")
             : null;
     }
     private static async Task RecordScenarioIdentitySupersessions(ISemanticSession session, Guid scenario, CancellationToken ct)

@@ -224,8 +224,8 @@ internal sealed partial class SemanticProduction(PasswordProducerRuntime runtime
                 step = "expire_password_campaigns";
                 await using var expiration = await db.BeginTransactionAsync(ct);
                 var session = new SemanticSession(db, expiration);
-                if ((await session.QueryAsync("select to_regprocedure('public.expire_password_campaigns440()') is not null as available", ct)).Single().Flag("available"))
-                    await session.QueryAsync("select public.expire_password_campaigns440()", ct);
+                if ((await session.QueryAsync("select to_regprocedure('public.expire_password_campaigns444()') is not null as available", ct)).Single().Flag("available"))
+                    await session.QueryAsync("select public.expire_password_campaigns444()", ct);
                 await expiration.CommitAsync(ct);
             }
             step = "enabled_policies";

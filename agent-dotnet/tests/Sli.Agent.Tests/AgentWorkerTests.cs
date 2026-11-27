@@ -13,10 +13,10 @@ namespace Sli.Agent.Tests;
 
 public sealed class AgentWorkerTests
 {
-    private sealed class CertificateHandler(JsonObject response) : HttpMessageHandler
+    private sealed class CertificateHandler(JsonObject response, System.Net.HttpStatusCode status = System.Net.HttpStatusCode.OK) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
-            Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(response.ToJsonString()) });
+            Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(response.ToJsonString()) });
     }
 
     [Theory]
@@ -70,6 +70,39 @@ public sealed class AgentWorkerTests
                 Assert.DoesNotContain(secret, logged.Message, StringComparison.Ordinal);
                 Assert.DoesNotContain(secret, raw, StringComparison.Ordinal);
             }
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    [Theory]
+    [InlineData("invalid_agent_registration_name", true)]
+    [InlineData("synthetic_private_response", false)]
+    public async Task EnrollmentWarningIncludesOnlyRecognizedServerReasons(string reason, bool recognized)
+    {
+        var directory = Helpers.TempDirectory();
+        try
+        {
+            var options = new AgentOptions { ServerUrl = "https://synthetic.example.test/", StateDir = Path.Combine(directory, "state"), TokenFile = Path.Combine(directory, "token") };
+            var token = new string('t', 43);
+            File.WriteAllText(options.TokenFile, token);
+            File.SetLastWriteTimeUtc(options.TokenFile, Helpers.Now.UtcDateTime);
+            var response = new JsonObject { ["error"] = reason, ["token"] = token };
+            using var runtime = new AgentRuntime(Options.Create(options), new TestClock(), _ =>
+                new AgentHttpClient(new HttpClient(new CertificateHandler(response, System.Net.HttpStatusCode.BadRequest))
+                    { BaseAddress = new Uri(options.ServerUrl) }));
+            var logger = new RecordingLogger();
+            using var worker = new AgentWorker(runtime, logger);
+            await worker.StartAsync(CancellationToken.None);
+            var logged = await logger.Entry.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await worker.StopAsync(CancellationToken.None);
+            Assert.Equal(LogLevel.Warning, logged.Level);
+            Assert.Contains("agent_server_rejected_400", logged.Message, StringComparison.Ordinal);
+            if (recognized)
+                Assert.Contains("agent_server_rejected_400 " + reason, logged.Message, StringComparison.Ordinal);
+            else
+                Assert.DoesNotContain(reason, logged.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain(token, logged.Message, StringComparison.Ordinal);
+            Assert.Null(logged.Exception);
         }
         finally { Directory.Delete(directory, true); }
     }

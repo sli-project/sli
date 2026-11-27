@@ -39,6 +39,49 @@ public sealed class AgentHttpClient(HttpClient http, bool clientCertificateConfi
     public Task<JsonObject> GetIdentityAsync(bool supportsFileAuditCatalog, CancellationToken cancellationToken) =>
         SendAsync(HttpMethod.Get, "/api/v1/agent/identity", null, cancellationToken, supportsFileAuditCatalog);
 
+    public async Task DownloadMsiAsync(string digest, Stream target, CancellationToken cancellationToken)
+    {
+        const int limit = 256 * 1024 * 1024;
+        if (digest.Length != 64 || digest.Any(c => c is not (>= '0' and <= '9' or >= 'a' and <= 'f')))
+            throw new AgentException("agent_update_verification_failed");
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(AgentHttp.Timeout);
+        var token = deadline.Token;
+        try
+        {
+            using var response = await http.GetAsync("/api/v1/agent/package?sha256=" + digest,
+                HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
+            if (response.StatusCode != HttpStatusCode.OK)
+                throw new AgentException("agent_update_download_failed");
+            if (response.Content.Headers.ContentLength is < 1 or > limit)
+                throw new AgentException("agent_update_verification_failed");
+
+            await using var body = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false);
+            using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            byte[] buffer = new byte[65536];
+            int read, total = 0;
+            while ((read = await body.ReadAsync(buffer, token).ConfigureAwait(false)) != 0)
+            {
+                deadline.CancelAfter(AgentHttp.Timeout);
+                total += read;
+                if (total > limit)
+                    throw new AgentException("agent_update_verification_failed");
+                hash.AppendData(buffer, 0, read);
+                await target.WriteAsync(buffer.AsMemory(0, read), token).ConfigureAwait(false);
+            }
+            if (total == 0 || !CryptographicOperations.FixedTimeEquals(hash.GetHashAndReset(), Convert.FromHexString(digest)))
+                throw new AgentException("agent_update_verification_failed");
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new AgentException("agent_update_timeout");
+        }
+        catch (Exception error) when (error is HttpRequestException or AuthenticationException)
+        {
+            throw new AgentException("agent_update_download_failed");
+        }
+    }
+
     private async Task<JsonObject> SendAsync(HttpMethod method, string path, JsonNode? body, CancellationToken cancellationToken,
         bool supportsFileAuditCatalog = false)
     {
@@ -79,11 +122,16 @@ public sealed class AgentHttpClient(HttpClient http, bool clientCertificateConfi
             {
                 try
                 {
-                    if (JsonNode.Parse(buffer.ToArray()) is JsonObject error && JsonRead.TryString(error["error"], out var code)
-                        && code is "agent_instance_name_mismatch" or "agent_registration_name_mismatch"
+                    if (JsonNode.Parse(buffer.ToArray()) is JsonObject error && JsonRead.TryString(error["error"], out var code))
+                    {
+                        if (path == "/api/v1/agent/enroll" && response.StatusCode == HttpStatusCode.BadRequest
+                            && code == "invalid_agent_registration_name")
+                            throw new TransportException(rejection, rejectedStatus) { EnrollmentRejectionReason = code };
+                        if (code is "agent_instance_name_mismatch" or "agent_registration_name_mismatch"
                             or "agent_csr_key_mismatch" or "agent_host_already_enrolled" or "agent_certificate_rejected"
                             or "agent_mtls_required" or "agent_service_unavailable" or "invalid_agent_module_config")
-                        rejection = code;
+                            rejection = code;
+                    }
                 }
                 catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException) { }
                 throw new TransportException(rejection, rejectedStatus);

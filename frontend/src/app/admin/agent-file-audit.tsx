@@ -321,10 +321,10 @@ export function AgentFileAuditControls({ agents, busy, change, accepted, serverC
         <button className="sli-ds-button" type="button" disabled={!mayWrite || !compatible || !original.length} onClick={() => submit("restore")}>{t("agents.fileAudit.restore")}</button>
       </div>
     </fieldset>
-    {!busy && sourceKind === "server" && current && current.command_id !== dismissedCommand ? <>
+    {!busy && sourceKind === "server" && primary && current && current.command_id !== dismissedCommand ? <>
       {serverCatalog && current.action !== "restore" ? <h3>{t(`agents.fileAudit.catalog.${current.action}Result`)}</h3> : null}
       <AgentFileAuditReadback key={`${current.agent_id}:${current.command_id}:${current.policy_revision}:${current.action}`}
-        accepted={current} permissionReportHref={permissionReportHref}
+        accepted={current} permissionReportHref={permissionReportHref} computerName={agentHostName(primary)}
         shareName={shareNames.length === 1 && formScopeIds.length === 1 && current.collection_scope_ids.length === 1
           && current.collection_scope_ids[0] === formScopeIds[0] ? shareNames[0] : undefined}/>
     </> : null}
@@ -335,8 +335,8 @@ export function AgentFileAuditControls({ agents, busy, change, accepted, serverC
 
 
 type ReadbackState = "loading" | "pending" | "delayed" | "unavailable" | "verified" | "partial" | "blocked" | "failed" | "denied" | "stale" | "unknown";
-export function AgentFileAuditReadback({ accepted, permissionReportHref, shareName }: {
-  accepted: AgentFileAuditCommand; permissionReportHref?: string; shareName?: string;
+export function AgentFileAuditReadback({ accepted, permissionReportHref, shareName, computerName }: {
+  accepted: AgentFileAuditCommand; permissionReportHref?: string; shareName?: string; computerName?: string;
 }) {
   const [result, setResult] = useState<{ state: ReadbackState; receipt?: AgentFileAuditStatus }>({ state: "loading" });
   const [attempt, setAttempt] = useState(0);
@@ -368,8 +368,13 @@ export function AgentFileAuditReadback({ accepted, permissionReportHref, shareNa
         }
         // Do not retain foreign/malformed receipt details under the requested command.
         setResult({ state, ...(["verified", "partial", "pending", "blocked", "failed"].includes(state) ? { receipt } : {}) });
-        if (state === "pending") poll = setTimeout(() => { void read(); }, 5_000);
-        else clearTimeout(deadline);
+        if (state === "pending") {
+          poll = setTimeout(() => { void read(); }, 5_000);
+        } else {
+          clearTimeout(deadline);
+          if (state === "failed" && receipt.check_agent_requirement)
+            poll = setTimeout(() => { void read(); }, 15_000);
+        }
       } catch (error) {
         if (cancelled) return;
         clearTimeout(deadline);
@@ -388,8 +393,25 @@ export function AgentFileAuditReadback({ accepted, permissionReportHref, shareNa
     };
   }, [accepted.agent_id, accepted.command_id, accepted.policy_revision, accepted.action, attempt]);
   const terminalFailure = result.state === "failed" || result.state === "blocked";
-  const scopeReceipt = accepted.collection_scope_ids.length === 1
-    ? result.receipt?.scopes?.[accepted.collection_scope_ids[0]] : undefined;
+  const scopes = result.receipt?.scopes;
+  const firstScopeReceipt = scopes?.[accepted.collection_scope_ids[0]];
+  const scopeReceipt = accepted.collection_scope_ids.length === 1 ? firstScopeReceipt : undefined;
+  const nativeFailure = result.state === "failed" && accepted.collection_scope_ids.every((id) =>
+    scopes?.[id]?.state === "failed" && scopes[id].reason_code === "native_unavailable");
+  const checkFailure = nativeFailure ? firstScopeReceipt : scopeReceipt;
+  if (accepted.action === "check" && computerName && terminalFailure && result.receipt?.reported_at
+    && checkFailure?.state === result.state) {
+    const requirement = checkFailure.reason_code === "native_unavailable" ? result.receipt.check_agent_requirement : undefined;
+    const failure = requirement ? t("agents.fileAudit.result.requiresAgentVersion", {
+      version: requirement.agent_version, minimum: requirement.minimum_version,
+    }) : fileAuditReason(checkFailure.reason_code)
+      ?? (checkFailure.read_error ? t(`agents.fileAudit.readError.${checkFailure.read_error.stage}`)
+        : t(checkFailure.reason_code === "native_unavailable" ? "file-audit.screen.audit_unreadable"
+          : `agents.fileAudit.result.${result.state}`));
+    return <p role="status">{t("agents.fileAudit.result.checkFailure", {
+      computer: computerName, time: formatDateTime(result.receipt.reported_at), reason: failure,
+    })}</p>;
+  }
   const reason = shareName && result.receipt?.reported_at && scopeReceipt?.state === result.state ? scopeReceipt.reason_code : undefined;
   const explanation = accepted.action === "check" && result.state === "partial" && reason === "coverage_incomplete"
     ? "agents.fileAudit.result.checkCoverageIncomplete"
@@ -409,7 +431,7 @@ export function AgentFileAuditReadback({ accepted, permissionReportHref, shareNa
         {fileAuditReason(row.reason_code) ?? (detail ? <>
           <p>{t(`agents.fileAudit.readError.${detail.stage}`)}</p>
           {code ? <p>{t("agents.fileAudit.readError.code", { code })}</p> : null}
-        </> : row.reason_code)}
+        </> : row.reason_code === "native_unavailable" ? t("file-audit.screen.audit_unreadable") : row.reason_code)}
       </dd></div>;
     })}</dl> : null}
     <button className="sli-ds-button" type="button" disabled={result.state === "loading"} onClick={() => {
@@ -425,7 +447,8 @@ export function AgentFileAuditReadback({ accepted, permissionReportHref, shareNa
       {result.receipt && (!terminalFailure || explanation) ? <dl>{accepted.collection_scope_ids.map((scope) => {
         const scopeReason = result.receipt?.scopes?.[scope]?.reason_code;
         return <div key={scope}>
-          <dt>{scope}</dt><dd>{scopeReason ? fileAuditReason(scopeReason) ?? scopeReason : t("agents.fileAudit.result.noScopeReceipt")}</dd>
+          <dt>{scope}</dt><dd>{scopeReason === "native_unavailable" ? t("file-audit.screen.audit_unreadable")
+            : scopeReason ? fileAuditReason(scopeReason) ?? scopeReason : t("agents.fileAudit.result.noScopeReceipt")}</dd>
         </div>;
       })}</dl> : null}
     </details>
