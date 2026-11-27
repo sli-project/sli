@@ -173,6 +173,21 @@ public sealed partial class AdV2Tests
         using var response=await client.GetAsync("/api/v2/reports/"+key+suffix+"?untrusted=bad",Ct);
         Assert.Equal(HttpStatusCode.BadRequest,response.StatusCode);Assert.Contains("report_parameter_unknown:untrusted",await response.Content.ReadAsStringAsync(Ct));Assert.Equal(0,store.Reads);
     }
+    [Theory]
+    [InlineData("within_30_days")]
+    [InlineData("days_31_to_90")]
+    [InlineData("over_90_days")]
+    [InlineData("never")]
+    [InlineData("over_60_days")]
+    [InlineData("missing")]
+    public void Computer_activity_accepts_current_choices_and_saved_links(string activity)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.QueryString = new("?domain=1&activity=" + activity);
+        var request = AdV2Endpoints.Parse(context.Request, "ad.computers.v6", "view", [1]);
+        Assert.Equal(activity, request.Params["activity"]!.GetValue<string>());
+    }
+
     [Fact]public void Domain_selection_cannot_cross_issued_scope()
     {
         var context=new DefaultHttpContext();context.Request.QueryString=new("?domain_id=2");

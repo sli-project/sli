@@ -207,7 +207,24 @@ internal static class AdInventoryRows
         Reason(type == "unknown", "unknown_type", "Тип объекта не определён"); Reason(Bool(raw["enabled"]) == true && age > threshold, "stale_activity", "Активность старше " + threshold + " дней"); Reason(Bool(raw["enabled"]) == true && age is null, "unavailable_activity", "Нет доступной даты активности"); Reason((raw.Int("userAccountControl") & 524288) != 0 || Bool(raw["trustedForDelegation"]) == true, "unconstrained_delegation", "Неограниченное делегирование");
         row["reasons"] = Array(reasons); row["reason_text"] = string.Join(", ", reasons.Select(r => r.Text("label"))); row["quality_issues"] = new JsonArray(); row["quality_text"] = null; row["semantic_findings"] = new JsonArray();
         row["ad_last_logon_utc"] = raw["lastLogonTimestamp"]?.DeepClone();
-        row["last_logon_utc"]=raw["eventLastSeen"]?.DeepClone()??raw["exactLastLogon"]?.DeepClone()??raw["lastLogonTimestamp"]?.DeepClone();
+
+        var eventLogon = Date(raw["eventLastSeen"]);
+        var controllerLogon = Date(raw["exactLastLogon"]);
+        var directoryLogon = Date(raw["lastLogonTimestamp"]);
+        var lastLogon = new[] { eventLogon, controllerLogon, directoryLogon }.Max();
+        row["last_logon_utc"] = lastLogon is {} logon ? PythonIso(logon) : null;
+        row["last_logon_source"] = lastLogon is null ? null
+            : lastLogon == eventLogon ? "windows_event"
+            : lastLogon == controllerLogon ? "domain_controllers" : "active_directory";
+        row["last_logon_age_days"] = lastLogon is {} last ? Math.Max(0, (int)Math.Floor((time - last).TotalDays)) : (int?)null;
+        var replicatedLogon = raw["sources"]?["last_logon_timestamp"];
+        var exactLogon = raw["sources"]?["exact_last_logon"];
+        var controllers = exactLogon?["details"];
+        long discovered = controllers.Int("discovered_dc_count");
+        bool never = lastLogon is null && replicatedLogon.Text("status") == "missing_in_source"
+            && exactLogon.Text("status") is "missing_in_source" or "no_record"
+            && discovered > 0 && controllers.Int("successful_dc_count") == discovered;
+        row["last_logon_state"] = lastLogon is not null ? "observed" : never ? "never" : "unknown";
         row["ou_path"]=raw["ou"]?.DeepClone()??row["ou_path"]?.DeepClone();row["operating_system_build"]=raw["osBuild"]?.DeepClone();row["classification"]=raw["classification"]?.DeepClone()??Obj(new{result=type,state=type=="unknown"?"unknown":"observed",rule_id="base_inventory_os_family",evidence=new[]{"OperatingSystem="+(raw.Text("osName")??"не передано")}});
         row["classification"]!["role_hint"]=raw["roleHint"]?.DeepClone();row["classification"]!["role_evidence"]=raw["roleEvidence"]?.DeepClone()??new JsonArray();
         row["collection"]=new JsonObject{["collected_at"]=raw["collectedAt"]?.DeepClone(),["query_dc"]=raw["queryDc"]?.DeepClone()??source["snapshot"]?["metadata"]?["query_dc"]?.DeepClone(),["collector_version"]=raw["collectorVersion"]?.DeepClone()??source["snapshot"]?["metadata"]?["collector_version"]?.DeepClone()};
@@ -301,12 +318,15 @@ internal static class AdInventoryRows
     internal static bool MatchesComputerActivity(JsonObject row, string? activity, long configuredThreshold)
     {
         int? days = row["activity"]?["age_days"]?.GetValue<int>();
+        int? lastLogonDays = row["last_logon_age_days"]?.GetValue<int>();
         long threshold = configuredThreshold > 0 ? configuredThreshold : 90;
         return activity switch
         {
             "missing" => days is null,
-            "within_30_days" => days <= 30,
-            "days_31_to_90" => days is >= 31 and <= 90,
+            "within_30_days" => lastLogonDays is >= 0 and <= 30,
+            "days_31_to_90" => lastLogonDays is >= 31 and <= 90,
+            "over_90_days" => lastLogonDays is > 90,
+            "never" => row.Text("last_logon_state") == "never",
             "over_60_days" => days > 60,
             "within_threshold" => days <= threshold,
             "over_threshold" => days > threshold,
