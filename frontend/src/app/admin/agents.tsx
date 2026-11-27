@@ -62,6 +62,30 @@ const certificateRejectionActions = {
   revoked: "agents.certificateRejection.revoked",
   invalid_chain: "agents.certificateRejection.invalidChain",
 } as const satisfies Record<NonNullable<AgentItem["certificate_rejection_reason"]>, string>;
+const updateFailureMessages = {
+  agent_update_verification_failed: "agents.update.verificationFailed",
+  agent_update_stage_failed: "agents.update.stageFailed",
+  agent_update_start_failed: "agents.update.installFailed",
+  agent_update_self_check_failed: "agents.update.installFailed",
+  agent_update_timeout: "agents.update.timeout",
+  agent_update_incompatible_version: "agents.update.incompatible",
+  agent_update_incompatible_platform: "agents.update.incompatible",
+  agent_update_incompatible_api: "agents.update.incompatible",
+  agent_update_insufficient_disk: "agents.update.insufficientDisk",
+  agent_update_download_failed: "agents.update.downloadFailed",
+  agent_update_msi_required: "agents.update.msiRequired",
+  agent_update_version_mismatch: "agents.update.versionMismatch",
+} as const;
+
+function agentUpdateState(update: NonNullable<AgentItem["update"]>): string {
+  if (update.status === "updating") return t("agents.update.updating", { version: update.version });
+  if (update.status === "updated") return t("agents.update.updated");
+  const reason = update.reason;
+  const message = reason && Object.hasOwn(updateFailureMessages, reason)
+    ? updateFailureMessages[reason as keyof typeof updateFailureMessages] : "agents.update.installFailed";
+  return t("agents.update.failed", { reason: t(message) });
+}
+
 const silent = (agent: AgentItem) => agent.status === "active" && (!agent.last_seen
   || Date.now() - Date.parse(agent.last_seen) > Math.max(300, (agent.collection_policy?.interval_seconds ?? 60) * 3) * 1000);
 
@@ -183,7 +207,11 @@ function AgentsContent() {
   };
   const columns: TableColumn<InventoryRow>[] = [
     { key: "host_name", label: t("agents.hostName"), render: (row) => "reason" in row ? row.reported_hostname || t("agents.enrollmentReason.unknownComputer") : agentHostName(row) },
-    { key: "agent_version", label: t("agents.version"), render: (row) => "reason" in row ? EMPTY_VALUE : row.agent_version || EMPTY_VALUE },
+    { key: "agent_version", label: t("agents.version"), render: (row) => {
+      if ("reason" in row) return EMPTY_VALUE;
+      const version = row.agent_version || EMPTY_VALUE;
+      return row.update ? `${version} · ${agentUpdateState(row.update)}` : version;
+    } },
     { key: "role", label: t("agents.computerRole"), render: (row) => {
       const role = "reason" in row ? undefined : computerRole(row);
       return role ? t(machineRoles[role]) : EMPTY_VALUE;

@@ -12,8 +12,11 @@ internal sealed class FileAuditNativeReadException(string code, uint nativeStatu
 
     internal static string Reason(string stage, Exception error)
     {
+        if (error is DllNotFoundException or EntryPointNotFoundException or PlatformNotSupportedException)
+            return "native_unavailable";
         var step = (error as AgentException)?.Message switch
         {
+            "file_audit_native_unavailable" => "native_unavailable",
             "file_audit_share_root_mismatch" => "share_path_mismatch",
             "file_audit_group_sid_unresolved" or "file_audit_group_domain_unavailable" => "local_group_identity_unavailable",
             "file_audit_group_members_unavailable" => "local_group_members_unavailable",

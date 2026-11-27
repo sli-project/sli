@@ -173,8 +173,9 @@ it("assigns the selected findings to the chosen user", async () => {
   await user.click(await screen.findByRole("checkbox", { name: "Select problem #41" }));
   await user.click(screen.getByRole("checkbox", { name: "Select problem #43" }));
   await user.click(within(screen.getByRole("group", { name: "Selected problems" })).getByRole("button", { name: "Assign" }));
-  const assignment = screen.getByRole("dialog", { name: "Assign" });
-  await chooseOption(within(assignment).getByLabelText("Assignee", { selector: "button" }), "8");
+  const assignment = await screen.findByRole("dialog", { name: "Assign" });
+  await user.click(await within(assignment).findByRole("button", { name: /Assignee/ }));
+  await user.click(await screen.findByRole("option", { name: "reviewer" }));
   await user.click(within(assignment).getByRole("button", { name: "Save decision" }));
   expect(decide).toHaveBeenLastCalledWith({ ids: [41, 43], assignee_id: 8 });
 });
