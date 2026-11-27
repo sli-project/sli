@@ -32,6 +32,7 @@ public sealed class RemainingDetectorTests
             Statements.Add(sql);
             JsonArray One(string key, JsonNode? value) => new(new JsonObject { [key] = value?.DeepClone() });
             if (sql.StartsWith("savepoint ") || sql.StartsWith("release savepoint ") || sql.StartsWith("rollback to savepoint ")) return Task.FromResult(new JsonArray());
+            if (sql.Contains("to_regprocedure('public.complete_account_batch460")) return Task.FromResult(One("compact",JsonValue.Create(false)));
             if (sql.Contains("ensure_default_qw_policy")) return Task.FromResult(One("admitted",JsonValue.Create(true)));
             if (sql.Contains("read_pending_file_acl_portions")) return Task.FromResult(One("portions",new JsonArray(AclPortion!.DeepClone())));
             if (sql.Contains("read_file_acl_portion_v265")) return Task.FromResult(One("portion",AclPortion));

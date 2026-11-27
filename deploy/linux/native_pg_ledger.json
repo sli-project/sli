@@ -663,6 +663,8 @@
     "config/postgres_migrations/457_file_audit_catalog_cache.sql": "60d20f38c22cb43727d65b5b24aecefb8f769db5894836629454ce72edabce64",
     "config/postgres_migrations/458_file_audit_activity.rollback.sql": "fa7207caccb95ef45cce009199a41c434efaf09586536b155c82bc4da83e05ad",
     "config/postgres_migrations/458_file_audit_activity.sql": "83bea9637cf41da2f3373e22fe21d613820af3da0310ad2d30650fd6898f8c67",
+    "config/postgres_migrations/460_account_check_rows.rollback.sql": "093f5408354b23cdc7087aefd1c0500aed9ff66627ee9258d5f4e6ed3e6c66d2",
+    "config/postgres_migrations/460_account_check_rows.sql": "390c17fe4b889a2d88b5ca91e733b41506b0cedfba64e0e4583db03f9c42cf85",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },

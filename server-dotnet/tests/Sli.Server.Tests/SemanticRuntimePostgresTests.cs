@@ -339,7 +339,10 @@ public sealed class SemanticRuntimePostgresTests(ITestOutputHelper output)
             }
         }
         async Task WaitForCheckpoint(Guid host) {
-            await using var check=new NpgsqlCommand("select exists(select 1 from semantic_account_decoy_checks where scope_json->>'source_instance_id'=@host)",owner);
+            await using var check=new NpgsqlCommand("""
+                select exists(select 1 from account_detection_checkpoints451
+                    where scope->>'source_instance_id'=@host and family='decoy' and last_evaluated_event_id is not null)
+                """,owner);
             check.Parameters.AddWithValue("host",host.ToString());
             while(await check.ExecuteScalarAsync(ct) is not true) {
                 Assert.False(process.HasExited,"worker exited before committing the source checkpoint");
