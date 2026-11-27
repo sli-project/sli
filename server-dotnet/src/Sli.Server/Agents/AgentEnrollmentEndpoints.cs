@@ -61,11 +61,34 @@ public static class AgentEnrollmentEndpoints
             await using var connection = await services.GetRequiredService<IPostgresConnectionFactory>().OpenAsync(ct);
             await using var transaction = await connection.BeginTransactionAsync(ct);
             var enrollment = services.GetRequiredService<AgentEnrollmentService>();
-            JsonObject result = renew
-                ? await enrollment.RenewAsync(connection, transaction, peer!, body, ct)
-                : await enrollment.EnrollAsync(connection, transaction, body, ct);
+            JsonObject result;
+            var status = 200;
+            if (renew)
+                result = await enrollment.RenewAsync(connection, transaction, peer!, body, ct);
+            else
+            {
+                await transaction.SaveAsync("agent_enrollment", ct);
+                try
+                {
+                    result = await enrollment.EnrollAsync(connection, transaction, body, ct);
+                }
+                catch (AgentCertificateException error)
+                {
+                    // Roll back any partial enrollment before committing its refusal.
+                    await transaction.RollbackAsync("agent_enrollment", ct);
+                    result = new JsonObject { ["error"] = error.Code };
+                    status = error.Status;
+                }
+                if (result["error"]?.GetValue<string>() is { } rejection)
+                {
+                    // This result deliberately retains the recorded identity conflict.
+                    if (status == 200) status = 409;
+                    await AgentEnrollmentService.RecordRejectionAsync(connection, transaction, body, rejection,
+                        context.Connection.RemoteIpAddress, ct);
+                }
+            }
             await transaction.CommitAsync(ct);
-            await DomainHttp.WriteAsync(context, result, result["error"]?.GetValue<string>()=="agent_identity_computer_conflict" ? 409 : 200, ct);
+            await DomainHttp.WriteAsync(context, result, status, ct);
         }
         catch (AgentCertificateException error)
         {

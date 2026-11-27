@@ -61,7 +61,7 @@ public sealed partial class AgentEnrollmentService
         var dc = await ResolveDcAsync(db, tx, registration.Source, ct, agent, reason => missing = reason);
         var registeredHost = HostName(StringValue(registration.Agent, "registration_host_name"));
         bool canCreate = dc is null && registration.CanBootstrap && !registration.Pinned && registeredHost is { Length: <= 128 } &&
-            string.Equals(registeredHost, registration.Source, StringComparison.OrdinalIgnoreCase);
+            SameHostName(registeredHost, registration.Source);
         var original = dc;
         if (identityReport is not null)
         {
@@ -69,9 +69,9 @@ public sealed partial class AgentEnrollmentService
             // The authenticated report must agree with the owner-issued registration.
             string? reportedDns = HostName(StringValue(identityReport, "domain_dns"));
             if (!registration.CanBootstrap || dc is null && !canCreate || registeredHost is null || host is null ||
-                !(string.Equals(host, registeredHost, StringComparison.OrdinalIgnoreCase) ||
+                !(SameHostName(host, registeredHost) ||
                     !host.Contains('.') && reportedDns is not null &&
-                    string.Equals($"{host}.{reportedDns}", registeredHost, StringComparison.OrdinalIgnoreCase)))
+                    SameHostName($"{host}.{reportedDns}", registeredHost)))
                 return dc is null ? "no_server" : null;
             if (StringValue(identityReport, "machine_role") != "domain_controller")
                 return dc is null ? "missing_role" : null;

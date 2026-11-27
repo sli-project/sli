@@ -156,13 +156,13 @@ def test_agent_issuer_is_opt_in_and_only_given_to_api(config):
                                          ("ExecMainStartTimestampMonotonic", "0")])
 def test_health_rejects_crash_loop_and_inactive_unit_before_probe(identity, monkeypatch, field, value):
     identity[field] = value
-    monkeypatch.setattr(healthcheck, "healthy", lambda *a, **kw: pytest.fail("must not probe"))
+    monkeypatch.setattr(healthcheck, "native_healthy", lambda *a, **kw: pytest.fail("must not probe"))
     assert not native.healthy_service("api")
 
 
 def test_health_rejects_reused_pid_before_probe(identity, monkeypatch):
     monkeypatch.setattr(native, "process_start", lambda pid: 80.0)
-    monkeypatch.setattr(healthcheck, "healthy", lambda *a, **kw: pytest.fail("must not probe"))
+    monkeypatch.setattr(healthcheck, "native_healthy", lambda *a, **kw: pytest.fail("must not probe"))
     assert not native.healthy_service("semantic")
 
 
@@ -173,7 +173,7 @@ def test_health_rejects_reused_pid_before_probe(identity, monkeypatch):
     ("remote-access", Path("/run/sli/remote-access/plugin-radius-session-observation.json"))])
 def test_health_binds_probe_to_main_pid_and_current_start(identity, monkeypatch, service, path):
     calls = []
-    monkeypatch.setattr(healthcheck, "healthy", lambda *a, **kw: calls.append((a, kw)) or True)
+    monkeypatch.setattr(healthcheck, "native_healthy", lambda *a, **kw: calls.append((a, kw)) or True)
     assert native.healthy_service(service)
     params = calls[0][1]
     assert params["process_pid"] == 42 and params["status_path"] == path
@@ -184,7 +184,7 @@ def test_health_rechecks_identity_after_probe(identity, monkeypatch):
     def changed(*args, **kwargs):
         identity["InvocationID"] = "b" * 32
         return True
-    monkeypatch.setattr(healthcheck, "healthy", changed)
+    monkeypatch.setattr(healthcheck, "native_healthy", changed)
     assert not native.healthy_service("semantic")
 
 
@@ -192,7 +192,7 @@ def test_old_restarts_do_not_permanently_reject_recovered_worker(identity, monke
     identity.update(NRestarts="5", ExecMainStartTimestampMonotonic="1000000")
     monkeypatch.setattr(native.time, "monotonic", lambda: 500.0)
     monkeypatch.setattr(native, "process_start", lambda pid: 1.0)
-    monkeypatch.setattr(healthcheck, "healthy", lambda *a, **kw: True)
+    monkeypatch.setattr(healthcheck, "native_healthy", lambda *a, **kw: True)
     assert native.healthy_service("semantic")
 
 
@@ -223,13 +223,66 @@ def test_db_health_uses_native_pid_and_start_as_sql_parameters(monkeypatch):
     captured = []
     conn = SimpleNamespace(execute=lambda sql, params: captured.append((sql, params)) or SimpleNamespace(fetchone=lambda: (True,)))
     monkeypatch.setattr(healthcheck, "load_config", lambda: SimpleNamespace(postgres_dsn="synthetic"))
+    monkeypatch.setenv("ADLOG_PG_DSN", "synthetic")
+    monkeypatch.delenv("ADLOG_PG_DSN_FILE", raising=False)
+    monkeypatch.delenv("ADLOG_PG_PASSWORD", raising=False)
+    monkeypatch.delenv("ADLOG_PG_PASSWORD_FILE", raising=False)
     monkeypatch.setattr(psycopg, "connect", lambda *a, **kw: nullcontext(conn))
     start = datetime.now(timezone.utc)
     assert healthcheck.healthy("semantic", process_pid=42, started_at=start)
+    assert healthcheck.native_healthy("semantic", process_pid=42, started_at=start)
+    assert captured[0] == captured[1]
     sql, params = captured[0]
     assert params == ("semantic", 120, 42, start, start)
     assert "process_pid = %s" in sql and "heartbeat_at >= %s" in sql
     assert "heartbeat_at <= now()" in sql and "connect" not in sql.lower()
+
+
+@pytest.mark.parametrize("state", ["empty", "existing", "occupied", "legacy", "unmigrated", "worker-active"])
+def test_event_storage_bootstrap_keeps_authorization_decision_and_digest(state):
+    from server.sli.storage.storage_v2_runtime_authorization import runtime_authorization_digest
+
+    inserts = []
+
+    class Connection:
+        def transaction(self):
+            return nullcontext()
+
+        def execute(self, sql, params=None):
+            query = sql.as_string() if not isinstance(sql, str) else sql
+            decision = None
+            if "schema_migrations" in query:
+                decision = (state != "unmigrated",)
+            elif "select exists(select 1 from public.storage_v2_runtime_authorizations)" in query:
+                decision = (state == "existing",)
+            elif "pg_try_advisory_xact_lock" in query:
+                decision = (state != "worker-active",)
+            elif "to_regclass" in query:
+                decision = (state == "legacy",)
+            elif query.startswith("select exists"):
+                decision = (state == "occupied" and '"event_hot"' in query,)
+            elif query.startswith("select current_database"):
+                decision = ("sli", "synthetic-é")
+            elif query.startswith("insert into public.storage_v2_runtime_authorizations"):
+                inserts.append(params)
+            return SimpleNamespace(fetchone=lambda: decision)
+
+    if state == "worker-active":
+        with pytest.raises(native.RuntimeErrorCode, match="native_event_storage_worker_active"):
+            native.bootstrap_event_storage(Connection())
+    else:
+        native.bootstrap_event_storage(Connection())
+
+    if state != "empty":
+        assert not inserts
+        return
+    [(authority, preflight, digest, archive, evidence_json, issuer, issued, expires)] = inserts
+    evidence = json.loads(evidence_json)
+    assert authority == "storage-v2-fresh-bootstrap/v1"
+    assert issued + timedelta(days=365) == expires
+    assert digest == runtime_authorization_digest(
+        route="v2", authority=authority, preflight_digest=preflight, archive_root=archive, evidence=evidence,
+        authorized_by=issuer, authorized_at=issued, expires_at=expires)
 
 
 def test_executor_and_plugin_writers_use_explicit_run_directory(tmp_path, monkeypatch):
@@ -333,7 +386,7 @@ def test_ready_adopts_docker_ledger_with_bundled_vpn_through_read_only_observer(
     monkeypatch.setattr(native, "release", lambda: (root, accepted.manifest, "digest"))
     monkeypatch.setattr(psycopg, "connect", lambda **kwargs: nullcontext(Connection()))
     monkeypatch.setattr(native_host, "credential", lambda name: "synthetic-only")
-    monkeypatch.setattr(installed_state, "pointers_match", lambda *args: None)
+    monkeypatch.setattr(installed_state, "native_pointers_match", lambda *args: None)
     monkeypatch.setattr(urllib.request, "urlopen", lambda *args, **kwargs: nullcontext(
         SimpleNamespace(status=200, read=lambda limit: b"26.8.35.10")))
     if drift:
@@ -798,7 +851,7 @@ def test_native_observation_is_read_only_and_needs_no_clickhouse(monkeypatch):
     monkeypatch.setattr(psycopg, "connect", connect)
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
     monkeypatch.setattr(native_host, "credential", lambda name: "synthetic-not-logged")
-    monkeypatch.setattr(installed_state, "pointers_match", lambda root, installed: None)
+    monkeypatch.setattr(installed_state, "native_pointers_match", lambda root, installed: None)
     pg, ch, ledger = native.observe(Path("/opt/sli/releases/synthetic"), state)
     assert pg == "18.6" and ch == []
     assert ledger == [{"version": 1, "name": "synthetic", "sha256": "checksum"}]

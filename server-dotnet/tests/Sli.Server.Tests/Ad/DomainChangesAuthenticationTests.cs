@@ -145,7 +145,10 @@ public sealed class DomainChangesAuthenticationTests
         var ct=TestContext.Current.CancellationToken;
         await using var pg=new PostCollectionPostgres(canonicalSchema:true); await pg.StartAsync(ct);
         await using var db=await pg.OpenAsync(ct); await Seed(pg,db,ct);
-        await PostCollectionPostgres.Sql(db,"revoke select on event_hot from adlog_user",ct);
+        await PostCollectionPostgres.Sql(db, """
+            alter table event_hot add column ad_user_logon_recorder435 bigint, add column ad_user_workplace_type435 smallint;
+            revoke select on event_hot from adlog_user;
+            """, ct);
         await using var app=await pg.OpenAsync(ct,"adlog_user"); await using var tx=await app.BeginTransactionAsync(ct);
         var error=await Assert.ThrowsAsync<PostgresException>(()=>AdLastWorkplace.ReadAsync(app,[7],[Sid],ct));
         Assert.Equal("42501",error.SqlState);

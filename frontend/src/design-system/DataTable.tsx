@@ -40,7 +40,7 @@ export type TableColumn<Row> = {
 };
 
 export function DataTable<Row>({
-  columns, rows: resultRows, rowKey, sort, onSort, onRowClick, selectedKey, caption,
+  columns, rows: resultRows, rowKey, sort, onSort, onRowClick, selectedKey, caption, labelledBy,
   hasMore = false, loadingMore = false, onLoadMore, total: serverTotal, stickyHeader = true, pagination: serverPaging, showFooter = true,
   compact, density, expanded, afterRow, renderExpanded, toolbar, toolbarEnd, footerControls, wrapCells = false,
   pageSize: serverPageSize, localPagination, columnSample = resultRows, columnsControlTarget, rowGroup, rowDetail, expandedContent, emptyContent, renderExpandedRow,
@@ -52,7 +52,6 @@ export function DataTable<Row>({
   onSort?: (field: string) => void;
   onRowClick?: (row: Row) => void;
   selectedKey?: string | null;
-  caption: string;
   expandedContent?: (row: Row) => ReactNode;
   rowGroup?: (row: Row) => { key: string; heading: ReactNode; collapsed: boolean };
   rowDetail?: (row: Row) => ReactNode;
@@ -82,7 +81,7 @@ export function DataTable<Row>({
   /** Complete result when the caller handles paging locally. */
   columnSample?: Row[];
   columnsControlTarget?: HTMLElement | null;
-}) {
+} & ({ caption: string; labelledBy?: never } | { caption?: never; labelledBy: string })) {
   const { formatCell } = useDateFormatters();
   const [visibility, setVisibility] = useState<VisibilityState>({});
   const [localSize, setLocalSize] = useState(50);
@@ -154,8 +153,8 @@ export function DataTable<Row>({
   return <div className="sli-ds-table" data-wrap={wrapCells || undefined} data-compact={compact || undefined} data-density={density}>
     {toolbar || toolbarEnd ? <div className="sli-ds-table__toolbar">{toolbar}{columnsMenu}{toolbarEnd}</div> : columnsMenu}
     <div className="sli-ds-table__scroll" data-sticky={stickyHeader || undefined}>
-      <table data-responsive={columns.some((column) => column.mobile === false) || undefined}>
-        <caption className="sli-ds-sr-only">{caption}</caption>
+      <table aria-labelledby={labelledBy} data-responsive={columns.some((column) => column.mobile === false) || undefined}>
+        {caption ? <caption className="sli-ds-sr-only">{caption}</caption> : null}
         <thead>{table.getHeaderGroups().map((group) => <tr key={group.id}>{group.headers.map((header) => {
           const column = header.column.columnDef.meta as TableColumn<Row>;
           const active = sort?.field === column.key;
