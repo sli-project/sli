@@ -82,12 +82,17 @@ public sealed partial class AdDcImportPerformanceTests
         await fixture.Pg.ApplyFileAsync(path, null, ct);
         await AssertRate(unchanged, AdDcConfig.DefaultRateLimitPerMinute, 4);
         await AssertRate(Agent, 300, 3);
-        await AssertNewDcRateAsync(admin, ct);
         await fixture.AssertNoSqlErrorsAsync(ct);
     }
 
-    private static async Task AssertNewDcRateAsync(NpgsqlConnection db, CancellationToken ct)
+    [Fact]
+    public async Task New_dc_enrollment_uses_the_current_default_capacity()
     {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct);
+        await using var db = new NpgsqlConnection(fixture.Pg.ConnectionString);
+        await db.OpenAsync(ct);
         using var certificates = new Certificates();
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var host = Guid.NewGuid(); var tokenId = Guid.NewGuid();
@@ -112,5 +117,6 @@ public sealed partial class AdDcImportPerformanceTests
         var policy = CollectionControl.Parse(JsonNode.Parse((string)(await query.ExecuteScalarAsync(ct))!)!);
         Assert.Equal(AdDcConfig.DefaultRateLimitPerMinute, policy.RateLimitPerMinute);
         await tx.CommitAsync(ct);
+        await fixture.AssertNoSqlErrorsAsync(ct);
     }
 }

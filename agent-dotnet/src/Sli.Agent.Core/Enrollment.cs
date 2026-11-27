@@ -11,7 +11,8 @@ namespace Sli.Agent.Core;
 
 /// <summary>Enrollment and renewal use the existing server contract and the same key as the durable spool.</summary>
 public sealed class Enrollment(HostIdentityStore store, IAgentControlTransport transport, TimeProvider clock,
-    Func<string?>? readProductType = null, Func<(string Dns, string Forest, string? Sid)?>? readDomain = null)
+    Func<string?>? readProductType = null, Func<(string Dns, string Forest, string? Sid)?>? readDomain = null,
+    Func<CancellationToken, bool>? hasFileShares = null)
 {
     private static string? ReadProductType()
     {
@@ -77,7 +78,8 @@ public sealed class Enrollment(HostIdentityStore store, IAgentControlTransport t
         request["agent_version"]=typeof(Enrollment).Assembly.GetName().Version!.ToString(3);
         // Local discovery is a registration hint. The server owns scope authorization.
         bool isDc = (readProductType ?? ReadProductType)() == "LanmanNT";
-        request["machine_role"] = isDc ? "domain_controller" : "workstation";
+        request["machine_role"] = isDc ? "domain_controller"
+            : hasFileShares?.Invoke(cancellationToken) == true ? "file_server" : "workstation";
         if (isDc && (readDomain ?? ReadDcDomain)() is { } domain)
         {
             request["domain_dns"] = domain.Dns;

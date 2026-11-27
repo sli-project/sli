@@ -64,7 +64,7 @@ DATA_DIRECTORIES = {**{name: (0o2770, "sli-data") for name in
                       ("ingress", "spool", "evidence", "logs", "runtime")},
                     "plugins": (0o755, "root")}
 IMPORT_QUEUE_LOCK = "/var/lib/sli/runtime/postgres-import.queue.lock"
-PRESERVED_DATA_DIRECTORIES = frozenset({"state", "recovery", "drills", "transactions", "backup-status"})
+PRESERVED_DATA_DIRECTORIES = frozenset({"state", "recovery", "drills", "transactions", "backup-status", "agent-installers"})
 SERVICES = {
     "api": ("sli-api", "api", ()),
     "post-collection": ("sli-post", "post_collection", ("--poll-seconds", "30")),
@@ -432,6 +432,9 @@ def dotnet_unit(release, config, service="api"):
         policy += f'Environment="SLI_BIND={config["bind"]}"\n'
         policy += f'Environment="Sli__Release__PackageRoot=/opt/sli/releases/{release}"\n'
         policy += "LoadCredential=sli-installation:/var/lib/sli/state/installed.json\n"
+        if config.get("agents"):
+            policy += "StateDirectory=sli/agent-installers\nStateDirectoryMode=0700\n"
+            policy += f'Environment="SLI_AGENT_INSTALLER_ORIGIN={config.get("public_url") or clickhouse.public_url(config)}"\n'
     if service == "post-collection":
         # Python resolves the frozen source catalog relative to /opt/sli/current.
         policy += 'Environment="Sli__EventCatalogPath=/opt/sli/current/config/event_catalog.json"\n'
