@@ -66,7 +66,8 @@ public sealed partial class InstallationService
             item["data_receipts"] = receipts[id];
             if (id == "sli.remote-access") item["configured"] = RemoteConfigured();
             var sigma = id == "sli.sigma" && Bool(item["enabled"]) ? await SigmaStatusAsync(ct) : null;
-            item["status"] = PluginPresentation(item, receipts[id], moduleReceipts, sources, sigma, now);
+            var radius = id == "sli.remote-access" && Bool(item["enabled"]) ? await RadiusStatusSourcesAsync(ct) : null;
+            item["status"] = PluginPresentation(item, receipts[id], moduleReceipts, sources, radius, sigma, now);
         }
         return items;
     }

@@ -148,6 +148,9 @@ export type PluginState = {
   source_names?: string[];
   status?: {
     state: "disabled" | "no_sources" | "waiting" | "working" | "error";
+    reason?: "disabled" | "no_sources" | "no_folders" | "waiting" | "working" | "status_unavailable" | "collection_delayed" | "collection_failed";
+    next_action?: "select_file_folders" | "connect_file_server" | "install_workstation_agent" | "connect_nps" | "connect_sigma_events"
+      | "connect_domain_controller" | "check_first_delivery" | "check_collection" | "reload_status" | null;
     last_data_at: string | null;
     error_at: string | null;
     error_object: string | null;
