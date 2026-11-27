@@ -1,13 +1,12 @@
-name: Agent .NET MSI (unsigned, manual)
+name: Agent .NET MSI (unsigned)
 
-# Manual beta build of the .NET agent; no signing or enrollment material.
+# Shared beta kit build and PR lifecycle validation; no signing or enrollment material.
 # Fail closed if the hosted image no longer contains the locked native toolchain.
 on:
   workflow_dispatch:
   workflow_call:
     inputs:
       commit:
-        required: true
         type: string
       branch_build:
         type: boolean
@@ -111,10 +110,10 @@ jobs:
         run: |
           $principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
           if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-            Write-Warning 'No elevated installer access: MSI tables and action conditions verified; installation lifecycle NOT executed.'
-            exit 0
+            throw 'MSI lifecycle requires an elevated disposable Windows runner.'
           }
           $env:SLI_AGENT_MSI_DISPOSABLE = '1'
+          $env:SLI_AGENT_MSI_LOGS = Join-Path $env:RUNNER_TEMP 'sli-msi-lifecycle'
           $env:SLI_AGENT_MSI_BASELINE = Join-Path $env:GITHUB_WORKSPACE '.net-local/agent-dotnet/SliAgent.msi'
           $env:SLI_AGENT_MSI_UPGRADE = Join-Path $env:GITHUB_WORKSPACE '.net-local/agent-dotnet-upgrade/SliAgent.msi'
           dotnet test tests/Sli.Agent.Tests/Sli.Agent.Tests.csproj -c Release `
@@ -149,3 +148,11 @@ jobs:
           path: agent-msi-artifact
           if-no-files-found: error
           retention-days: 14
+      - name: Keep verbose Windows Installer logs on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sli-agent-msi-lifecycle-logs
+          path: ${{ runner.temp }}/sli-msi-lifecycle
+          if-no-files-found: ignore
+          retention-days: 7

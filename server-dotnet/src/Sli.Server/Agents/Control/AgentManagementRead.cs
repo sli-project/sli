@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Npgsql;
+using Sli.Server.Agents.Updates;
 using Sli.Server.Hosting;
 
 namespace Sli.Server.Agents.Control;
@@ -24,7 +25,7 @@ public sealed partial class AgentManagementService
             and (status in ('active','replaced') or not exists(select 1 from sli_agent_audit retired where retired.target=sli_agents.id::text
                 and retired.action='disable' and retired.details->>'reason'='registration_replaced'))
             """;
-        var parameters = new List<NpgsqlParameter>();
+        var parameters = new List<NpgsqlParameter> { new("shipped", ShippedAgentUpdate.Actor) };
         if (rawId is not null) parameters.Add(new NpgsqlParameter("id", AgentControlJson.Id(rawId)));
         if (rawId is null && after is not null)
         {
@@ -40,7 +41,30 @@ public sealed partial class AgentManagementService
                 applied_policy_revision,rights_probe,collection_policy,applied_collection_state,windows_audit,
                 coalesce(rights_probe->>'agent_version',
                     (select version from sli_agent_update_results v where v.agent_id=sli_agents.id order by observed_at desc limit 1),
-                    (select details->>'agent_version' from sli_agent_audit v where v.target=sli_agents.id::text and v.action='issue' order by id desc limit 1)) as agent_version
+                    (select details->>'agent_version' from sli_agent_audit v where v.target=sli_agents.id::text and v.action='issue' order by id desc limit 1)) as agent_version,
+                case when status='active' then (
+                    select jsonb_build_object('status',candidate.state,'version',candidate.version,'reason',candidate.reason)
+                    from (
+                        select 0 as priority,p.version,
+                            case when r.status is null then 'updating' when r.status='updated' and r.version=p.version then 'updated' else 'failed' end as state,
+                            case when r.status='updated' and r.version<>p.version then 'agent_update_version_mismatch' else r.reason end as reason
+                        from sli_agent_update_policy a join sli_agent_update_packages p on p.sha256=a.package_sha256
+                        left join lateral (
+                            select r.status,r.version,r.reason from sli_agent_update_results r
+                            where r.agent_id=a.agent_id and r.package_sha256=p.sha256
+                            order by r.observed_at desc limit 1
+                        ) r on true where a.agent_id=sli_agents.id
+                        union all
+                        select 1,w.version,case when m.state='pending' then 'updating' else m.state end,m.reason
+                        from sli_agent_update_wave_members m join sli_agent_update_waves w on w.id=m.wave_id
+                        where m.agent_id=sli_agents.id and w.created_by=@shipped
+                            and w.package_sha256=(select value from platform_settings where key='agents.shipped_update')
+                            and (m.state in ('updated','failed') or (
+                                w.status='running' and m.state='pending' and
+                                exists(select 1 from platform_settings where key='agents.automatic_update' and value='automatic')))
+                            and not exists(select 1 from sli_agent_update_policy a where a.agent_id=m.agent_id)
+                    ) candidate order by candidate.priority limit 1
+                ) end as "update"
             from sli_agents
             """ + "\n" + filter + "\norder by created_at desc,id limit 101", ct, parameters.ToArray());
         const int pageSize = 100;
