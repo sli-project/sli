@@ -28,7 +28,10 @@ public sealed class AgentPacketService(TimeProvider clock, AgentInboxLimits limi
         JsonObject FileReject(string reason,bool advanced=false,string status="rejected")
         {
             var receipt=Reject(Receipt.FileAuditInvalid,status);
-            receipt["error_reason"]=reason;
+            // Older agents require an allowlisted reason to quarantine a final rejection.
+            bool detailed=AgentFileAuditValidator.IsPayloadDetail(reason);
+            receipt["error_reason"]=detailed ? Receipt.FileAuditInvalidPayload : reason;
+            if (detailed) receipt["error_detail"]=reason;
             receipt["transport_advanced"]=advanced;
             return receipt;
         }
@@ -37,7 +40,7 @@ public sealed class AgentPacketService(TimeProvider clock, AgentInboxLimits limi
         bool fileAudit=envelope.ModuleId==FileAuditPolicy.ModuleId;
         var summary=fileAudit ? await ledger.SummaryAsync(envelope,ct) : null;
         if (summary?["expired_envelope"] is JsonObject rejected && rejected["sequence"]?.GetValue<long>()==envelope.Sequence
-            && JsonRead.TryString(summary["expired_envelope_rejection"],out var priorReason) && Receipt.IsFileAuditRejectionReason(priorReason))
+            && JsonRead.TryString(summary["expired_envelope_rejection"],out var priorReason) && AgentFileAuditValidator.IsRejectionReason(priorReason))
             return Packets.Digest(rejected)==Packets.Digest(envelope.ToJson()) ? FileReject(priorReason,true) : Reject("agent_sequence_conflict");
         var existing=accounting ? await ledger.ExistingAsync(envelope,ct) : null;
         bool filePermissions=fileAudit &&
@@ -215,7 +218,7 @@ public sealed class AgentPacketService(TimeProvider clock, AgentInboxLimits limi
             }
             catch (ProtocolException e) { reason=e.Reason ?? Receipt.FileAuditInvalidPayload; }
             catch (Exception e) when (e is AgentException or InvalidOperationException or ArgumentException)
-            { reason=Receipt.FileAuditInvalidPayload; }
+            { reason=AgentFileAuditValidator.InvalidPolicy; }
             if (reason is not null)
             {
                 // Only a signed packet on the bound, contiguous stream can move the transport tip.

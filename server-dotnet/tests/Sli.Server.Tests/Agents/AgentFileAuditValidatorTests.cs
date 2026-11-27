@@ -12,6 +12,50 @@ namespace Sli.Server.Tests.Agents;
 public sealed class AgentFileAuditValidatorTests
 {
     internal static readonly Guid ActionHost=Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+
+    [Theory]
+    [InlineData("0000000000000000161-c811bb2c-e37d-4195-9b56-07ed20cf1c10.rejected", 19)]
+    [InlineData("0000000000000000165-ae478289-1060-4c51-aa9e-8737bbe624cc.rejected", 0)]
+    public void Replays_captured_file_audit_packet(string fileName, int count)
+    {
+        string? directory = Environment.GetEnvironmentVariable("SLI_FILE_AUDIT_REPLAY_DIR");
+        Assert.SkipWhen(directory is null, "Set SLI_FILE_AUDIT_REPLAY_DIR to the lab sample directory.");
+        var captured = SignedPacket.FromJson(JsonNode.Parse(File.ReadAllBytes(Path.Combine(directory!, fileName))));
+        var envelope = captured.Envelope;
+        Assert.Equal(envelope.PayloadSha256, Packets.Digest(captured.Payload));
+        Assert.Equal(envelope.PayloadBytes, CanonicalJson.Length(captured.Payload));
+        var (_, _, config) = ActionPacket();
+        config.Value.Remove("source_name");
+        config.Value["policy_revision"] = "7";
+        config.Roots[0]!["path"] = @"C:\SLI-Lab-Files\Обмен";
+        config.Roots[0]!["share_name"] = "LAB-Exchange";
+        var policy = FileAuditPolicy.Parse(config.Value);
+
+        var host = Guid.Parse(envelope.SourceInstanceId);
+        Assert.Equal(count, AgentFileAuditValidator.Validate(envelope, captured.Payload, policy, host,
+            serverFileEventsOnly: count > 0, transportGap: true).Count);
+        var unprovenGap = Assert.Throws<ProtocolException>(() =>
+            AgentFileAuditValidator.Validate(envelope, captured.Payload, policy, host, serverFileEventsOnly: count > 0));
+        Assert.Equal("invalid_continuity", unprovenGap.Reason);
+    }
+
+    [Theory]
+    [InlineData(-1, false)]
+    [InlineData(0, true)]
+    [InlineData(30_000, true)]
+    [InlineData(30_001, false)]
+    public void Collection_time_must_precede_signing_within_the_capture_budget(int signingDelayMs, bool accepted)
+    {
+        var (envelope, packet, policy) = ActionPacket();
+        var signedAt = Iso8601.ParseUtc(envelope.ObservedAtUtc).AddMilliseconds(signingDelayMs);
+        envelope = envelope with { ObservedAtUtc = Iso8601.Format(signedAt) };
+        if (accepted)
+            Assert.Single(AgentFileAuditValidator.Validate(envelope, packet, policy, ActionHost));
+        else
+            Assert.Equal("invalid_observation_time", Assert.Throws<ProtocolException>(() =>
+                AgentFileAuditValidator.Validate(envelope, packet, policy, ActionHost)).Reason);
+    }
+
     internal static (Envelope Envelope,JsonObject Packet,FileAuditPolicy Policy) ActionPacket(string operation="write",int eventId=4663)
     {
         var policy=FileAuditPolicy.Parse(new JsonObject {
