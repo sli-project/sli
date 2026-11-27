@@ -45,6 +45,7 @@ public sealed class MsiLifecycleWindowsTests(ITestOutputHelper output)
         var logRoot = Environment.GetEnvironmentVariable("SLI_AGENT_MSI_LOGS") ?? Path.GetTempPath();
         var logs = Path.Combine(logRoot, "sli-msi-lifecycle-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(logs);
+        var personalized = Path.Combine(logs, "personalized.msi");
         var attemptedInstall = false;
         try
         {
@@ -153,14 +154,28 @@ public sealed class MsiLifecycleWindowsTests(ITestOutputHelper output)
             AgentRuntime.CreateFiles().EnsureDirectory(recoveryQueue);
             File.Copy(Path.Combine(dataRoot, "retained-queue-state", Path.GetFileName(packetPath)),
                 Path.Combine(recoveryQueue, Path.GetFileName(packetPath)));
-            var personalized = Path.Combine(logs, "personalized.msi");
             const string newServer = "https://127.0.0.1:2/";
             var pin = Convert.ToHexStringLower(SHA256.HashData(authority.Root.RawData));
+            string sameVersionProduct;
+            string sameVersion;
+            using (var installed = registry.OpenSubKey(MsiConfiguration.RegistryPath + @"\Product"))
+            {
+                Assert.NotNull(installed);
+                sameVersionProduct = Assert.IsType<string>(installed.GetValue("ProductCode"));
+                sameVersion = Assert.IsType<string>(installed.GetValue("Version"));
+            }
             Personalize(upgrade, personalized, newServer, pin, Convert.ToBase64String(authority.Root.RawData));
 
-            // Same ProductCode, fresh PackageCode and embedded properties, just as in a console download.
+            // Use the same /i entry point as opening a console download, without repair properties.
             await Msi("personalized-reinstall", "/i", personalized, "/qn", "/norestart");
             AssertServiceRunning();
+            using (var installed = registry.OpenSubKey(MsiConfiguration.RegistryPath + @"\Product"))
+            {
+                Assert.NotNull(installed);
+                Assert.NotEqual(sameVersionProduct, installed.GetValue("ProductCode"));
+                Assert.Equal(sameVersion, installed.GetValue("Version"));
+            }
+            Assert.Equal(-1, MsiQueryProductState(sameVersionProduct)); // INSTALLSTATE_UNKNOWN
             var settings = MsiConfiguration.ReadSettings();
             Assert.Equal(newServer, settings["Agent:ServerUrl"]);
             Assert.Equal(pin, settings["Agent:CaFingerprint"]);
@@ -186,7 +201,9 @@ public sealed class MsiLifecycleWindowsTests(ITestOutputHelper output)
         {
             if (attemptedInstall)
             {
-                // Only these two test packages can be removed; never enumerate or uninstall other products.
+                // Remove only the packages used by this test.
+                if (File.Exists(personalized))
+                    await Msi("cleanup-personalized", "/x", personalized, "/qn", "/norestart", allowAbsent: true);
                 await Msi("cleanup-upgrade", "/x", upgrade, "/qn", "/norestart", allowAbsent: true);
                 await Msi("cleanup-baseline", "/x", baseline, "/qn", "/norestart", allowAbsent: true);
             }
@@ -242,6 +259,9 @@ public sealed class MsiLifecycleWindowsTests(ITestOutputHelper output)
         }
     }
 
+    [DllImport("msi.dll", EntryPoint = "MsiQueryProductStateW", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern int MsiQueryProductState(string productCode);
+
     private static void Personalize(string source, string destination, string server, string pin, string ca)
     {
         File.Copy(source, destination);
@@ -250,6 +270,10 @@ public sealed class MsiLifecycleWindowsTests(ITestOutputHelper output)
         try
         {
             database = Invoke(installer, "OpenDatabase", BindingFlags.InvokeMethod, destination, 1)!;
+            var productCode = Invoke(database, "OpenView", BindingFlags.InvokeMethod,
+                "UPDATE `Property` SET `Value` = '" + Guid.NewGuid().ToString("B").ToUpperInvariant() + "' WHERE `Property` = 'ProductCode'")!;
+            try { Invoke(productCode, "Execute", BindingFlags.InvokeMethod); }
+            finally { Marshal.FinalReleaseComObject(productCode); }
             foreach (var (name, value) in new[] { ("SERVER_URL", server), ("SERVER_CA", ca),
                          ("CA_FINGERPRINT", pin), ("ENROLL_TOKEN", new string('t', 43)) })
             {

@@ -12,6 +12,11 @@ using Xunit;
 
 namespace Sli.Agent.Tests;
 
+// The timeout test temporarily replaces a process-wide regex used by other test classes.
+[CollectionDefinition(nameof(ScriptSecretsTests), DisableParallelization = true)]
+public sealed class ScriptSecretsTestCollection;
+
+[Collection(nameof(ScriptSecretsTests))]
 public sealed class ScriptSecretsTests
 {
     public static IEnumerable<object[]> Vectors() => Support.Vectors.Load("script-secrets.json").AsArray()

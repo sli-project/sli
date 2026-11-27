@@ -187,8 +187,8 @@ if ($count -ne @(Get-ChildItem -LiteralPath $PublishDirectory -File).Count) { th
 $view = $database.OpenView('SELECT `UpgradeCode`, `VersionMax`, `Attributes` FROM `Upgrade` WHERE `ActionProperty` = ''WIX_UPGRADE_DETECTED''')
 $null = $view.Execute()
 $upgrade = $view.Fetch()
-if ($null -eq $upgrade -or $upgrade.StringData(1) -ne $package['UpgradeCode'] -or $upgrade.StringData(2) -ne $ExpectedVersion) { throw 'Major upgrade must detect earlier versions' }
-if (($upgrade.IntegerData(3) -band 514) -ne 0) { throw 'Earlier versions must be removed; same-version packages must not be major upgrades' }
+if ($null -eq $upgrade -or $upgrade.StringData(1) -ne $package['UpgradeCode'] -or $upgrade.StringData(2) -ne $ExpectedVersion) { throw 'Major upgrade must detect earlier and same-version packages' }
+if (($upgrade.IntegerData(3) -band 514) -ne 512) { throw 'Major upgrade must replace earlier and same-version packages' }
 $null = $view.Close()
 foreach ($file in @((Join-Path $PSScriptRoot '../INSTALL.md'))) {
     $document = [IO.File]::ReadAllText([IO.Path]::GetFullPath($file))

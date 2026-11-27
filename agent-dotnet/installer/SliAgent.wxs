@@ -1,7 +1,8 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <Package Name="SLI Agent .NET" Manufacturer="SLI" Version="$(var.ProductVersion)" ProductCode="$(var.ProductCode)"
            UpgradeCode="BE66EC86-AE25-4D3F-8C60-B191F3B0E20D" Scope="perMachine" InstallerVersion="500" Language="1033">
-    <MajorUpgrade DowngradeErrorMessage="A newer SLI Agent .NET is already installed." Schedule="afterInstallInitialize" />
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer SLI Agent .NET is already installed."
+                  Schedule="afterInstallInitialize" />
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
     <CustomActionRef Id="ChooseRegistrationFile" />
     <Property Id="SERVER_URL" Secure="yes" />
@@ -33,11 +34,6 @@
                  Condition="SAVED_SERVER_URL AND NOT (SERVER_URL AND (ENROLL_TOKEN OR TOKEN_FILE)) AND NOT REMOVE" />
     <SetProperty Id="SERVER_URL" Action="RestoreServerUrl" Value="[SAVED_SERVER_URL]" Before="CostInitialize" Sequence="execute"
                  Condition="SAVED_SERVER_URL AND NOT (SERVER_URL AND (ENROLL_TOKEN OR TOKEN_FILE)) AND NOT REMOVE" />
-    <!-- Running a newly personalized copy of the installed product must recache it and refresh the service and registry. -->
-    <SetProperty Id="REINSTALLMODE" Action="SetEnrollmentReinstallMode" Value="vamus" Before="SetEnrollmentReinstall"
-                 Condition="Installed AND SERVER_URL AND SERVER_CA AND ENROLL_TOKEN AND NOT REMOVE AND NOT REINSTALL" />
-    <SetProperty Id="REINSTALL" Action="SetEnrollmentReinstall" Value="ALL" Before="CostInitialize"
-                 Condition="Installed AND SERVER_URL AND SERVER_CA AND ENROLL_TOKEN AND NOT REMOVE AND NOT REINSTALL" />
     <Launch Condition="Installed OR WIX_UPGRADE_DETECTED OR SAVED_SERVER_URL OR (SERVER_URL AND (ENROLL_TOKEN OR TOKEN_FILE))"
             Message="Specify SERVER_URL and ENROLL_TOKEN (or TOKEN_FILE)." />
     <UI>
