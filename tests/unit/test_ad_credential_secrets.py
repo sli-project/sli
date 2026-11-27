@@ -6,7 +6,7 @@ import os
 
 import pytest
 
-from server.sli.core import ad_credential_secrets as subject
+from deploy.linux.sli_core import ad_credential_secrets as subject
 
 CONTEXT = {"installation_id": "10000000-0000-4000-8000-000000000001",
     "credential_id": "10000000-0000-4000-8000-000000000002", "domain_id": 1, "credential_revision": 1}

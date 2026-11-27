@@ -180,6 +180,19 @@ public static class ProblemPresentation
     internal static JsonObject RuleMessage(JsonObject finding, string suffix, string language, ProblemAccess? access = null, bool queueTitle = false)
     {
         string rule = ProblemJson.Text(finding["rule_code"]);
+        if (rule.StartsWith("semantic.sigma.", StringComparison.Ordinal) && Guid.TryParseExact(rule[15..], "D", out _))
+        {
+            var facts = RuleParameters(finding, access, language);
+            string text = suffix switch
+            {
+                "title" => ProblemJson.Text(finding["title"]),
+                "what" => string.Join(" · ", new[] { ProblemJson.Text(facts["account"]),
+                    ProblemJson.Text(facts["computer"] ?? facts["source"]), ProblemJson.Text(finding["summary"]) }
+                    .Where(value => value.Length > 0)),
+                _ => ""
+            };
+            return text.Length > 0 ? new JsonObject { ["text"] = text, ["rendered"] = true } : new();
+        }
         if (IsDcCatalogFinding(rule) && suffix is "why" or "next") return new();
         bool password = IsPasswordFinding(rule);
         bool threshold = password && finding["presentation_facts"]?["version"] is not null;

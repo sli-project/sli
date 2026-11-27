@@ -7,7 +7,7 @@ namespace Sli.Server.Tests.Workstations;
 
 public sealed partial class WorkstationInventoryJobPostgresTests
 {
-    static async Task<(Guid Agent, long Device)> Device(NpgsqlConnection db, params long[] targets)
+    internal static async Task<(Guid Agent, long Device)> Device(NpgsqlConnection db, params long[] targets)
     {
         var agent = await Agent(db);
         long device = Convert.ToInt64(await Scalar(db, "select coalesce(max(id),0)+1 from entities_v2"));

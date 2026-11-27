@@ -53,6 +53,17 @@ public sealed class SigmaCompilerContractTests
     }
 
     [Theory]
+    [InlineData("contains")]
+    [InlineData("startswith")]
+    public void Appended_wildcard_preserves_a_literal_path_separator(string modifier)
+    {
+        var rule = SigmaRule.Compile(Rule(
+            "  selection:\n    Image|" + modifier + ": 'C:\\Fixture\\'\n  condition: selection", process: true));
+        Assert.Equal("matched", rule.Match(new JsonObject { ["Image"] = @"C:\Fixture\probe.exe" }));
+        Assert.Equal("not_matched", rule.Match(new JsonObject { ["Image"] = @"C:\FixtureOther\probe.exe" }));
+    }
+
+    [Theory]
     [InlineData('x', 4092)]
     [InlineData('\u0444', 2000)]
     public void Windash_expanded_UTF8_bytes_are_counted_across_all_selections(char character, int length)

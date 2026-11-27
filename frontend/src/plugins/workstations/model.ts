@@ -19,10 +19,10 @@ const timestamp = (value: unknown) => typeof value === "string" && /(?:Z|[+-]\d\
   && Number.isFinite(Date.parse(value)) ? value : null;
 
 export type Station = {
-  station_id: string; agent_key: string; transport_agent_id: string | null; source_instance_id: string | null;
+  station_id: string; agent_key: string | null; agent_version: string | null; transport_agent_id: string | null; source_instance_id: string | null;
   display_name: string | null; host_name: string | null; domain_id: string | null; domain_name: string | null;
   server_id: string | null; operating_system: string | null; operating_system_version: string | null;
-  metadata_observed_at: string | null; agent_status: string | null; last_seen: string | null;
+  metadata_observed_at: string | null; agent_status: string | null; last_seen: string | null; last_logon_utc: string | null;
   policy_revision: string | null; applied_policy_revision: string | null;
   collection_state: "enabled" | "disabled" | "unbound";
   profile: { event_ids: number[]; channels: string[]; state: "supported" | "unsupported" | "unbound" };
@@ -32,15 +32,18 @@ export type Station = {
 export function stationRows(items: Row[]): Station[] {
   return items.map(row => {
     const profile = record(row.profile);
-    if (typeof row.station_id !== "string" || !row.station_id || typeof row.agent_key !== "string" || !row.agent_key
+    if (typeof row.station_id !== "string" || !row.station_id
+      || (!sourceText(row.agent_key) && !(row.agent_key === null && /^ws:ad:[1-9]\d*$/.test(row.station_id)))
       || !["enabled", "disabled", "unbound"].includes(String(row.collection_state))
       || !["supported", "unsupported", "unbound"].includes(String(profile.state))) throw new Error("workstation_response_invalid");
     return {
-      station_id: row.station_id, agent_key: row.agent_key, transport_agent_id: sourceText(row.transport_agent_id),
+      station_id: row.station_id, agent_key: sourceText(row.agent_key), agent_version: sourceText(row.agent_version),
+      transport_agent_id: sourceText(row.transport_agent_id),
       source_instance_id: sourceText(row.source_instance_id), display_name: sourceText(row.display_name), host_name: sourceText(row.host_name),
       domain_id: positiveId(row.domain_id), domain_name: sourceText(row.domain_name), server_id: positiveId(row.server_id),
       operating_system: sourceText(row.operating_system), operating_system_version: sourceText(row.operating_system_version),
       metadata_observed_at: timestamp(row.metadata_observed_at), agent_status: sourceText(row.agent_status), last_seen: timestamp(row.last_seen),
+      last_logon_utc: timestamp(row.last_logon_utc),
       policy_revision: scalar(row.policy_revision), applied_policy_revision: scalar(row.applied_policy_revision),
       collection_state: row.collection_state as Station["collection_state"],
       profile: { state: profile.state as Station["profile"]["state"],

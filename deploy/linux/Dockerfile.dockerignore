@@ -32,6 +32,11 @@
 !deploy/linux/entrypoint.py
 !deploy/linux/healthcheck.py
 !deploy/linux/migrate.py
+!deploy/linux/existing_postgres_bootstrap.py
+!deploy/linux/native_pg_inventory.py
+!deploy/linux/release_package.py
+!deploy/linux/sli_core/
+!deploy/linux/sli_core/**
 !deploy/linux/restore_existing.py
 !deploy/linux/backup.py
 !deploy/linux/backup_restore_check.py

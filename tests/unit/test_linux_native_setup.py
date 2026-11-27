@@ -20,7 +20,7 @@ def test_owner_recovery_uses_installed_runtime_and_only_runtime_credential_path(
     monkeypatch.setattr(install, 'SECRETS', Path('/synthetic/secrets'))
     monkeypatch.setattr(install, 'inventory', lambda release: (root, {'python': '/verified/python'}, 'digest'))
     trusted = []
-    monkeypatch.setattr(install, 'trusted', lambda path: trusted.append(path))
+    monkeypatch.setattr(install, 'trusted_path', lambda path: trusted.append(path))
     monkeypatch.setattr(setup.sys.stdout, 'isatty', lambda: True)
     monkeypatch.setenv('ADLOG_PG_DSN', 'untrusted-inherited-dsn')
     monkeypatch.setenv('ADLOG_PG_PASSWORD', 'synthetic-inherited-secret')
@@ -28,9 +28,9 @@ def test_owner_recovery_uses_installed_runtime_and_only_runtime_credential_path(
     monkeypatch.setattr(setup.subprocess, 'run', lambda argv, **kwargs: calls.append((argv, kwargs)) or SimpleNamespace(returncode=0))
     setup.owner_recovery('platform-owner')
     argv, options = calls[0]
-    assert argv == ['/verified/python', '-I', '-B', str(root / 'scripts/auth/manage_auth.py'),
-                    'owner-recovery', '--username', 'platform-owner']
-    assert trusted == [root / 'scripts/auth/manage_auth.py']
+    executable = Path('/opt/sli/dotnet') / root.name / 'Sli.Server'
+    assert argv == [str(executable), 'owner-recovery', '--username', 'platform-owner']
+    assert trusted == [executable]
     assert options['cwd'] == root and options['timeout'] == 30
     assert options['stderr'] == setup.subprocess.PIPE
     assert 'stdout' not in options and 'shell' not in options

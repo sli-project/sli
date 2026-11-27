@@ -1,6 +1,8 @@
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Sli.Server.Access;
+using Sli.Server.Auth;
+using Sli.Server.Auth.Lifecycle;
 
 namespace Sli.Server.Semantic;
 
@@ -20,6 +22,29 @@ public sealed record SemanticScope(string Installation, string Plugin, string So
 
 public sealed class SigmaProjection(ISemanticDatabase database)
 {
+    internal async Task<JsonObject> LiveRulesAsync(HttpContext context, Principal principal, bool write, CancellationToken ct)
+    {
+        await using var session = await database.OpenAsync(write, ct);
+        if (write)
+        {
+            using var body = await AuthJsonBody.ReadAsync(context, ct);
+            var root = body.RootElement;
+            if (!root.TryGetProperty("rule_id", out var id) || id.ValueKind != System.Text.Json.JsonValueKind.String
+                || !id.TryGetGuid(out var rule) || !root.TryGetProperty("enabled", out var enabled)
+                || enabled.ValueKind is not (System.Text.Json.JsonValueKind.True or System.Text.Json.JsonValueKind.False))
+                throw new SemanticInputException("sigma_live_rule_invalid");
+            string actor = principal.Username?.Trim() ?? "";
+            if (actor.EnumerateRunes().Count() is < 1 or > 256)
+                throw new SemanticInputException("actor_required");
+            if (!(await session.QueryAsync("select public.sigma_live_toggle433($1,$2,$3) as found",
+                    ct, rule, enabled.GetBoolean(), actor)).Single().Flag("found"))
+                throw new SemanticInputException("sigma_live_rule_not_found", 404);
+        }
+        var rows = await session.QueryAsync("select * from public.sigma_live_list433() order by title,rule_id", ct);
+        await session.CommitAsync(ct);
+        return new JsonObject { ["rules"] = rows };
+    }
+
     internal static readonly string[] Capabilities = ["semantic.review", "events.view", "field.security"];
     internal static bool Available(CapabilityDecisionSet access) => access.IsOwner || Capabilities.All(c => access.Capabilities.Contains(c) || access.ResourceCapabilities.Contains(c) || access.Policies.Any(p => p.CapabilityKey == c && p.Valid && p.Effect == "allow"));
     internal static bool Authorized(CapabilityDecisionSet access, JsonNode? resources)

@@ -13327,13 +13327,6 @@
         "field_categories": []
       },
       {
-        "key": "domain_name",
-        "label": "Домен",
-        "kind": "text",
-        "path": "domain_name",
-        "field_categories": []
-      },
-      {
         "key": "operating_system",
         "label": "ОС",
         "kind": "text",
@@ -13341,24 +13334,17 @@
         "field_categories": []
       },
       {
-        "key": "last_seen",
-        "label": "Последний контакт агента",
+        "key": "last_logon_utc",
+        "label": "Последний вход",
         "kind": "datetime",
-        "path": "last_seen",
+        "path": "last_logon_utc",
         "field_categories": []
       },
       {
-        "key": "collection_state",
-        "label": "Сбор",
+        "key": "agent_version",
+        "label": "Агент SLI",
         "kind": "text",
-        "path": "collection_state",
-        "field_categories": []
-      },
-      {
-        "key": "applied_policy_revision",
-        "label": "Применённая политика",
-        "kind": "number",
-        "path": "applied_policy_revision",
+        "path": "agent_version",
         "field_categories": []
       }
     ],
@@ -13430,15 +13416,15 @@
       "contract_id": "sli.report-intent.v1",
       "version": 1,
       "user_role": "Workstation security reviewer",
-      "question": "Which authorized workstation agents are registered and what admitted events were observed for a station in the selected period?",
+      "question": "Which authorized workstations are in AD, and which have an SLI agent?",
       "action": "Open a station, review its canonical journal and permitted published finding links, and return to the same fleet page.",
-      "scope": "Current agent registration and authoritative workstation journal binding, bounded by the atomic overview grant and workstation read capability.",
+      "scope": "AD workstation inventory and current agent bindings, bounded by the atomic overview grant and workstation read capability.",
       "exclusions": "No online state, current Defender or process state, USB activity, copying, work-duration or compliance conclusions are inferred.",
       "sources": [
-        "Canonical: current agent registry, authoritative workstation journal binding and server metadata.",
+        "Canonical: published AD computers inventory and current agent registry with authoritative bindings.",
         "Canonical: the shared event journal reader, including native retained daily groups and permitted published finding links."
       ],
-      "freshness_expectation": "Agent last_seen records a contact; server updated_at records an inventory update. Neither establishes online availability or collection completeness.",
+      "freshness_expectation": "The published AD computers snapshot supplies the OS and last recorded AD logon.",
       "rights": "workstations.overview atomic field grant and workstation read capability, including scoped denies.",
       "field_classes": [
         "identity_basic",
@@ -13446,11 +13432,11 @@
         "security",
         "technical"
       ],
-      "coverage": "Current authorized workstation registrations; event access is evaluated independently using events.explorer grants.",
-      "completeness": "Registry rows are counted exactly after workstation scope and filters. Journal groups and unknown values retain their existing semantics.",
-      "denominator": "Distinct authorized current logical workstation agents after search, domain, source and collection filters.",
+      "coverage": "Authorized AD workstations. Journal access requires the workstation journal binding and events.explorer grants.",
+      "completeness": "Inventory rows are counted after workstation scope and filters.",
+      "denominator": "Distinct authorized workstations after search, domain, source and collection filters.",
       "retention": "The shared journal reads canonical hot events and retained facts/daily groups. Frozen workstation history adapters are not used.",
-      "provenance": "Stable logical agent and source IDs, authoritative server binding, and existing canonical journal identities.",
+      "provenance": "Stable AD computer identities, current agent bindings and canonical journal identities.",
       "primary_archetype": "list",
       "product_archetype": "investigation-evidence",
       "deterministic_policy": "Read current registered identities; use independent event grants and published finding admission without inventing health or severity.",

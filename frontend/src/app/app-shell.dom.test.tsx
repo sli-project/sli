@@ -143,7 +143,7 @@ describe("AppShell", () => {
     }
   });
 
-  it.each(["/admin/plugins/sli.sigma", "/report/vpn.connections"])(
+  it.each(["/report/vpn.connections"])(
     "keeps the unavailable page at %s and mounts the route after server opt-in", async (path) => {
       state.access = adminAccess;
       const client = await renderShell(path, false, false);
@@ -416,14 +416,14 @@ describe("AppShell", () => {
     for (const title of titles) expect(await within(nav).findByRole("group", { name: title })).toBeTruthy();
     expect(within(nav).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
       "/", "/admin/status", "/agents", "/access", "/notifications", "/operations", "/settings",
-      "/plugins",
+      "/admin/plugins/sli.sigma", "/plugins",
     ]);
     expect(within(nav).getAllByRole("link").slice(1).map((link) => link.textContent)).toEqual(locale === "ru" ? [
       "Состояние системы", "Агенты", "Пользователи и роли", "Оповещения", "Хранение", "Язык и время",
-      "Все плагины",
+      "Sigma", "Все плагины",
     ] : [
       "System status", "Agents", "Users & roles", "Notifications", "Storage", "Language & time",
-      "All plugins",
+      "Sigma", "All plugins",
     ]);
     expect(within(nav).getAllByRole("link").filter((link) => link.getAttribute("aria-current") === "page").map((link) => link.getAttribute("href"))).toEqual(["/admin/status"]);
     expect(document.querySelector<HTMLElement>("[data-sli-shell]")?.dataset.menuOpen).toBe("false");
