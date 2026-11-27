@@ -1,12 +1,12 @@
 name: Agent .NET
 
-# Portable contract tests and publication of the Windows payload.
-# MSI linking runs in agent-msi.yml; real Windows acceptance remains a local check.
+# Portable contract tests, Windows payload publication, and MSI lifecycle validation for pull requests.
 on:
   pull_request:
     paths:
       - "agent-dotnet/**"
       - ".github/workflows/agent-dotnet.yml"
+      - ".github/workflows/agent-msi.yml"
       - "tests/unit/test_agent_dotnet_vectors.py"
       - "sli_agent/**"
       - "sli_collect/**"
@@ -44,6 +44,10 @@ defaults:
     shell: bash
 
 jobs:
+  msi-lifecycle:
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/agent-msi.yml
+
   # Build with warnings as errors, run portable tests, and verify the .NET packets on the server side.
   # WindowsOnly tests require the dedicated acceptance VM.
   portable:

@@ -117,6 +117,19 @@ it("denies before loading inventory without owner or access.manage", () => {
 });
 
 it.each([
+  ["updating", null, "Обновляется до 26.0.185"],
+  ["updated", null, "Обновлён"],
+  ["failed", "agent_update_verification_failed", "Не удалось: проверка MSI не пройдена"],
+] as const)("shows the running version and %s in the agent row", async (status, reason, label) => {
+  const version = status === "updated" ? "26.0.185" : "26.0.136";
+  state.list.mockResolvedValue({ items: [{ ...agent, agent_version: version,
+    update: { status, version: "26.0.185", reason } }] });
+  mount();
+  const row = (await screen.findByText("fixture-host")).closest("tr")!;
+  expect(within(row).getByRole("cell", { name: `${version} · ${label}` })).toBeTruthy();
+});
+
+it.each([
   ["en", "Agent certificate was revoked. Register the agent again."],
   ["ru", "Сертификат агента отозван. Зарегистрируйте агент заново."],
 ] as const)("shows the certificate rejection in the action cell for the matched agent (%s)", async (locale, message) => {

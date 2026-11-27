@@ -5,6 +5,7 @@ using Sli.Server.Access;
 using Sli.Server.Agents.Control;
 using Sli.Server.Agents.Ingress;
 using Sli.Server.Agents.Registry;
+using Sli.Server.Agents.Updates;
 namespace Sli.Server.Agents.ClientControl;
 
 public sealed class AgentClientControlService(IAgentControlAudit audit,TimeProvider clock,IConfiguration? configuration = null,
@@ -38,9 +39,7 @@ public sealed class AgentClientControlService(IAgentControlAudit audit,TimeProvi
         if (AgentEnrollmentService.CollectionProfile(configuration) == "beta" &&
             await AgentEnrollmentService.NeedsDcIdentityAsync(db, tx, identity.Id, ct))
             result["dc_identity_required"] = true;
-        await using var advertisement=new NpgsqlCommand("select p.sha256,p.version from sli_agent_update_packages p join sli_agent_update_policy a on a.package_sha256=p.sha256 where a.agent_id=@id",db,tx);
-        advertisement.Parameters.AddWithValue("id",identity.Id);await using var reader=await advertisement.ExecuteReaderAsync(ct);
-        result["agent_update"]=await reader.ReadAsync(ct)?new JsonObject { ["sha256"]=reader.GetString(0),["version"]=reader.GetString(1) }:null;
+        result["agent_update"]=await ShippedAgentUpdate.OfferAsync(db,tx,agent,identity,audit,ct);
         return result;
     }
     public async Task<JsonObject> ReportAsync(NpgsqlConnection db,NpgsqlTransaction tx,AgentIdentity identity,JsonNode? body,CancellationToken ct)
