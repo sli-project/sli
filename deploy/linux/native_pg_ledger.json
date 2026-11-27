@@ -653,6 +653,8 @@
     "config/postgres_migrations/448_workstation_ad_inventory.sql": "3304368fe98b6d6ab5bdbcbf0a229a24264da59872ee36e124d92722b204c38f",
     "config/postgres_migrations/450_agent_install_package.rollback.sql": "6a7aefce761018ffc45b8362546dfb2ecade5f648752ee5d503b7e1f27b2edc5",
     "config/postgres_migrations/450_agent_install_package.sql": "82546003f7754875cfc2e5f2525aa1fcb990508c4d42f067b7367b24bf37e1b8",
+    "config/postgres_migrations/451_detection_read_checkpoints.rollback.sql": "dc7aeed4d4613e02440edf65f3edecfcfe7e342450ec49487563380c6aca9d05",
+    "config/postgres_migrations/451_detection_read_checkpoints.sql": "2017fe07419fcb88a9bafcd762cd4649540298c4e227618e37e3630c0d949b86",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },
