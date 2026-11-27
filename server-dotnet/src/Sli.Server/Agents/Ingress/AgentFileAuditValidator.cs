@@ -9,6 +9,10 @@ namespace Sli.Server.Agents.Ingress;
 
 public static class AgentFileAuditValidator
 {
+    internal static bool NativeEventsOnly(JsonObject packet) =>
+        packet["records"] is JsonArray { Count: > 0 } records
+        && records.All(row => row is JsonObject record && record["format"]?.ToString() == "event_xml");
+
     internal static bool PermissionsOnly(JsonObject packet)
     {
         if(packet["records"] is not JsonArray records) return false;
@@ -40,8 +44,13 @@ public static class AgentFileAuditValidator
             && CanonicalJson.Length(packet)<=Math.Min(p.Number("max_bytes"),44*1024));
         var before=State(e.CursorBefore,hostId); var after=State(e.CursorAfter,hostId);
         var start=Id(before["record_id"]); var last=Id(after["record_id"]); var context=packet["context"]!.AsObject();
-        Require(JsonRead.HasExactly(context,"policy_revision","filtered_count","lost_count","read_error")
-            && context["policy_revision"]!.GetValue<string>()==p.Revision && JsonRead.TryInteger(context["filtered_count"],out var filteredValue) && filteredValue>=0 && filteredValue<=long.MaxValue);
+        var objectKinds = context["object_kinds"] as JsonObject;
+        string[] contextFields = ["policy_revision","filtered_count","lost_count","read_error"];
+        Require(objectKinds is null ? JsonRead.HasExactly(context,contextFields)
+            : !actions && !p.Workstation && objectKinds.Count > 0
+                && JsonRead.HasExactly(context,[..contextFields,"object_kinds"]));
+        Require(
+            context["policy_revision"]!.GetValue<string>()==p.Revision && JsonRead.TryInteger(context["filtered_count"],out var filteredValue) && filteredValue>=0 && filteredValue<=long.MaxValue);
         long filtered=(long)Integer(context["filtered_count"]); long? lost=context["lost_count"] is null ? null : (long)Integer(context["lost_count"]);
         string? error=context["read_error"]?.GetValue<string>(); bool gap=error=="file_audit_journal_gap";
         Require(lost is null || lost>=0);
@@ -70,13 +79,25 @@ public static class AgentFileAuditValidator
             && (filtered==0 && !(lost>0) || last is not null && (start is null || last>start))
             && (error!="file_audit_read_failed" || rows.Count==0 && filtered==0 && JsonNode.DeepEquals(comparableAfter,comparableBefore))
             && (rows.Count!=0 || filtered!=0 || lost!=0 || gap || JsonNode.DeepEquals(comparableAfter,comparableBefore)));
+        int matchedKinds = 0;
         foreach(var item in rows)
         {
             var row=item!.AsObject();
             if (bound is not null && start is null) Require(AgentAdDcUtc.Parse(row["time_created"]!.GetValue<string>())>=AgentAdDcUtc.Parse(bound));
             if(actions) AgentFileAuditAction.Validate(row,p,source);
-            else AgentFileAuditEvents.Validate(row,p,source);
+            else
+            {
+                string? objectKind = null;
+                if (objectKinds is not null && objectKinds.TryGetPropertyValue(row["record_id"]!.ToJsonString(), out var value))
+                {
+                    Require(JsonRead.TryString(value,out var kind) && kind is "file" or "directory");
+                    objectKind = kind;
+                    matchedKinds++;
+                }
+                AgentFileAuditEvents.Validate(row,p,source,objectKind);
+            }
         }
+        Require(matchedKinds == (objectKinds?.Count ?? 0));
         if(actions) Require(rows.OfType<JsonObject>().Select(r=>new {
             Scope=r["collection_scope_id"]!.GetValue<string>(),Path=r["path"]!.GetValue<string>(),
             Operation=r["operation"]!.GetValue<string>(),Actor=r["subject_user_sid"]!.GetValue<string>(),

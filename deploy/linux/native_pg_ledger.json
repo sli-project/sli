@@ -661,6 +661,8 @@
     "config/postgres_migrations/456_semantic_outbox_claim.sql": "f69cd28814d42fa71d5eee8d9c6e4011e904ece07215f75edf21e8bd1abfe73f",
     "config/postgres_migrations/457_file_audit_catalog_cache.rollback.sql": "80dd124c33c544403a601e11c38e2b5c712cbfceff55f8eb858acf387c6f64ca",
     "config/postgres_migrations/457_file_audit_catalog_cache.sql": "60d20f38c22cb43727d65b5b24aecefb8f769db5894836629454ce72edabce64",
+    "config/postgres_migrations/458_file_audit_activity.rollback.sql": "fa7207caccb95ef45cce009199a41c434efaf09586536b155c82bc4da83e05ad",
+    "config/postgres_migrations/458_file_audit_activity.sql": "83bea9637cf41da2f3373e22fe21d613820af3da0310ad2d30650fd6898f8c67",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },

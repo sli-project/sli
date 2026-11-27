@@ -117,6 +117,8 @@ export function fileServerColumns(view: FileServerView, declared: ReportColumnDt
     { ...when("audit_received_at"), label: t("file-audit.screen.audit"), wrap: true, render: row =>
       <div className="sli-file-audit__resource">
         <span><FileAuditReceipt row={row}/></span>
+        {row.audit_state === "enabled" || row.audit_state != null && row.audit_received_at
+          ? <ResourceBatch receivedAt={row.audit_received_at}/> : null}
         {Number.isSafeInteger(row.check_revision) && fileAuditShare(row) ? <FileAuditCheck row={row} refresh={refresh}/> : null}
       </div> },
     { key: "permission_changes", label: t("file-audit.workspace.permission_changes"), kind: "number", render: row =>
@@ -124,6 +126,12 @@ export function fileServerColumns(view: FileServerView, declared: ReportColumnDt
         ? <a href={hrefFor("permission-changes", row)} onClick={event => event.stopPropagation()}>{count(row)}</a> : count(row) },
     { ...when("observed_at"), label: t("file-audit.workspace.snapshot"), render: row => <ResourceSnapshot row={row}/> },
   ];
+}
+
+function ResourceBatch({ receivedAt }: { receivedAt: FileAuditRow["audit_received_at"] }) {
+  const { formatCell } = useDateFormatters();
+  return <small>{receivedAt ? t("file-audit.screen.last_batch", { time: formatCell(receivedAt, "datetime") })
+    : t("file-audit.screen.no_batch")}</small>;
 }
 
 function ResourceSnapshot({ row }: { row: FileAuditRow }) {
@@ -138,7 +146,7 @@ const resourceAuditReasons: Record<string, MessageKey> = {
   managed_by_gpo: "file-audit.resources.policyBlocked",
   management_disabled: "file-audit.resources.managementOff",
   native_unavailable: "file-audit.screen.audit_unreadable",
-  coverage_incomplete: "file-audit.screen.check_partial",
+  coverage_incomplete: "file-audit.screen.inventory_incomplete",
   share_read_unavailable: "file-audit.resources.shareUnavailable",
   share_path_mismatch: "file-audit.resources.shareUnavailable",
   directory_root_invalid: "file-audit.resources.shareUnavailable",
@@ -170,12 +178,13 @@ function FileAuditReceipt({ row }: { row: FileAuditRow }) {
   if (row.audit_state === "disabled" && !row.check_receipt && receipt?.action !== "check")
     return <>{t("file-audit.resources.disabled")}</>;
   const checkResult = row.check_receipt != null || receipt?.action === "check";
-  const failure = receipt?.state === "failed" || receipt?.state === "blocked";
+  const failure = receipt?.state === "failed" || receipt?.state === "blocked" || receipt?.state === "partial";
   if (receipt?.observed_at && (checkResult || failure &&
       Date.parse(receipt.observed_at) >= (Date.parse(String(row.audit_received_at)) || 0))) {
     const reason = receipt.reason_code === "native_unavailable" ? "file-audit.screen.audit_unreadable"
       : receipt.reason_code === "sacl_missing" ? "file-audit.screen.sacl_missing"
       : receipt.reason_code === "policy_missing" ? "file-audit.screen.audit_policy_missing"
+      : receipt.reason_code === "coverage_incomplete" ? "file-audit.screen.inventory_incomplete"
       : receipt.state === "verified" ? "file-audit.screen.check_verified"
       : receipt.state === "partial" ? "file-audit.screen.check_partial" : "file-audit.screen.audit_failed";
     const requirement = receipt.check_agent_requirement;

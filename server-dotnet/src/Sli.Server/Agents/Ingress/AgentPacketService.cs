@@ -47,7 +47,10 @@ public sealed class AgentPacketService(TimeProvider clock, AgentInboxLimits limi
             }
             if(!enabled && !accounting) return Reject("module_disabled");
             if(filePermissions && fileAdmission is null) return Reject("file_audit_plugin_unavailable","retry_later");
-            if(filePermissions && !AgentFileAuditValidator.PermissionsOnly(payload)) return Reject("agent_file_audit_packet_invalid");
+            if(filePermissions && !AgentFileAuditValidator.PermissionsOnly(payload)
+                && (!AgentFileAuditValidator.NativeEventsOnly(payload)
+                    || !await AgentPolicyAssignments.FileActivityAvailableAsync(connection,transaction,ct)))
+                return Reject("agent_file_audit_packet_invalid");
             var state=await ledger.AgentStateAsync(identity.Id,ct);
             if(accounting)
             {

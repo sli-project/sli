@@ -81,9 +81,13 @@ public sealed class NativeFileAuditApi : IFileAuditApi
 
     public IFileAuditObject Open(string path,string root) => new NativeObject(path,root);
     public void CheckPath(string path,string root)
+        => CheckPathKind(path,root);
+
+    public string? CheckPathKind(string path,string root)
     {
         // Deleted targets are acceptable only after the configured root and all existing ancestors were pinned.
         using var pinned=new PinnedPath(path,root,attributesOnly:true,allowMissing:true);
+        return pinned.TargetAttributes is uint attributes ? (attributes & 16) != 0 ? "directory" : "file" : null;
     }
     public JsonObject Share(string name,string root)
     {
@@ -275,6 +279,7 @@ public sealed class NativeFileAuditApi : IFileAuditApi
     private sealed class PinnedPath : IDisposable
     {
         public List<SafeFileHandle> Handles { get; } = [];
+        public uint? TargetAttributes { get; }
         private readonly WindowsAuditApi.SecurityPrivilege? _privilege;
         public PinnedPath(string path,string root,bool attributesOnly=false,bool allowMissing=false)
         {
@@ -300,6 +305,7 @@ public sealed class NativeFileAuditApi : IFileAuditApi
                     if (!GetFileInformationByHandle(handle,out var info))
                         throw new FileAuditNativeReadException("file_audit_path_unavailable", unchecked((uint)Marshal.GetLastPInvokeError()));
                     if ((info.Attributes & 0x400) != 0) throw new AgentException("file_audit_reparse_point");
+                    if (component == path) TargetAttributes = info.Attributes;
                     if (component.Equals(root,StringComparison.OrdinalIgnoreCase)) verifiedRoot=true;
                 }
             }

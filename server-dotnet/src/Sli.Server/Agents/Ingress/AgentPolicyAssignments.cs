@@ -23,6 +23,13 @@ public static class AgentPolicyAssignments
         return await command.ExecuteScalarAsync(ct) is true;
     }
 
+    internal static async Task<bool> FileActivityAvailableAsync(NpgsqlConnection db,NpgsqlTransaction tx,CancellationToken ct)
+    {
+        await using var command = new NpgsqlCommand(
+            "select to_regprocedure('public.file_audit_scan_prefix458(uuid,text,uuid,integer,timestamptz)') is not null",db,tx);
+        return await command.ExecuteScalarAsync(ct) is true;
+    }
+
     internal static async Task<bool> FilePermissionsAllowedAsync(NpgsqlConnection db,NpgsqlTransaction tx,
         Guid agent,string? revision,bool verified,CancellationToken ct)
     {

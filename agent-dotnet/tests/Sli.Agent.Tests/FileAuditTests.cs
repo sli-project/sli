@@ -32,6 +32,31 @@ public sealed class FileAuditTests
     }
 
     [Fact]
+    public void Server_activity_keeps_scoped_native_rows_and_pinned_file_kind()
+    {
+        const string root = @"C:\synthetic\Обмен";
+        var file = $@"{root}\notes.txt";
+        var config = FileAuditManagerTests.Config();
+        config["roots"]![0]!["path"] = root;
+        config["roots"]![0]!["important"] = true;
+        var share = NativeRow(3,5145,root,12);
+        share = new EventRow(share.Xml.Replace("ObjectName", "ShareLocalPath", StringComparison.Ordinal)
+            .Replace("</EventData>", """<Data Name="RelativeTargetName">notes.txt</Data></EventData>""", StringComparison.Ordinal), share.Bookmark);
+        var module = new FileAuditModule(Helpers.HostId,FileAuditPolicy.Parse(config),
+            new RowsSource([NativeRow(1,4663,file,10),NativeRow(2,4660,file,11),share,NativeRow(4,4670,file,13)]),
+            (path,scope) => { Assert.Equal(root,scope); Assert.Equal(file,path); },
+            pathKind: (path,scope) => { Assert.Equal(root,scope); Assert.Equal(file,path); return "file"; });
+        var sample = module.Collect(null, Helpers.Now);
+        var entries = sample.Payload["records"]!.AsArray();
+        Assert.Equal(new[] { 4663, 4660, 5145, 4670 }, entries.Select(entry => entry!["payload"]!["event_id"]!.GetValue<int>()));
+        Assert.All(entries, entry => Assert.Equal("event_xml",entry!["format"]!.GetValue<string>()));
+        Assert.DoesNotContain(file,entries[1]!["payload"]!["xml"]!.GetValue<string>());
+        var kinds = sample.Payload["context"]!["object_kinds"]!.AsObject();
+        Assert.Equal("file",Assert.Single(kinds).Value!.GetValue<string>());
+        Assert.Equal("file",kinds["1"]!.GetValue<string>());
+    }
+
+    [Fact]
     public void Server_permissions_fold_only_native_acl_changes_and_deliver_journal_clear_separately()
     {
         var policy = FileAuditPolicy.Parse(FileAuditManagerTests.Config());

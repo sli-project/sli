@@ -300,23 +300,32 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
                 }
                 if (policy.FileAudit is { } filePolicy)
                 {
-                    var signature=CanonicalJson.Serialize(filePolicy.Value);
+                    bool permissionsOnly = !filePolicy.Workstation && !policy.FileAuditActivity;
+                    var signature = CanonicalJson.Serialize(filePolicy.Value) + ":" + permissionsOnly;
                     if (_lastFileCapture is null || signature != _lastFilePolicy || clock.GetUtcNow()-_lastFileCapture >= TimeSpan.FromSeconds(IntervalSeconds))
                     {
                         IFileAuditEventSource? fileSource=fileEventSource;
                         Action<string,string>? pathCheck=filePathCheck;
                         Func<string,bool>? accountCheck=fileAccountCheck;
+                        Func<string,string,string?>? pathKind = null;
                         if (OperatingSystem.IsWindows())
                         {
                             fileSource ??= new FileAuditEventSource();
-                            pathCheck ??= new NativeFileAuditApi().CheckPath;
+                            if (pathCheck is null)
+                            {
+                                var nativeFileAudit = new NativeFileAuditApi();
+                                pathCheck = nativeFileAudit.CheckPath;
+                                if (policy.FileAuditActivity) pathKind = nativeFileAudit.CheckPathKind;
+                            }
                             accountCheck ??= new FileAuditAccounts().IsUser;
                         }
                         if (fileSource is null || pathCheck is null) throw new AgentException("file_audit_native_unavailable");
-                        var module=new FileAuditModule(sourceHostId,filePolicy,fileSource,pathCheck,accountCheck,permissionsOnly:!filePolicy.Workstation);
+                        var module=new FileAuditModule(sourceHostId,filePolicy,fileSource,pathCheck,accountCheck,
+                            permissionsOnly:permissionsOnly,pathKind:pathKind);
                         var budget=Math.Min(16,policy.Control.BatchSize)-_queue.Pending().Count(p => p.Envelope.ModuleId == FileAuditModule.ModuleId);
                         var deadline=Stopwatch.StartNew();
                         var savedLimit=_queue.MaxBytes; _queue.MaxBytes=Math.Min(savedLimit,filePolicy.Number("spool_bytes"));
+                        bool catchUp = policy.FileAuditActivity;
                         try
                         {
                             for (var step=0; step<budget && deadline.Elapsed < TimeSpan.FromSeconds(filePolicy.Number("wall_seconds")); step++)
@@ -325,9 +334,13 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
                                 var position=Position(FileAuditModule.ModuleId); var sample=module.Collect(position,clock.GetUtcNow());
                                 _queue.Capture(_identity.Signer,_identity.AgentId,sample,clock.GetUtcNow()); captured++;
                                 if (sample.CursorAfter == sample.CursorBefore || position is not null && sample.Generation != position.Generation || sample.Payload["context"]?["read_error"] is not null
-                                    || sample.Payload["records"]!.AsArray().Count == 0 && sample.FilteredCount == 0 && !(sample.LostCount > 0)) break;
+                                    || sample.Payload["records"]!.AsArray().Count == 0 && sample.FilteredCount == 0 && !(sample.LostCount > 0))
+                                {
+                                    catchUp = false;
+                                    break;
+                                }
                             }
-                            _lastFileCapture=clock.GetUtcNow(); _lastFilePolicy=signature;
+                            _lastFileCapture=catchUp ? null : clock.GetUtcNow(); _lastFilePolicy=signature;
                         }
                         catch (QueueFullException exception) { error=exception.Code; }
                         finally { _queue.MaxBytes=savedLimit; }
@@ -348,9 +361,12 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
             }
             // A new check-in still authorizes every burst. Failed delivery and the owner's rate limit
             // retain normal backoff; a healthy DC backlog or newly captured packet needs no idle poll.
-            ContinueImmediately = state == "active" && policy.AdDc is not null && error is null && !failed
+            ContinueImmediately = state == "active" && (policy.AdDc is not null || policy.FileAuditActivity)
+                && error is null && !failed
                 && _attempts.Count < policy.Control.RateLimitPerMinute
-                && (_dcCatchUpChannel is not null || _queue.Pending().Any(packet => packet.Envelope.ModuleId == AdDcModule.ModuleId));
+                && (policy.AdDc is not null && _dcCatchUpChannel is not null
+                    || _queue.Pending().Any(packet => policy.AdDc is not null && packet.Envelope.ModuleId == AdDcModule.ModuleId
+                        || policy.FileAuditActivity && packet.Envelope.ModuleId == FileAuditModule.ModuleId));
         }
         catch (Exception exception) when (exception is AgentException or ProtocolException)
         {

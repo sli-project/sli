@@ -16,7 +16,7 @@ internal static class AgentFileAuditEvents
     private static readonly HashSet<string> Fields=["SubjectUserSid","SubjectLogonId","TargetUserSid","TargetLogonId","LogonType","ObjectName","ObjectType","HandleId","ProcessId","ProcessName","AccessMask","AccessList","AccessReason","ShareName","ShareLocalPath","RelativeTargetName","IpAddress","IpPort","OldSd","NewSd","OldSdValue","NewSdValue","ObjectServer","PrivilegeList"];
     private static readonly HashSet<string> Reduced=["SubjectUserSid","SubjectLogonId","TargetUserSid","TargetLogonId","LogonType","HandleId","ProcessId","AccessMask","IpAddress","IpPort"];
     private static readonly Dictionary<string,string[]> SystemFields=new() { ["Provider"]=["Name","Guid"], ["EventID"]=["Qualifiers"], ["Version"]=[], ["Level"]=[], ["Task"]=[], ["Opcode"]=[], ["Keywords"]=[], ["EventRecordID"]=[], ["TimeCreated"]=["SystemTime"], ["Channel"]=[], ["Computer"]=[], ["Security"]=["UserID"] };
-    public static void Validate(JsonObject row,FileAuditPolicy policy,string source)
+    public static void Validate(JsonObject row,FileAuditPolicy policy,string source,string? objectKind=null)
     {
         static void Require(bool value) { if (!value) throw new ArgumentException(); }
         string xml=row["xml"]!.GetValue<string>(); var root=EventXml.ParseBounded(xml);
@@ -37,6 +37,8 @@ internal static class AgentFileAuditEvents
         bool optional=(id is 4658 or 4664) && policy.Value["optional_events"]!.GetValue<bool>();
         Require(context || optional || FileAuditPolicy.Events.Contains(id));
         var scopes=ScopeAndPath(id,data,policy,out _);
+        if (objectKind is not null)
+            Require(id==4663 && scopes.Count==1 && data.GetValueOrDefault("ObjectType")=="File");
         bool workstation=policy.Workstation;
         if (workstation && !context)
         {

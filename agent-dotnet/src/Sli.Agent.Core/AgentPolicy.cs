@@ -38,6 +38,8 @@ public sealed record AgentPolicy(long Revision, CollectionControl Control, JsonA
     public IReadOnlyDictionary<string, SnapshotPolicy> Snapshots { get; init; } = new Dictionary<string, SnapshotPolicy>();
     public FileAuditPolicy? FileAudit { get; init; }
     public JsonObject? FileAuditRequest { get; init; }
+    public bool FileAuditActivity { get; init; }
+    public bool FileAuditRetryPagedApply { get; init; }
     public string? FileAuditRetryVersion { get; init; }
     public static string AgentVersion { get; } = typeof(AgentPolicy).Assembly.GetName().Version!.ToString(3);
     public IReadOnlyDictionary<string,int> FileAuditMasks { get; init; } = new Dictionary<string,int>();
@@ -100,6 +102,10 @@ public sealed record AgentPolicy(long Revision, CollectionControl Control, JsonA
         }
         return new((long)revision, control, (JsonArray)modules.DeepClone(), dc, workstation, request) {
             Snapshots = snapshots, FileAudit = fileAudit, FileAuditRequest = fileRequest,
+            FileAuditActivity = body["file_audit_activity"] is JsonValue activity
+                && activity.TryGetValue<bool>(out var enabledActivity) && enabledActivity,
+            FileAuditRetryPagedApply = body["file_audit_retry_paged_apply"] is JsonValue retryApply
+                && retryApply.TryGetValue<bool>(out var retryPagedApply) && retryPagedApply,
             FileAuditRetryVersion = JsonRead.TryString(body["file_audit_retry_version"], out var retryVersion) ? retryVersion : null,
             NpsModules = nps, Handoff = RuntimeHandoff.Parse(body["runtime_handoff"])
         };

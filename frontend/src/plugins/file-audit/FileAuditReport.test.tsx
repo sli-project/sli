@@ -8,6 +8,7 @@ import type { ReportDefinitionDto, ReportResultDto } from "../../api/report-v2-t
 import { FileAuditReport } from "./FileAuditReport";
 import { t } from "../../i18n";
 import { OverlayProvider } from "../../design-system";
+import { TimeZoneContext } from "../../shared/time-zone";
 import reportDefinitions from "../../../../server-dotnet/src/Sli.Server/Reporting/V2/report-definitions.json";
 
 const mocks = vi.hoisted(() => ({ definition: vi.fn(), data: vi.fn(), detail: vi.fn(), agents: vi.fn(), agentAction: vi.fn(), access: {
@@ -34,7 +35,11 @@ const result = (key: string, params: URLSearchParams): ReportResultDto => ({
 let client: QueryClient;
 function mount(initial = declaration()) {
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-  return render(<QueryClientProvider client={client}><OverlayProvider><FileAuditReport definition={initial}/></OverlayProvider></QueryClientProvider>);
+  return render(<QueryClientProvider client={client}>
+    <TimeZoneContext.Provider value={{ timeZone: "UTC", setTimeZone: () => undefined }}>
+      <OverlayProvider><FileAuditReport definition={initial}/></OverlayProvider>
+    </TimeZoneContext.Provider>
+  </QueryClientProvider>);
 }
 beforeEach(() => {
   localStorage.clear();
@@ -93,11 +98,28 @@ it("shows the server's agent upgrade requirement on Resources", async () => {
   expect(row.textContent).not.toContain(t("file-audit.screen.audit_unreadable"));
 });
 
+it.each([
+  ["coverage_incomplete", "file-audit.screen.inventory_incomplete"],
+  ["sacl_missing", "file-audit.screen.sacl_missing"],
+  ["policy_missing", "file-audit.screen.audit_policy_missing"],
+] as const)("names the audit check that prevented collection (%s)", async (reason, message) => {
+  mocks.data.mockImplementation(async (key, params) => ({ ...result(key, params), items: [{
+    id: "fixture-resource", share_name: "Fixture share", audit_receipt: {
+      action: "apply", observed_at: "2026-11-26T08:00:00Z", state: "partial", reason_code: reason,
+    },
+  }] }));
+  mount(declaration("file-audit.overview"));
+  const row = await screen.findByRole("row", { name: /Fixture share/ });
+  expect(row.textContent).toContain(t(message));
+  expect(row.textContent).not.toContain(t("file-audit.screen.no_batch"));
+});
+
 it("shows all catalog shares and applies audit to the two confirmed selections", async () => {
   const shares = ["Finance", "Projects", "Archive", "Public", "NETLOGON", "SYSVOL"];
   const agent_id = "11111111-1111-4111-8111-111111111111";
   const source_instance_id = "synthetic-source";
   let verified = false;
+  let receivedBatch = false;
   mocks.data.mockImplementation(async (key, params) => ({ ...result(key, params),
     filtered_count: shares.length, has_more: false, next_cursor: null,
     items: shares.map((share_name, index) => ({
@@ -106,6 +128,7 @@ it("shows all catalog shares and applies audit to the two confirmed selections",
       audit_state: index === 0 || verified && index <= 2 ? "enabled" : "disabled",
       audit_checked_at: index === 0 || verified && index <= 2 ? "2026-11-26T08:00:00Z" : null,
       audit_policy_revision: verified ? 4 : 3,
+      audit_received_at: receivedBatch && index === 1 ? "2026-11-26T08:15:00Z" : null,
     })),
   }));
   mocks.agentAction.mockResolvedValue({ command_id: "apply-shares", policy_revision: 4, state: "pending" });
@@ -127,7 +150,13 @@ it("shows all catalog shares and applies audit to the two confirmed selections",
   expect(await table.findAllByText(t("file-audit.resources.applying"))).toHaveLength(2);
   verified = true;
   await act(() => client.invalidateQueries({ queryKey: ["report-v2", "file-audit"] }));
-  await waitFor(() => expect(table.getByRole("row", { name: /Projects/ }).textContent).toContain(t("file-audit.resources.enabled")));
+  const projects = within(table.getByRole("row", { name: /Projects/ }));
+  expect(await projects.findByText(t("file-audit.screen.no_batch"))).toBeTruthy();
+  expect(projects.getByText(new RegExp(t("file-audit.resources.enabled")))).toBeTruthy();
+  receivedBatch = true;
+  await act(() => client.invalidateQueries({ queryKey: ["report-v2", "file-audit"] }));
+  expect(await projects.findByText(new RegExp(t("file-audit.screen.last_batch", { time: ".*08:15" })))).toBeTruthy();
+  expect(projects.queryByText(t("file-audit.screen.no_batch"))).toBeNull();
 });
 
 it("requests a check for the selected manageable resource and shows the fresh result", async () => {

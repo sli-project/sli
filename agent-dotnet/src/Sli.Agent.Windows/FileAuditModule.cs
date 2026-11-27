@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Globalization;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -10,7 +11,7 @@ namespace Sli.Agent.Windows;
 /// <summary>Bounded file evidence. No durable position lives outside the existing signed queue.</summary>
 public sealed class FileAuditModule(string hostId, FileAuditPolicy policy, IFileAuditEventSource source,
     Action<string,string> pathCheck, Func<string,bool>? accountCheck = null, Func<TimeSpan>? clock = null, Func<Guid>? newId = null,
-    bool permissionsOnly = false)
+    bool permissionsOnly = false, Func<string,string,string?>? pathKind = null)
 {
     public const string ModuleId = FileAuditPolicy.ModuleId;
     private static readonly string[] PermissionsKey = ["collection_scope_id","path","subject_user_sid","minute_utc"];
@@ -60,9 +61,16 @@ public sealed class FileAuditModule(string hostId, FileAuditPolicy policy, IFile
         if (batch.Rows.Count > Math.Min(policy.Number("max_events"),256)) throw new AgentException("file_audit_range_invalid");
         var records = new List<PacketRecord>(); var previous = start;
         var sourceName = policy.Value["source_name"]?.ToString() ?? hostId;
-        JsonObject Packet(IReadOnlyList<PacketRecord> items) => CollectionPacket.Make(sourceName,"Security",generation,
-            new JsonObject { ["after_record_id"]=start,["last_record_id"]=progress["record_id"]?.DeepClone() },items,"not_proven",
-            new JsonObject { ["policy_revision"]=policy.Revision,["filtered_count"]=filtered,["lost_count"]=error is null ? lost : null,["read_error"]=error },now);
+        var objectKinds = new JsonObject();
+        JsonObject Packet(IReadOnlyList<PacketRecord> items)
+        {
+            var context = new JsonObject { ["policy_revision"]=policy.Revision,["filtered_count"]=filtered,
+                ["lost_count"]=error is null ? lost : null,["read_error"]=error };
+            if (objectKinds.Count != 0) context["object_kinds"] = objectKinds.DeepClone();
+            return CollectionPacket.Make(sourceName,"Security",generation,
+                new JsonObject { ["after_record_id"]=start,["last_record_id"]=progress["record_id"]?.DeepClone() },
+                items,"not_proven",context,now);
+        }
         foreach (var raw in batch.Rows)
         {
             if (Clock() >= deadline) break;
@@ -81,11 +89,19 @@ public sealed class FileAuditModule(string hostId, FileAuditPolicy policy, IFile
             }
             if (allowed && permissionsOnly && journalCleared && records.Count != 0) break;
             var unavailable = false;
+            string? kind = null;
             try
             {
                 if (allowed && policy.Workstation && !FileAuditPolicy.ContextEvents.Contains(row["event_id"]!.GetValue<int>()))
                     allowed = (accountCheck ?? throw new AgentException("file_audit_account_unavailable"))(data["SubjectUserSid"]);
-                if (allowed && path is not null) foreach (var scope in scopes) pathCheck(path,scope["path"]!.ToString());
+                if (allowed && path is not null)
+                {
+                    if (!permissionsOnly && !policy.Workstation && scopes.Length == 1 && pathKind is not null
+                        && eventId == 4663 && data.GetValueOrDefault("ObjectType") == "File")
+                        kind = pathKind(path,scopes[0]["path"]!.ToString());
+                    else
+                        foreach (var scope in scopes) pathCheck(path,scope["path"]!.ToString());
+                }
             }
             catch (Exception e) when (e is not OperationCanceledException) { allowed = false; unavailable = true; lost++; }
             if (allowed)
@@ -95,8 +111,11 @@ public sealed class FileAuditModule(string hostId, FileAuditPolicy policy, IFile
                 var candidates = action is null
                     ? records.Append(new PacketRecord("event_xml",id,FileAuditEvents.Parse(FileAuditEvents.Mask(raw.Xml,scopes.Length > 0),sourceName).Row)).ToList()
                     : FoldPermissions(records,action,(long)id);
+                string recordKey = id.ToString(CultureInfo.InvariantCulture);
+                if (kind is "file" or "directory") objectKinds[recordKey] = kind;
                 if (CanonicalJson.ToBytes(Packet(candidates)).Length + 128 > Math.Min(policy.Number("max_bytes"),44*1024))
                 {
+                    objectKinds.Remove(recordKey);
                     if (records.Count == 0 && filtered == 0 && lost == 0) throw new AgentException("file_audit_event_size_limit");
                     error = oldError; break;
                 }
