@@ -102,6 +102,16 @@ it.each([
   expect(within(database).getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["База данных PostgreSQL", text, "—"]);
   expect(within(partition).getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["Раздел диска", "20 ГБ", "80 ГБ"]);
 });
+it("shows the measured PostgreSQL filesystem free space on the database row", async () => {
+  state.storage.mockResolvedValue({ storage: {
+    ...overview().storage,
+    postgres_volume: { mount_point: "/srv/sli-db", used_bytes: 23 * 1024 ** 3, free_bytes: 0 },
+  } });
+  mount();
+  const table = await screen.findByRole("table", { name: t("operations.disk.title") });
+  const database = within(table).getByRole("row", { name: /База данных/ });
+  expect(within(database).getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["База данных PostgreSQL", "12,5 ГБ", "0 Б"]);
+});
 it("saves retention once and reports the time", async () => {
   mount(); const input = await screen.findByRole("spinbutton", { name: "История изменений AD/GPO" });
   const save = screen.getByRole("button", { name: "Сохранить" }) as HTMLButtonElement; expect(save.disabled).toBe(true);

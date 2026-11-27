@@ -52,9 +52,13 @@ internal static class HomePresentation
             string? title = Title();
 
             var attempts = totals?["attempts"] is null ? password.Number("attempts") : totals.Number("attempts");
+            var attemptText = attempts > 0
+                ? NumberMessage(query.OpenQueue && totals?["attempts"] is null ? "sample_attempts" : "attempts", attempts) : null;
+            if (query.OpenQueue)
+                return (name, title is not null && attemptText is not null ? $"{title} · {attemptText}" : title ?? attemptText);
+
             var detail = new List<string>();
-            if (attempts > 0)
-                detail.Add(NumberMessage(query.OpenQueue && totals?["attempts"] is null ? "sample_attempts" : "attempts", attempts));
+            if (attemptText is not null) detail.Add(attemptText);
             if (addresses > 1) detail.Add(NumberMessage("addresses", addresses));
             else if (DisplayName(totals.Text("address") ?? password.Text("address")) is { } address) detail.Add(address);
             if ((totals.Stamp("first_at") ?? password.Stamp("first_at")) is { } first &&
