@@ -11,9 +11,9 @@ namespace Sli.Server.Tests.Semantic;
 
 public sealed class DetectionReadPerformancePostgresTests(ITestOutputHelper output)
 {
-    private const int PredecessorVersion = 444;
+    private const int PredecessorVersion = 448;
     private static string Migration => Path.Combine(PostCollectionPostgres.Repository(),
-        "config/postgres_migrations/447_detection_read_checkpoints.sql");
+        "config/postgres_migrations/449_detection_read_checkpoints.sql");
 
     [Fact]
     public async Task Detection_discovery_and_incremental_account_reads_at_stand_size()
@@ -193,7 +193,7 @@ public sealed class DetectionReadPerformancePostgresTests(ITestOutputHelper outp
                 // producer while it owns the waiting command.
                 await using (var block = await owner.BeginTransactionAsync(ct))
                 {
-                    await using var hold = new NpgsqlCommand("lock table public.detection_source_catalog447 in access exclusive mode", owner, block);
+                    await using var hold = new NpgsqlCommand("lock table public.detection_source_catalog449 in access exclusive mode", owner, block);
                     await hold.ExecuteNonQueryAsync(ct);
                     using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
                     var waiting = detector.RunOnceAsync(worker, stop.Token);

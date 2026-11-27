@@ -9,41 +9,31 @@ from scripts.ci import pr_scope, shipped_python_tests
 ROOT = Path(__file__).resolve().parents[2]
 
 
-@pytest.mark.parametrize("event", ["pull_request", "workflow_dispatch"])
-def test_legacy_report_duplicates_are_available_in_manual_ci(tmp_path, monkeypatch, event):
-    legacy_report = "tests/reporting/test_computers_v6_metrics_partition.py"
-    mixed_test = "tests/reports/test_computers_v6_comparison_batch.py"
-    installer_test = "tests/unit/test_linux_native_install.py"
-    migration_test = "tests/migrations/test_install_schema.py"
-    other_report = "tests/reporting/test_other_report.py"
-    legacy_only = "tests/reporting/test_legacy_runtime.py"
-    report_import = "from server.report import render\n"
-    installer_import = "from deploy.linux.native_install import install\n"
-    for name, source in {
-        "server/report.py": "",
+def test_argfile_excludes_retired_runtime_and_keeps_shipped_security_and_migrations(tmp_path, monkeypatch):
+    cases = {
+        "deploy/linux/native_install.py": "",
+        "deploy/linux/sli_update.py": "",
         "server/legacy_runtime.py": "",
-        "deploy/linux/native_install.py": report_import,
-        legacy_report: report_import,
-        mixed_test: report_import + installer_import,
-        installer_test: installer_import,
-        migration_test: report_import,
-        other_report: report_import,
-        legacy_only: "from server.legacy_runtime import run\n",
-    }.items():
+        "scripts/ci/check.py": "",
+        "tests/test_installer.py": "from deploy.linux.native_install import install",
+        "tests/test_ci_tool.py": "from scripts.ci import check",
+        "tests/test_retired_updater.py": "from deploy.linux.sli_update import install",
+        "tests/migrations/test_install_schema.py": "MIGRATIONS = 'config/postgres_migrations'",
+        "tests/migrations/test_old_report.py": "from server.legacy_runtime import run",
+        "tests/test_old_http_api.py": "from server.legacy_runtime import run",
+        "tests/test_unknown.py": "import pytest",
+    }
+    for name, source in cases.items():
         path = tmp_path / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(source, encoding="utf-8")
 
     argfile = tmp_path / "selection.txt"
-    monkeypatch.setattr(shipped_python_tests, "INSTALLER_ROOTS", ("native_install",))
-    monkeypatch.setenv("GITHUB_EVENT_NAME", event)
     monkeypatch.setattr(sys, "argv", ["shipped_python_tests", "--root", str(tmp_path), "--output", str(argfile)])
-
     assert shipped_python_tests.main() == 0
-    expected = {mixed_test, installer_test, migration_test, other_report}
-    if event == "workflow_dispatch":
-        expected.add(legacy_report)
-    assert set(argfile.read_text(encoding="utf-8").splitlines()) == expected
+    assert set(argfile.read_text(encoding="utf-8").splitlines()) == {
+        "tests/test_installer.py", "tests/test_ci_tool.py", "tests/migrations/test_install_schema.py",
+    }
 
 
 @pytest.mark.parametrize(("paths", "directory_contract"), [
@@ -118,21 +108,19 @@ def test_installer_selection_follows_imports_including_removed_modules(tmp_path)
     assert pr_scope.scoped_tests(tmp_path, ["deploy/linux/removed.py"]) == {"tests/unit/test_affected.py"}
 
 
-def test_agent_transport_changes_retain_certificate_and_packet_contracts():
+def test_agent_transport_changes_retain_native_certificate_and_install_contracts():
     paths = ["agent-dotnet/src/Sli.Agent.Protocol/Packet.cs"]
     selected = pr_scope.pytest_arguments(ROOT, paths)["unit"]
-    assert {"tests/unit/test_agent_tls.py", "tests/unit/test_agent_packets_api.py"} <= set(selected)
+    assert {"tests/unit/test_agent_ca.py", "tests/tooling/test_sli_agent_local_install.py"} <= set(selected)
 
-def test_shipped_helper_import_and_sql_asset_preserve_mixed_test_files(tmp_path, monkeypatch):
-    monkeypatch.setattr(shipped_python_tests, "INSTALLER_ROOTS", ("native_install",))
+def test_shipped_helper_import_and_sql_asset_preserve_mixed_test_files(tmp_path):
     cases = {
         "deploy/linux/native_install.py": "",
-        "deploy/linux/native_package.py": 'HELPERS = ("native_restore.py", "native-pins.json")',
         "deploy/linux/native_restore.py": "from server import recovery",
         "server/recovery.py": "",
         "server/legacy.py": "",
         "tests/support/first.py": "from tests.support import second",
-        "tests/support/second.py": "from tests.support import first\nfrom server import recovery",
+        "tests/support/second.py": "from tests.support import first\nfrom deploy.linux import native_restore",
         "tests/test_helper.py": "from tests.support import first\nfrom server import legacy",
         "tests/test_sql.py": 'from server import legacy\nfrom pathlib import Path\nMIGRATIONS = Path("config") / "postgres_migrations"',
         "tests/test_uncategorized.py": "import pytest",
@@ -143,20 +131,18 @@ def test_shipped_helper_import_and_sql_asset_preserve_mixed_test_files(tmp_path,
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(source, encoding="utf-8")
 
-    selected, excluded, closure, _ = shipped_python_tests.select_tests(tmp_path)
+    selected, excluded = shipped_python_tests.select_tests(tmp_path)
 
-    assert {"tests/test_helper.py", "tests/test_sql.py", "tests/test_uncategorized.py"} <= set(selected)
-    assert excluded == ["tests/test_retired.py"]
-    assert {"deploy/linux/native_restore.py", "server/recovery.py"} <= closure
+    assert set(selected) == {"tests/test_helper.py", "tests/test_sql.py"}
+    assert excluded == ["tests/test_retired.py", "tests/test_uncategorized.py"]
 
 
-def test_split_gates_and_security_contracts_remain_selected(tmp_path, monkeypatch):
-    monkeypatch.setattr(shipped_python_tests, "INSTALLER_ROOTS", ("native_install",))
+def test_split_gates_and_security_contracts_remain_selected(tmp_path):
     files = {
         "deploy/linux/native_install.py": "",
         "server/legacy.py": "",
-        "server/sli/agents/ca.py": "",
-        "tests/test_ca.py": "from server.sli.agents import ca",
+        "deploy/linux/sli_core/ca.py": "",
+        "tests/test_ca.py": "from deploy.linux.sli_core import ca",
         "tests/test_backup.py": "from server import legacy",
         "tests/test_retired.py": "from server import legacy",
         "scripts/ci/pr_checkpoint_tests.txt": "tests/test_backup.py::test_checkpoint",
@@ -166,7 +152,7 @@ def test_split_gates_and_security_contracts_remain_selected(tmp_path, monkeypatc
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(source, encoding="utf-8")
 
-    selected, excluded, _, _ = shipped_python_tests.select_tests(tmp_path)
+    selected, excluded = shipped_python_tests.select_tests(tmp_path)
 
     assert {"tests/test_ca.py", "tests/test_backup.py"} <= set(selected)
     assert excluded == ["tests/test_retired.py"]

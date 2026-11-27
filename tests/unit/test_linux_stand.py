@@ -29,6 +29,7 @@ STAND = ROOT / "deploy/linux"
 MANIFEST_BASELINE = int(json.loads((ROOT / "config/postgres_baseline/manifest.json").read_text(encoding="utf-8"))["baseline_version"])
 
 
+@pytest.mark.legacy
 def test_linux_image_builds_and_publishes_frontend_from_source():
     dockerfile = (STAND / "Dockerfile").read_text(encoding="utf-8").replace("\\\n", "")
     build, separator, _ = dockerfile.partition("\nFROM python:")
@@ -57,6 +58,7 @@ def test_linux_image_builds_and_publishes_frontend_from_source():
     assert positions == sorted(positions)
 
 
+@pytest.mark.legacy
 def test_linux_image_runtime_copies_published_assets_without_build_dependencies():
     dockerfile = (STAND / "Dockerfile").read_text(encoding="utf-8")
     runtime = dockerfile.rsplit("\nFROM ", 1)[-1]
@@ -71,6 +73,7 @@ def test_linux_image_runtime_copies_published_assets_without_build_dependencies(
     assert 'ENTRYPOINT ["python", "-m", "deploy.linux.entrypoint"]' in runtime
 
 
+@pytest.mark.legacy
 def test_linux_build_context_allows_frontend_sources_but_excludes_node_modules():
     patterns = (STAND / "Dockerfile.dockerignore").read_text(encoding="utf-8").splitlines()
     for included in ("!package.json", "!package-lock.json", "!frontend/", "!frontend/**",
@@ -81,6 +84,7 @@ def test_linux_build_context_allows_frontend_sources_but_excludes_node_modules()
         assert patterns.index(excluded) > patterns.index("!frontend/**")
 
 
+@pytest.mark.legacy
 def test_linux_image_includes_dc_importer_and_its_build_context():
     patterns = (STAND / "Dockerfile.dockerignore").read_text(encoding="utf-8").splitlines()
     assert "!scripts/import/" in patterns
@@ -89,6 +93,7 @@ def test_linux_image_includes_dc_importer_and_its_build_context():
     assert "COPY scripts/import/ scripts/import/" in dockerfile
 
 
+@pytest.mark.legacy
 def test_post_collection_dc_import_is_opt_in_with_storage_worker_credentials():
     compose = yaml.safe_load((STAND / "docker-compose.yml").read_text(encoding="utf-8"))
     service = compose["services"]["post-collection"]
@@ -98,6 +103,7 @@ def test_post_collection_dc_import_is_opt_in_with_storage_worker_credentials():
     assert "storage_password" in service["secrets"]
 
 
+@pytest.mark.legacy
 def test_snapshot_publication_credentials_are_scoped_to_post_collection_and_migrate():
     compose = yaml.safe_load((STAND / "docker-compose.yml").read_text(encoding="utf-8"))
     service = compose["services"]["post-collection"]
@@ -112,6 +118,7 @@ def test_snapshot_publication_credentials_are_scoped_to_post_collection_and_migr
         assert "context_password" in settings["services"]["migrate"]["secrets"]
 
 
+@pytest.mark.legacy
 def test_server_and_stand_workers_import_with_windows_modules_unavailable(tmp_path):
     # Reproduce runtime source COPYs; built web assets are covered separately.
     allowed = (STAND / "Dockerfile.dockerignore").read_text(encoding="utf-8").splitlines()
@@ -200,8 +207,8 @@ def test_package_verification_image_can_verify_without_checkout(signed_package, 
 import sys
 from pathlib import Path
 sys.path.insert(0, {str(image)!r})
-from scripts.maintenance.release_package import verify_package
-from server.sli import release_package
+from deploy.linux import release_package
+from deploy.linux.release_package import verify_package
 assert Path(release_package.__file__).resolve().is_relative_to(Path({str(image)!r}))
 assert verify_package(Path({str(archive)!r}), Path({str(trust)!r})).manifest['package_id'] == 'sli.core'
 print('package_image_verifier_verified')
@@ -409,6 +416,7 @@ def test_pgpass_escaping_and_line_injection():
         migrate.pgpass_escape("synthetic\nline")
 
 
+@pytest.mark.legacy
 def test_api_entrypoint_disables_acquisition_before_start(monkeypatch):
     monkeypatch.delenv("ADLOG_AUTH_REQUIRED", raising=False)
     monkeypatch.setattr(sys, "argv", ["entrypoint", "api", "--port", "8443"])
@@ -426,6 +434,7 @@ def test_api_entrypoint_disables_acquisition_before_start(monkeypatch):
     assert entrypoint.main() == 0
 
 
+@pytest.mark.legacy
 def test_api_entrypoint_preserves_explicit_auth_setting(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["entrypoint", "api"])
     monkeypatch.setenv("ADLOG_AUTH_REQUIRED", "0")
@@ -436,12 +445,14 @@ def test_api_entrypoint_preserves_explicit_auth_setting(monkeypatch):
     assert os.environ["ADLOG_ALLOW_UNAUTHENTICATED"] == "1"
 
 
+@pytest.mark.legacy
 def test_compose_auth_default_and_proxy_trust_configuration():
     compose = yaml.safe_load((STAND / "docker-compose.yml").read_text(encoding="utf-8"))
     assert compose["services"]["api"]["environment"]["ADLOG_AUTH_REQUIRED"] == "1"
     assert compose["services"]["api"]["environment"]["ADLOG_TRUSTED_PROXIES"] == "${ADLOG_TRUSTED_PROXIES:-}"
 
 
+@pytest.mark.legacy
 def test_executor_entrypoint_forwards_profile_without_enabling_collection(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["entrypoint", "executor", "--profile", "heavy"])
     def import_module(name):
@@ -453,6 +464,7 @@ def test_executor_entrypoint_forwards_profile_without_enabling_collection(monkey
     assert sys.argv == ["server.sli.core.job_executor", "--profile", "heavy"]
 
 
+@pytest.mark.legacy
 def test_executor_compose_keeps_default_path_and_separates_profile_secrets():
     compose = yaml.safe_load((STAND / "docker-compose.yml").read_text("utf-8"))
     for profile in ("light", "heavy", "long"):
@@ -535,6 +547,7 @@ def test_executor_login_uses_its_profile_role_directly(monkeypatch):
     assert not any(isinstance(statement, str) and "set role" in statement.lower() for statement, _ in calls)
 
 
+@pytest.mark.legacy
 def test_executor_health_rejects_stale_or_wrong_profile_heartbeat(monkeypatch):
     from server.sli.core import job_executor
     stamp = datetime.now(timezone.utc)
@@ -548,6 +561,7 @@ def test_executor_health_rejects_stale_or_wrong_profile_heartbeat(monkeypatch):
     assert healthcheck.healthy("radius-session-observation")
 
 
+@pytest.mark.legacy
 def test_worker_health_requires_fresh_successful_heartbeat(monkeypatch):
     captured = {}
 
@@ -571,6 +585,7 @@ def test_worker_health_requires_fresh_successful_heartbeat(monkeypatch):
     assert "process_pid = %s" in captured["statement"]
 
 
+@pytest.mark.legacy
 def test_warm_healthcheck_allows_slow_disk_initialization():
     compose = yaml.safe_load((STAND / "docker-compose.yml").read_text(encoding="utf-8"))
     health = compose["services"]["warm-tier"]["healthcheck"]
@@ -613,6 +628,7 @@ def test_fresh_semantic_policy_matches_accepted_runtime_contract():
     assert seed.index("insert into public.semantic_risk_policy_subscriptions") < seed.index("set lifecycle_status = 'enabled'")
 
 
+@pytest.mark.legacy
 def test_postgres_checkpoint_launch_parameters():
     compose = yaml.safe_load((STAND / "docker-compose.yml").read_text(encoding="utf-8"))
     assert compose["services"]["postgres"].get("command") == [
@@ -621,6 +637,7 @@ def test_postgres_checkpoint_launch_parameters():
     ]
 
 
+@pytest.mark.legacy
 def test_compose_secret_and_migration_boundaries():
     compose = yaml.safe_load((STAND / "docker-compose.yml").read_text(encoding="utf-8"))
     services = compose["services"]
@@ -662,6 +679,7 @@ def test_compose_secret_and_migration_boundaries():
     assert "GRANT SELECT ON public.finding_evidence TO adlog_storage_owner" in grants
 
 
+@pytest.mark.legacy
 def test_compose_warm_tier_reuses_external_volume_and_file_secret():
     compose = yaml.safe_load((STAND / "docker-compose.yml").read_text(encoding="utf-8"))
     warm = compose["services"]["warm-tier"]
@@ -707,6 +725,7 @@ def test_compose_warm_tier_reuses_external_volume_and_file_secret():
     assert "COPY config/ config/" in dockerfile or "COPY config/clickhouse/ config/clickhouse/" in dockerfile
 
 
+@pytest.mark.legacy
 def test_storage_lifecycle_entrypoint_routes_existing_worker(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["entrypoint", "storage-lifecycle", "--once"])
     imported = []
@@ -718,6 +737,7 @@ def test_storage_lifecycle_entrypoint_routes_existing_worker(monkeypatch):
     assert sys.argv == ["scripts.runtime.storage_lifecycle_worker", "--once"]
 
 
+@pytest.mark.legacy
 def test_compose_history_admission_publishes_without_enabling_deletion(monkeypatch):
     from scripts.runtime import storage_lifecycle_worker as worker
 
@@ -752,6 +772,7 @@ def test_compose_history_admission_publishes_without_enabling_deletion(monkeypat
             assert not worker.warm_automation_admitted(service.get("environment", {}))
 
 
+@pytest.mark.legacy
 @pytest.mark.parametrize("existing", [False, True])
 def test_migrate_prepares_history_schema_and_retries_failure(monkeypatch, capsys, existing):
     from server.sli.storage import permanent_fact_history as history
@@ -812,6 +833,7 @@ def test_stand_baseline_follows_verified_manifest():
     assert not (STAND / "migrations.json").exists()
 
 
+@pytest.mark.legacy
 def test_exact_worker_map_and_compose_commands():
     assert entrypoint.WORKERS == {
         "post-collection": "scripts.runtime.post_collection_worker",
@@ -836,6 +858,7 @@ def test_exact_worker_map_and_compose_commands():
         assert services[name]["depends_on"]["clickhouse"]["condition"] == "service_healthy"
 
 
+@pytest.mark.legacy
 def test_shared_runtime_configuration_and_external_history():
     compose = yaml.safe_load((STAND / "docker-compose.yml").read_text(encoding="utf-8"))
     environment = compose["x-runtime"]["environment"]
@@ -891,6 +914,7 @@ def test_shared_runtime_configuration_and_external_history():
         assert volume == {"external": True, "name": "${SLI_HISTORY_" + key.upper() + "_VOLUME:-" + default + "}"}
 
 
+@pytest.mark.legacy
 @pytest.mark.parametrize("worker", ["coordinator", "remote-access"])
 @pytest.mark.parametrize("once", [True, False])
 def test_disabled_workers_never_enter_windows_or_acquisition(worker, once, monkeypatch):
@@ -931,6 +955,7 @@ def test_disabled_workers_never_enter_windows_or_acquisition(worker, once, monke
     assert beats[0]["phase"] == "acquisition_disabled"
 
 
+@pytest.mark.legacy
 def test_linux_acquisition_fails_closed_without_env(monkeypatch):
     from server.sli.sources import acquisition_mode
 
@@ -941,6 +966,7 @@ def test_linux_acquisition_fails_closed_without_env(monkeypatch):
     assert not acquisition_mode.acquisition_disabled()
 
 
+@pytest.mark.legacy
 @pytest.mark.parametrize("age,status,pid,component,healthy", [
     (0, "idle", 1, "radius-session-observation", True),
     (0, "running", 1, "radius-session-observation", True),
@@ -961,6 +987,7 @@ def test_plugin_health_checks_own_fresh_pid_one_heartbeat(age, status, pid, comp
     assert healthcheck.healthy("radius-session-observation") is healthy
 
 
+@pytest.mark.legacy
 @pytest.mark.parametrize("service", list(healthcheck.WORKER_MAX_AGES))
 def test_every_db_worker_has_bounded_health_probe(service, monkeypatch):
     calls = []
@@ -974,6 +1001,7 @@ def test_every_db_worker_has_bounded_health_probe(service, monkeypatch):
     assert "process_pid = %s" in calls[0][0]
 
 
+@pytest.mark.legacy
 @pytest.mark.parametrize("row,expected,diagnostic", [
     (("warning", "snapshot_history_migration_required"), True, "snapshot_history_migration_required"),
     (("warning", "ad_snapshot_history_coverage_partial"), True, "ad_snapshot_history_coverage_partial"),
@@ -1117,6 +1145,7 @@ def test_clickhouse_http_uses_service_host_and_hides_sql_errors(monkeypatch, str
     assert calls == [("clickhouse", 8123), "closed"]
 
 
+@pytest.mark.legacy
 def test_configured_semantic_worker_never_requests_admin_credentials(tmp_path, monkeypatch):
     from scripts.runtime import semantic_production_worker as worker
 

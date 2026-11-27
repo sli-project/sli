@@ -59,6 +59,46 @@ public sealed class ComputersV6SourceContractTests
     }, snapshot["metadata"]!["completed_at"]!.ToString(), new JsonObject());
 
     [Theory]
+    [InlineData(4096, "Windows 11 Pro", "workstation", "enabled")]
+    [InlineData(4098, "Windows Server 2022", "server", "disabled")]
+    [InlineData(8192, null, "domain_controller", "enabled")]
+    [InlineData(4098, null, "unknown", "disabled")]
+    [InlineData(null, null, "unknown", "unknown")]
+    public void Report_preserves_directory_facts_for_precreated_and_joined_accounts(int? uac, string? os, string role, string state)
+    {
+        var snapshot = Snapshot();
+        var item = Item(snapshot);
+        item["classification"] = null;
+        item["deviceType"] = "unknown";
+        item["enabled"] = null;
+        item["userAccountControl"] = uac;
+        item["osName"] = os;
+        State(snapshot, "os")["status"] = os is null ? "missing_in_source" : "observed";
+        State(snapshot, "os")["value"] = os;
+        var row = Report(snapshot);
+        Assert.Equal(os, row["operating_system"]?.GetValue<string>());
+        Assert.Equal(role, row["computer_type"]!.GetValue<string>());
+        Assert.Equal(state, row["account_state"]!.GetValue<string>());
+        Assert.Equal(uac is null ? (bool?)null : (uac & 2) == 0, AdInventoryRows.Bool(row["enabled"]));
+    }
+
+    [Fact]
+    public void Observed_OS_and_legacy_agent_classification_are_preserved()
+    {
+        var snapshot = Snapshot();
+        var item = Item(snapshot);
+        item["classification"] = null;
+        item["deviceType"] = "server";
+        item["userAccountControl"] = 4096;
+        item["osName"] = null;
+        State(snapshot, "os")["status"] = "observed";
+        State(snapshot, "os")["value"] = "Windows Server 2022";
+        var row = Report(snapshot);
+        Assert.Equal("Windows Server 2022", row["operating_system"]!.GetValue<string>());
+        Assert.Equal("server", row["computer_type"]!.GetValue<string>());
+    }
+
+    [Theory]
     [InlineData(0, "within_30_days")]
     [InlineData(30, "within_30_days")]
     [InlineData(31, "days_31_to_90")]

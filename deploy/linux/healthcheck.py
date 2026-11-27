@@ -63,13 +63,13 @@ def native_healthy(service: str, *, process_pid: int, started_at: datetime, stat
 
 
 def load_config():
-    from server.sli.core.app_config import load_config as legacy_config
+    from deploy.linux.legacy_runtime import load_config as legacy_config
 
     return legacy_config()
 
 
 def read_plugin_heartbeat(service):
-    from server.sli.sources.plugin_runtime_heartbeat import read_plugin_heartbeat as legacy_heartbeat
+    from deploy.linux.legacy_runtime import read_plugin_heartbeat as legacy_heartbeat
 
     return legacy_heartbeat(service)
 
@@ -79,7 +79,7 @@ def healthy(service: str, *, process_pid: int = 1, started_at: datetime | None =
     """Compose health checks retain their existing configuration and pilot defaults."""
     try:
         if service == "radius-session-observation" and started_at is None:
-            from server.sli.core.job_executor import pilot_enabled
+            from deploy.linux.legacy_runtime import pilot_enabled
 
             if pilot_enabled():
                 return True  # The legacy service exits without claiming.

@@ -21,8 +21,14 @@ from deploy.linux import native_package, native_pg_inventory
 
 
 ROOT = Path(__file__).resolve().parents[2]
-RELEASE_PATHS = ('server', 'scripts', 'sli_collect', 'sli_agent', 'config', 'deploy/linux',
-                 'web/app', 'requirements.lock.txt', 'VERSION')
+RELEASE_PATHS = ('config', 'deploy/linux', 'scripts/ad_context', 'web/app', 'requirements.lock.txt', 'VERSION')
+RETIRED_LINUX_PATHS = frozenset({
+    'ad_credentials_entrypoint.py', 'adoption_probe.py', 'build_offline_kit.sh',
+    'docker-compose.report-producer.json', 'evaluation_package.py', 'init.sql', 'installation.py',
+    'legacy_runtime.py', 'notification_delivery.py', 'plugin_update.py', 'restore_login_check.py',
+    'sli_install.py', 'sli_update.py', 'smtp_setup.py', 'telegram_setup.py', 'update_recovery.py',
+    'updater_bridge_source.patch', 'updater_component.py', 'updater_launcher.py', 'verify_offline_kit.py',
+})
 POSTGRES_ROLES = """SELECT rolname, rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls, rolinherit
 FROM pg_roles WHERE rolname ~ '^(sli_|adlog_)' ORDER BY rolname"""
 N03_RUNTIME_DELIVERY = {
@@ -405,14 +411,21 @@ def observe_migrations(checkout, connection, password, work, env, actual_version
         return ledger, roles, plugins, actual_version
 
 
-def prepare_release(checkout, release, runtime_path, artifact, postgres_version, observed, commit, epoch):
+def copy_release(checkout, release):
+    def ignored(directory, names):
+        retired = RETIRED_LINUX_PATHS if Path(directory) == checkout / 'deploy/linux' else ()
+        return set(names).intersection(retired) | {'__pycache__'}
+
     for name in RELEASE_PATHS:
         source, target = checkout / name, release / name
         target.parent.mkdir(parents=True, exist_ok=True)
         if source.is_dir():
-            shutil.copytree(source, target, symlinks=True)
+            shutil.copytree(source, target, symlinks=True, ignore=ignored)
         else:
             shutil.copy2(source, target, follow_symlinks=False)
+
+
+def prepare_release(release, runtime_path, artifact, postgres_version, observed, commit, epoch):
     ledger, roles, plugins, build_pg_version = observed
     python_path = f"/opt/sli/runtimes/{artifact['runtime_id']}/bin/python3.14"
     with tempfile.TemporaryDirectory(prefix='sli-runtime-') as temporary:
@@ -610,11 +623,8 @@ def build(root, ref, cache, output, pg_bin, *, agent_msi=None, require_agent_sdk
         pg_version = f"{pg_deb_version.split('-')[0]} (Debian {pg_deb_version})"
         ledger = json.loads((checkout / 'deploy/linux/native_pg_ledger.json').read_text(encoding='utf-8'))
         native_pg_inventory.verify_manifest(checkout, ledger)
-        print('Observing the release migrations in temporary PostgreSQL', flush=True)
-        observed = runtime_inventory(checkout, pg_bin, pg_version, pg_env)
-
         print('Building the web app and .NET server', flush=True)
-        toolchain = {'python': platform.python_version(), 'postgresql_inventory': observed[3]}
+        toolchain = {'python': platform.python_version()}
         for key, executable in (('node', 'node'), ('npm', 'npm'), ('dotnet_sdk', 'dotnet')):
             toolchain[key] = command([executable, '--version'], text=True, stdout=subprocess.PIPE,
                                      cwd=checkout / 'server-dotnet', env=env).stdout.strip()
@@ -625,8 +635,12 @@ def build(root, ref, cache, output, pg_bin, *, agent_msi=None, require_agent_sdk
         published = work / 'dotnet'
         publish_dotnet(checkout / 'server-dotnet/src/Sli.Server/Sli.Server.csproj', published, commit, env, source_root=checkout)
         payload = work / 'release'
+        copy_release(checkout, payload)
+        print('Observing the release migrations in temporary PostgreSQL', flush=True)
+        observed = runtime_inventory(payload, pg_bin, pg_version, pg_env)
+        toolchain['postgresql_inventory'] = observed[3]
         print(f'Assembling Debian packages for {release}', flush=True)
-        prepare_release(checkout, payload, packages / runtime_filename, artifact, pg_version, observed, commit, epoch)
+        prepare_release(payload, packages / runtime_filename, artifact, pg_version, observed, commit, epoch)
         agent.rename(payload / 'web/app/installers')
         command([sys.executable, '-B', '-m', 'deploy.linux.native_package', '--source', payload, '--output', packages,
                  '--release', release, '--version', version, '--runtime-version', artifact['version'],
