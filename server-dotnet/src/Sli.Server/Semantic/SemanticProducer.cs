@@ -147,18 +147,35 @@ internal static class SemanticProducer
         string hash=JobIdentity(job.Id, job.Kind);
         return (JsonNode)new JsonObject { ["id"]=job.Id,["job_id"]=AuthAudit.Uuid5("adlog:semantic:"+hash),["kind"]=job.Kind,["hash"]="\\x"+hash,["payload"]=new JsonObject { ["selection_reason"]=job.Reason } };
     }).ToArray());
+    internal const int EnqueueBatchSize = 500;
+    // A separate read keeps all event lookups outside the outbox write. The
+    // lateral boundary makes each lookup use the source ID from this page.
+    internal const string EnqueueSourcesSql="""
+        select w.job_id,e.id,w.kind,w.hash,w.payload,e.log_source_id as source_id,e.domain_id,
+          e.server_id::text||':'||e.channel_id::text as partition_key,e.time_created_utc as occurred_at_utc,
+          jsonb_build_object('id',e.id,'server_id',e.server_id,'domain_id',e.domain_id,'log_source_id',e.log_source_id,'event_id',e.event_id,'time_created_utc',e.time_created_utc,'normalized_hash',encode(e.normalized_hash,'hex'),'correlation_id',e.correlation_id,'migrated_at',e.migrated_at,'provider_name',e.provider_name,'channel',e.channel,'computer',e.computer) as source_identity_json
+        from jsonb_to_recordset($1) w(id bigint,job_id uuid,kind text,hash text,payload jsonb)
+        cross join lateral (select * from public.semantic_event_source355 source where source.id=w.id offset 0) e
+        """;
     internal const string EnqueueSql="""
         insert into semantic_processing_outbox(job_id,source_event_id,job_kind,semantic_contract_version,processor_id,processor_version,idempotency_key,payload_json,source_id,domain_id,partition_key,occurred_at_utc,source_identity_json)
-        select w.job_id,e.id,w.kind,1,'semantic-shadow',$2,w.hash,w.payload,e.log_source_id,e.domain_id,e.server_id::text||':'||e.channel_id::text,e.time_created_utc,
-          jsonb_build_object('id',e.id,'server_id',e.server_id,'domain_id',e.domain_id,'log_source_id',e.log_source_id,'event_id',e.event_id,'time_created_utc',e.time_created_utc,'normalized_hash',encode(e.normalized_hash,'hex'),'correlation_id',e.correlation_id,'migrated_at',e.migrated_at,'provider_name',e.provider_name,'channel',e.channel,'computer',e.computer)
-        from jsonb_to_recordset($1) w(id bigint,job_id uuid,kind text,hash bytea,payload jsonb)
-        join public.semantic_event_source355 e on e.id=w.id
+        select w.job_id,w.id,w.kind,1,'semantic-shadow',$2,w.hash,w.payload,w.source_id,w.domain_id,w.partition_key,w.occurred_at_utc,w.source_identity_json
+        from jsonb_to_recordset($1) w(job_id uuid,id bigint,kind text,hash bytea,payload jsonb,source_id bigint,
+          domain_id bigint,partition_key text,occurred_at_utc timestamptz,source_identity_json jsonb)
+        order by w.id,w.kind
         on conflict(idempotency_key) do nothing returning job_id
         """;
     internal static async Task<int> Enqueue(ISemanticSession session,IEnumerable<Candidate> jobs,CancellationToken ct)
     {
         var payload=JobRows(jobs); if(payload.Count==0) return 0;
-        return (await SemanticProduction.Change(session,EnqueueSql,ct,payload,SemanticEvent.Version)).Count;
+        var sources=await session.QueryAsync(EnqueueSourcesSql,ct,payload);
+        if(sources.Count!=payload.Count) throw new InvalidDataException("semantic_producer_source_rows_missing");
+        int queued=0;
+        foreach(var page in sources.Chunk(EnqueueBatchSize)) {
+            var ready=new JsonArray(page.Select(row=>row.Copy()).ToArray());
+            queued+=(await SemanticProduction.Change(session,EnqueueSql,ct,ready,SemanticEvent.Version)).Count;
+        }
+        return queued;
     }
     internal static async Task PublishAsync(NpgsqlConnection db,NpgsqlTransaction tx,IEnumerable<long> eventIds,CancellationToken ct)
     {

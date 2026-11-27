@@ -41,6 +41,15 @@ public sealed class HostIdentityStore(string directory, IDurableFiles files, IKe
 
     private string IdentityPath => Path.Combine(directory, "identity.json");
 
+    public void ArchiveIdentity(string archive)
+    {
+        foreach (var path in new[] { IdentityPath, KeyPath, HostPath })
+        {
+            try { File.Move(path, Path.Combine(archive, Path.GetFileName(path))); }
+            catch (FileNotFoundException) { } // Already moved, or never created.
+        }
+    }
+
     /// <summary>Creates the host id and the key once; returns only public values.</summary>
     public PreparedIdentity Prepare(string? hostId = null)
     {
@@ -90,9 +99,10 @@ public sealed class HostIdentityStore(string directory, IDurableFiles files, IKe
         try
         {
             var body = JsonNode.Parse(files.ReadAll(KeyPath) ?? throw new AgentException("agent_identity_invalid"));
-            if (body?["protection"]?.GetValue<string>() != protector.Name || body["format"]?.GetValue<string>() != "sli-agent-key-v1")
+            if (body?["protection"]?.GetValue<string>() != protector.Name || body["format"]?.GetValue<string>() != "sli-agent-key-v1"
+                || !JsonRead.TryString(body["data"], out var data))
                 throw new AgentException("agent_identity_invalid");
-            var pkcs8 = protector.Unprotect(Convert.FromBase64String(body["data"]!.GetValue<string>()));
+            var pkcs8 = protector.Unprotect(Convert.FromBase64String(data));
             try { return ImportKey(pkcs8); }
             finally { CryptographicOperations.ZeroMemory(pkcs8); }
         }

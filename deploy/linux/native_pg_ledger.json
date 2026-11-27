@@ -657,6 +657,8 @@
     "config/postgres_migrations/451_detection_read_checkpoints.sql": "2017fe07419fcb88a9bafcd762cd4649540298c4e227618e37e3630c0d949b86",
     "config/postgres_migrations/455_account_detection_pending.rollback.sql": "fd8b60b66d13bdfa95dd8f54f683128f4e31386027e0cdedcfe7e73d8156a8a0",
     "config/postgres_migrations/455_account_detection_pending.sql": "2396d7874df9b6b86559c0fbed596bbb5b7b03b9b1087135d7d6c73989800cdd",
+    "config/postgres_migrations/456_semantic_outbox_claim.rollback.sql": "5e8a53c97bb529afc04069c9966634b1248a7650e7703aecca7cda4f0c83021a",
+    "config/postgres_migrations/456_semantic_outbox_claim.sql": "f69cd28814d42fa71d5eee8d9c6e4011e904ece07215f75edf21e8bd1abfe73f",
     "config/postgres_migrations/458_file_audit_activity.rollback.sql": "fa7207caccb95ef45cce009199a41c434efaf09586536b155c82bc4da83e05ad",
     "config/postgres_migrations/458_file_audit_activity.sql": "83bea9637cf41da2f3373e22fe21d613820af3da0310ad2d30650fd6898f8c67",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",

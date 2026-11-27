@@ -27,6 +27,7 @@ public sealed class PolicyCycleTests : IDisposable
     private bool _failNextSession;
     private string? _timeoutPath;
     private HttpStatusCode? _enrollStatus;
+    private string? _identityRejection;
     private JsonObject? _renewalResponse;
     private AgentRuntime? _runtime;
     private IDirectorySnapshotReader? _snapshotReader;
@@ -97,7 +98,13 @@ public sealed class PolicyCycleTests : IDisposable
             else
             {
                 Assert.NotNull(identity);
-                if (path.EndsWith("/identity", StringComparison.Ordinal)) result = _assignment;
+                if (path.EndsWith("/identity", StringComparison.Ordinal))
+                {
+                    if (identity.Certificate.Thumbprint == _identityRejection)
+                        return new HttpResponseMessage(HttpStatusCode.Unauthorized)
+                        { Content = new StringContent("""{"error":"agent_certificate_rejected"}""") };
+                    result = _assignment;
+                }
                 else if (path.EndsWith("/renew", StringComparison.Ordinal)) result = _renewalResponse ?? new JsonObject();
                 else if (path.EndsWith("/packets", StringComparison.Ordinal))
                 {
@@ -114,6 +121,115 @@ public sealed class PolicyCycleTests : IDisposable
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(result.ToJsonString(), Encoding.UTF8, "application/json") };
         })) { BaseAddress = new Uri(_options.ServerUrl) });
     }, _source, new Audit(), _snapshotReader, _fileSource, _fileApi, (_,_) => { }, _ => true, _npsSource, _radiusSource, _protectionReader, _catalogReader);
+
+    [Theory]
+    [InlineData("broken-key")]
+    [InlineData("different-host")]
+    [InlineData("rejected-certificate")]
+    public async Task FreshBootstrapReenrollsAnUnusableIdentityAndRetainsItsQueue(string failure)
+    {
+        var store = AgentRuntime.CreateIdentityStore(_options);
+        var original = store.Prepare();
+        using var previous = store.Accept(_ca.Issue(store), Helpers.Now);
+        string packetPath;
+        byte[] packetBytes;
+        using (var queue = new FilePacketQueue(Path.Combine(_options.StateDir, "queue"), new PhysicalDurableFiles(),
+                   _options.SpoolMaxBytes, _options.SpoolMaxAgeSeconds))
+        {
+            var packet = queue.Capture(previous.Signer, previous.AgentId, Helpers.Sample("", "42"), Helpers.Now);
+            packetPath = packet.Envelope.PacketId + ".packet";
+            packetBytes = File.ReadAllBytes(Path.Combine(_options.StateDir, "queue", packetPath));
+        }
+        if (failure == "broken-key")
+            File.WriteAllText(Path.Combine(_options.StateDir, "identity-key.json"), "broken");
+        else if (failure == "different-host")
+            _options.HostId = Guid.NewGuid().ToString("D");
+        else
+            _identityRejection = previous.Certificate.Thumbprint;
+        var oldFiles = new[] { "host.json", "identity-key.json", "identity.json" }
+            .ToDictionary(name => name, name => File.ReadAllBytes(Path.Combine(_options.StateDir, name)));
+        _assignment = Assignment("paused");
+
+        Assert.Null((await Runtime().RunCycleAsync(CancellationToken.None)).ErrorCode);
+
+        var enrollment = Assert.Single(_requests, r => r.Path == "/api/v1/agent/enroll");
+        Assert.Equal(new string('t', 43), enrollment.Body!["token"]!.GetValue<string>());
+        Assert.Contains(_requests, r => r.Path == "/api/v1/agent/policy-report");
+        Assert.False(File.Exists(_options.TokenFile));
+        using var current = store.Load();
+        Assert.NotNull(current);
+        Assert.NotEqual(previous.Certificate.Thumbprint, current.Certificate.Thumbprint);
+        Assert.NotEqual(original, store.Prepare(_options.HostId));
+        var archive = Assert.Single(Directory.EnumerateDirectories(_directory, "previous-*"));
+        foreach (var (name, bytes) in oldFiles)
+            Assert.Equal(bytes, File.ReadAllBytes(Path.Combine(archive, name)));
+        Assert.Equal(packetBytes, File.ReadAllBytes(Path.Combine(archive, "queue", packetPath)));
+        Assert.Empty(Directory.EnumerateFiles(Path.Combine(_options.StateDir, "queue"), "*.packet"));
+    }
+
+    [Fact]
+    public async Task FreshBootstrapKeepsTheIdentityWhenTheSameServerAcceptsIt()
+    {
+        var store = AgentRuntime.CreateIdentityStore(_options);
+        var original = store.Prepare();
+        using var previous = store.Accept(_ca.Issue(store), Helpers.Now);
+        _assignment = Assignment("paused");
+
+        Assert.Null((await Runtime().RunCycleAsync(CancellationToken.None)).ErrorCode);
+
+        Assert.Equal("/api/v1/agent/identity", _requests.First().Path);
+        Assert.Contains(_requests, r => r.Path == "/api/v1/agent/policy-report");
+        Assert.DoesNotContain(_requests, r => r.Path == "/api/v1/agent/enroll");
+        Assert.False(File.Exists(_options.TokenFile));
+        using var current = store.Load();
+        Assert.NotNull(current);
+        Assert.Equal(previous.Certificate.Thumbprint, current.Certificate.Thumbprint);
+        Assert.Equal(original, store.Prepare());
+        Assert.Empty(Directory.EnumerateDirectories(_directory, "previous-*"));
+    }
+
+    [Fact]
+    public async Task CheckInTimeoutKeepsBothTheExistingIdentityAndTheFreshBootstrapForRetry()
+    {
+        var store = AgentRuntime.CreateIdentityStore(_options);
+        var original = store.Prepare();
+        using var previous = store.Accept(_ca.Issue(store), Helpers.Now);
+        _timeoutPath = "/api/v1/agent/identity";
+
+        Assert.Equal("agent_http_timeout", (await Runtime().RunCycleAsync(CancellationToken.None)).ErrorCode);
+
+        Assert.DoesNotContain(_requests, r => r.Path == "/api/v1/agent/enroll");
+        Assert.True(File.Exists(_options.TokenFile));
+        Assert.Equal(original, store.Prepare());
+        Assert.Empty(Directory.EnumerateDirectories(_directory, "previous-*"));
+    }
+
+    [WindowsFact]
+    public async Task ReenrollmentResumesAnInterruptedIdentityArchiveAfterRestart()
+    {
+        var store = AgentRuntime.CreateIdentityStore(_options);
+        store.Prepare();
+        var keyPath = Path.Combine(_options.StateDir, "identity-key.json");
+        var hostPath = Path.Combine(_options.StateDir, "host.json");
+        var oldHost = File.ReadAllBytes(hostPath);
+        File.WriteAllText(keyPath, "broken");
+        _assignment = Assignment("paused");
+
+        using (var locked = File.Open(hostPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            Assert.True((await Runtime().RunCycleAsync(CancellationToken.None)).DeliveryFailed);
+            Assert.Empty(_requests);
+            Assert.True(File.Exists(_options.TokenFile));
+        }
+        _runtime!.Dispose();
+        _runtime = null;
+
+        Assert.Null((await Runtime().RunCycleAsync(CancellationToken.None)).ErrorCode);
+        var archive = Assert.Single(Directory.EnumerateDirectories(_directory, "previous-*"));
+        Assert.Equal(oldHost, File.ReadAllBytes(Path.Combine(archive, "host.json")));
+        Assert.Equal("broken", File.ReadAllText(Path.Combine(archive, "identity-key.json")));
+        Assert.Single(_requests, r => r.Path == "/api/v1/agent/enroll");
+    }
 
     [Fact]
     public async Task DcAuditResultReachesConsoleBeforeEventDeliveryTimeout()

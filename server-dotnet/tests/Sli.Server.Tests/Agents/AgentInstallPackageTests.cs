@@ -33,6 +33,11 @@ public sealed class AgentInstallPackageTests
             var token = new string('b', 43);
             await AgentInstallPackage.BuildAsync(source, output, input, token, ct);
             var properties = await AgentInstallPackage.ExportPropertiesAsync(output, ct);
+            var original = await AgentInstallPackage.ExportPropertiesAsync(source, ct);
+            Assert.True(Guid.TryParseExact(properties["ProductCode"], "B", out _));
+            Assert.NotEqual(original["ProductCode"], properties["ProductCode"]);
+            Assert.Equal(original["UpgradeCode"], properties["UpgradeCode"]);
+            Assert.Equal(original["ProductVersion"], properties["ProductVersion"]);
             Assert.Equal(origin.AbsoluteUri, properties["SERVER_URL"]);
             Assert.Equal(input.Pin, properties["CA_FINGERPRINT"]);
             Assert.Equal(input.Root, properties["SERVER_CA"]);
@@ -169,7 +174,9 @@ public sealed class AgentInstallPackageTests
     {
         string table = Path.Combine(Path.GetDirectoryName(path)!, "Property.idt");
         await File.WriteAllTextAsync(table, "Property\tValue\r\ns72\tl0\r\nProperty\tProperty\r\n"
-            + $"ProductName\tTest Agent\r\nProductVersion\t{version}\r\n", ct);
+            + $"ProductName\tTest Agent\r\nProductVersion\t{version}\r\n"
+            + "ProductCode\t{7DB1EE8A-94FE-4AA0-8E0D-010200030000}\r\n"
+            + "UpgradeCode\t{BE66EC86-AE25-4D3F-8C60-B191F3B0E20D}\r\n", ct);
         try
         {
             using var process = Process.Start(new ProcessStartInfo("/usr/bin/msibuild") {

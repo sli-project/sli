@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json.Nodes;
 using System.Security.Cryptography;
@@ -29,6 +30,7 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
     private readonly IDurableFiles _files = CreateFiles();
     private readonly EventCatalog _catalog = EventCatalog.Load();
     private readonly Queue<DateTimeOffset> _attempts = new();
+    private FileStream? _stateLock;
     private FilePacketQueue? _queue;
     private AgentHttpClient? _http;
     private AgentIdentity? _identity;
@@ -66,67 +68,115 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
             if (!Path.IsPathFullyQualified(_options.StateDir)) return new("agent_state_path_invalid", false, 0, 0, true);
             if (!Uri.TryCreate(_options.ServerUrl, UriKind.Absolute, out var server) || server.Scheme != "https" || server.UserInfo.Length > 0
                 || server.AbsolutePath != "/" || server.Query.Length > 0 || server.Fragment.Length > 0) return Finish("agent_config_invalid", false, 0, true);
-            _queue ??= new FilePacketQueue(Path.Combine(_options.StateDir, "queue"), _files, _options.SpoolMaxBytes, _options.SpoolMaxAgeSeconds);
+            LockState();
             var store = CreateIdentityStore(_options);
+            // A restart may have interrupted the archive after some of its files had moved.
+            if (Directory.Exists(ReenrollmentStage)) ArchiveIdentity(store);
+            var attemptedEnrollment = false;
             AgentIdentity? identity;
-            try
+            try { store.Prepare(_options.HostId); identity = store.Load(); }
+            catch (Exception exception) when (exception is AgentException { Code: "agent_identity_invalid" }
+                or IOException or UnauthorizedAccessException or System.Security.SecurityException)
             {
-                store.Prepare(_options.HostId);
-                identity = store.Load();
-            }
-            catch (AgentException exception) when (exception.Code == "agent_identity_invalid")
-            { return Finish("agent_identity_missing_reenroll_required", false, 0, true); }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
-            { return Finish("agent_identity_missing_reenroll_required", false, 0, true); }
-            if (identity is null)
-            {
-                var raw = ReadBootstrap();
-                if (raw is null) return Finish("agent_not_enrolled", false, 0, false);
-                var input = EnrollmentInput.Parse(raw, clock.GetUtcNow());
-                using var bootstrapHttp = NewHttp(null);
-                var enrollment = new Enrollment(store, bootstrapHttp, clock,
-                    hasFileShares: string.IsNullOrEmpty(_options.CaCertificate) ? null : HasFileShares);
-                identity = input.ComputerEntityId is { } entity
-                    ? await enrollment.EnrollGroupAsync(input.Token, entity, cancellationToken, _options.InstanceName).ConfigureAwait(false)
-                    : await enrollment.EnrollAsync(input.Token, cancellationToken, _options.InstanceName).ConfigureAwait(false);
+                var bootstrap = ReadBootstrap();
+                if (bootstrap is null)
+                {
+                    OpenQueue();
+                    return Finish("agent_identity_missing_reenroll_required", false, 0, true);
+                }
+                identity = await EnrollAsync(bootstrap, replacingIdentity: true).ConfigureAwait(false);
                 if (identity is null) return Finish("agent_enrollment_pending", false, 0, false);
             }
-            // Enrollment has already durably saved the identity. A locked bootstrap file must
-            // be retried for cleanup, never prevent creation of the mTLS client and check-in.
-            try { ClearBootstrap(); }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
-            { error = "agent_bootstrap_cleanup_failed"; }
-            Use(identity);
-            if (_identity!.Certificate.NotAfter.ToUniversalTime() <= clock.GetUtcNow()) throw new AgentException("agent_certificate_expired");
-            var enrolled = new Enrollment(store, _http!, clock);
-            try
+            OpenQueue();
+            if (identity is null)
             {
-                if (await enrolled.RenewIfDueAsync(_identity, cancellationToken).ConfigureAwait(false)) Use(store.Load()!);
+                var bootstrap = ReadBootstrap();
+                if (bootstrap is null) return Finish("agent_not_enrolled", false, 0, false);
+                identity = await EnrollAsync(bootstrap, replacingIdentity: false).ConfigureAwait(false);
+                if (identity is null) return Finish("agent_enrollment_pending", false, 0, false);
             }
-            catch (AgentException exception) when (exception.Code != "agent_certificate_expired")
+            void ClearAcceptedBootstrap()
             {
-                transportError = exception as TransportException;
-                error = transportError is not null || IssuedCertificate.IsValidationError(exception.Code) ? exception.Code : "agent_renewal_pending";
+                try { ClearBootstrap(); }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+                { error ??= "agent_bootstrap_cleanup_failed"; }
             }
-            var assignment = await _http!.GetIdentityAsync(_fileAuditCatalog is not null, cancellationToken).ConfigureAwait(false);
+
+            async Task<AgentIdentity?> EnrollAsync(string raw, bool replacingIdentity)
+            {
+                var input = EnrollmentInput.Parse(raw, clock.GetUtcNow());
+                using var bootstrapHttp = NewHttp(null);
+                attemptedEnrollment = true;
+                if (replacingIdentity)
+                {
+                    ArchiveIdentity(store);
+                    store.Prepare(_options.HostId);
+                }
+                var enrollment = new Enrollment(store, bootstrapHttp, clock,
+                    hasFileShares: string.IsNullOrEmpty(_options.CaCertificate) ? null : HasFileShares);
+                var issued = input.ComputerEntityId is { } entity
+                    ? await enrollment.EnrollGroupAsync(input.Token, entity, cancellationToken, _options.InstanceName).ConfigureAwait(false)
+                    : await enrollment.EnrollAsync(input.Token, cancellationToken, _options.InstanceName).ConfigureAwait(false);
+                // The token has been used and enrollment has durably saved the certificate.
+                if (issued is not null) ClearAcceptedBootstrap();
+                return issued;
+            }
+
+            async Task<JsonObject> CheckInAsync(AgentIdentity candidate)
+            {
+                Use(candidate);
+                if (_identity!.Certificate.NotAfter.ToUniversalTime() <= clock.GetUtcNow())
+                    throw new AgentException("agent_certificate_expired");
+                var enrollment = new Enrollment(store, _http!, clock);
+                try
+                {
+                    if (await enrollment.RenewIfDueAsync(_identity, cancellationToken).ConfigureAwait(false)) Use(store.Load()!);
+                }
+                catch (AgentException exception) when (exception.Code != "agent_certificate_expired")
+                {
+                    transportError = exception as TransportException;
+                    error = transportError is not null || IssuedCertificate.IsValidationError(exception.Code) ? exception.Code : "agent_renewal_pending";
+                }
+                return await _http!.GetIdentityAsync(_fileAuditCatalog is not null, cancellationToken).ConfigureAwait(false);
+            }
+
+            JsonObject assignment;
+            try { assignment = await CheckInAsync(identity).ConfigureAwait(false); }
+            catch (AgentException exception) when (!attemptedEnrollment && (exception.Code is "agent_certificate_expired"
+                or "agent_tls_client_key_unusable" or "agent_tls_client_rejected"
+                || exception is TransportException { HttpStatus: 401, Code: "agent_certificate_rejected" or "agent_mtls_required" }))
+            {
+                var bootstrap = ReadBootstrap();
+                if (bootstrap is null) throw;
+                error = null;
+                transportError = null;
+                identity = await EnrollAsync(bootstrap, replacingIdentity: true).ConfigureAwait(false);
+                if (identity is null) return Finish("agent_enrollment_pending", false, 0, false);
+                OpenQueue();
+                assignment = await CheckInAsync(identity).ConfigureAwait(false);
+            }
+            // A locally valid certificate may belong to an earlier server. Keep the token until check-in succeeds.
+            if (!attemptedEnrollment) ClearAcceptedBootstrap();
+            var http = _http!;
+            var enrolled = new Enrollment(store, http, clock);
             if (assignment["agent_removal"] is not null) throw new AgentException("agent_removal_requires_admin");
             _updates ??= new MsiAgentUpdate(_options.StateDir, _files, clock);
             try
             {
-                await _updates.CheckAsync(assignment["agent_update"] as JsonObject, _http, cancellationToken).ConfigureAwait(false);
+                await _updates.CheckAsync(assignment["agent_update"] as JsonObject, http, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception exception) when (exception is AgentException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
             {
                 error ??= exception is AgentException update ? update.Code : "agent_update_stage_failed";
             }
-            var policy = AgentPolicy.Parse(assignment, _identity.AgentId, _catalog);
+            var policy = AgentPolicy.Parse(assignment, _identity!.AgentId, _catalog);
             bool fileAuditReadDiagnostics = assignment[FileAuditReadError.Capability] is JsonValue fileAuditFeature
                 && fileAuditFeature.TryGetValue<bool>(out var supported) && supported;
-            _fileAuditCatalog?.Tick(assignment["file_audit_catalog_request"], _http!, fileAuditReadDiagnostics, cancellationToken);
+            _fileAuditCatalog?.Tick(assignment["file_audit_catalog_request"], http, fileAuditReadDiagnostics, cancellationToken);
             var sourceHostId = policy.Handoff?.SourceHostId ?? store.ReadHostId();
-            CapturedPosition? Position(string module) => _queue.Captured(module) ?? policy.Handoff?.Position(module);
+            CapturedPosition? Position(string module) => _queue!.Captured(module) ?? policy.Handoff?.Position(module);
             IntervalSeconds = policy.Control.IntervalSeconds;
-            _queue.MaxBytes = policy.Control.SpoolMaxBytes;
+            _queue!.MaxBytes = policy.Control.SpoolMaxBytes;
             var state = policy.Control.State;
             _snapshots ??= new SnapshotCapture(Path.Combine(_options.StateDir, "snapshots"), _files, snapshotReader ?? new DirectorySnapshotReader(), clock);
             if (state != "active") _snapshots.Cancel(clearFailures: true);
@@ -149,16 +199,16 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
                 var report = policy.Report(state, rights);
                 if (assignment["dc_identity_required"] is JsonValue required && required.TryGetValue<bool>(out bool requested) && requested)
                     report["dc_identity"] = enrolled.ReadDcIdentity();
-                await _http.PostAsync("/api/v1/agent/policy-report", report, cancellationToken).ConfigureAwait(false);
+                await http.PostAsync("/api/v1/agent/policy-report", report, cancellationToken).ConfigureAwait(false);
             }
             // A DC audit command result must not wait for the event backlog.
             if (policy.AdDc is not null && auditReport is not null)
-                await _http.PostAsync("/api/v1/agent/windows-audit-report", auditReport, cancellationToken).ConfigureAwait(false);
+                await http.PostAsync("/api/v1/agent/windows-audit-report", auditReport, cancellationToken).ConfigureAwait(false);
             if (state != "paused")
             {
                 var now = clock.GetUtcNow();
                 while (_attempts.TryPeek(out var attempted) && now - attempted >= TimeSpan.FromMinutes(1)) _attempts.Dequeue();
-                var result = await new PacketDelivery(_queue, _http, _identity.Signer).DeliverOnceAsync(limit: Math.Max(0, policy.Control.RateLimitPerMinute - _attempts.Count), cancellationToken: cancellationToken).ConfigureAwait(false);
+                var result = await new PacketDelivery(_queue, http, _identity.Signer).DeliverOnceAsync(limit: Math.Max(0, policy.Control.RateLimitPerMinute - _attempts.Count), cancellationToken: cancellationToken).ConfigureAwait(false);
                 for (var i = 0; i < result.Attempted; i++) _attempts.Enqueue(now);
                 failed = !result.Success;
                 if (result.TransportFailure is { } deliveryError)
@@ -173,10 +223,10 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
                 }
             }
             if (state == "drain" && _queue.Pending().Count == 0)
-                await _http.PostAsync("/api/v1/agent/policy-report", policy.Report("paused", rights), cancellationToken).ConfigureAwait(false);
-            if (policy.AdDc is null && auditReport is not null) await _http.PostAsync("/api/v1/agent/windows-audit-report", auditReport, cancellationToken).ConfigureAwait(false);
+                await http.PostAsync("/api/v1/agent/policy-report", policy.Report("paused", rights), cancellationToken).ConfigureAwait(false);
+            if (policy.AdDc is null && auditReport is not null) await http.PostAsync("/api/v1/agent/windows-audit-report", auditReport, cancellationToken).ConfigureAwait(false);
             if (fileResult?.Report is { } fileReport)
-                _fileAuditReport.Start(fileReport, _http, fileAuditReadDiagnostics, cancellationToken);
+                _fileAuditReport.Start(fileReport, http, fileAuditReadDiagnostics, cancellationToken);
             var eventActive = state == "active" && source is not null && (policy.AdDc is not null || policy.Workstations is not null);
             active = eventActive || state == "active" && (policy.Snapshots.Count > 0 || policy.FileAudit is not null || policy.NpsModules.Count > 0);
             var capturePolicy = CanonicalJson.Serialize(new JsonObject { ["dc"] = policy.AdDc?.DeepClone(), ["ws"] = policy.Workstations?.DeepClone() });
@@ -351,6 +401,49 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
         catch (EventLogReadException exception) { return exception.Diagnostic?.WinError == 5 ? "denied" : "unavailable"; }
     }
 
+    private string StateDirectory => Path.TrimEndingDirectorySeparator(_options.StateDir);
+
+    private string StateParent => Path.GetDirectoryName(StateDirectory) ?? StateDirectory;
+
+    private string ReenrollmentStage => Path.Combine(StateParent, "previous-pending-" + Path.GetFileName(StateDirectory));
+
+    private string QueuePath => Path.Combine(_options.StateDir, "queue");
+
+    private void LockState()
+    {
+        if (_stateLock is not null) return;
+        _files.EnsureDirectory(_options.StateDir);
+        try
+        {
+            _stateLock = new FileStream(Path.Combine(_options.StateDir, "agent.lock"), FileMode.OpenOrCreate,
+                FileAccess.ReadWrite, FileShare.None);
+        }
+        catch (IOException) { throw new AgentException("agent_state_locked"); }
+    }
+
+    private void OpenQueue() =>
+        _queue ??= new FilePacketQueue(QueuePath, _files, _options.SpoolMaxBytes, _options.SpoolMaxAgeSeconds);
+
+    private void ArchiveIdentity(HostIdentityStore store)
+    {
+        // Queue packets and capture checkpoints belong to the old signer and identity.
+        // Stage the moves so a retry can finish an interrupted archive before creating new state.
+        var stage = ReenrollmentStage;
+        _files.EnsureDirectory(stage);
+        _queue?.Dispose();
+        _queue = null;
+        _snapshots?.Cancel(clearFailures: true);
+        _lastCapture = null;
+        _lastFileCapture = null;
+        _lastNpsCapture.Clear();
+        _attempts.Clear();
+        try { Directory.Move(QueuePath, Path.Combine(stage, "queue")); }
+        catch (DirectoryNotFoundException) when (!Directory.Exists(QueuePath)) { }
+        store.ArchiveIdentity(stage);
+        var utc = clock.GetUtcNow().UtcDateTime.ToString("yyyyMMdd'T'HHmmssfffffff'Z'", CultureInfo.InvariantCulture);
+        Directory.Move(stage, Path.Combine(StateParent, $"previous-{utc}-{Guid.NewGuid():N}"));
+    }
+
     private string? ReadBootstrap()
     {
         if (_options.TokenFile is { Length: > 0 } path)
@@ -401,7 +494,7 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
     {
         if (_options.TokenFile is { Length: > 0 } path && File.Exists(path)) File.Delete(path);
         _files.Delete(Path.Combine(_options.StateDir, "bootstrap.json"));
-        if (OperatingSystem.IsWindows()) MsiConfiguration.ClearToken();
+        if (OperatingSystem.IsWindows() && string.IsNullOrEmpty(_options.TokenFile)) MsiConfiguration.ClearToken();
     }
 
     private bool HasFileShares(CancellationToken ct)
@@ -480,5 +573,6 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
         _http?.Dispose();
         _identity?.Dispose();
         _queue?.Dispose();
+        _stateLock?.Dispose();
     }
 }

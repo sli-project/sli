@@ -221,6 +221,11 @@ public sealed class RetainedFactsIdentityGuardTests : IDisposable
                 if (sql.Contains("as event_key", StringComparison.Ordinal)) return Task.FromResult(Rows(((long[])values[0]!).Select(id => new JsonObject {
                     ["id"] = id, ["event_key"] = "4625", ["stream"] = "Security", ["provider_name"] = "Microsoft-Windows-Security-Auditing"
                 }).ToArray()));
+                if (sql == SemanticProducer.EnqueueSourcesSql) {
+                    return Task.FromResult(new JsonArray(((JsonArray)values[0]!)
+                        .Where(row => db.SelectedIds.Contains(row.Number("id")))
+                        .Select(row => row.Copy()).ToArray()));
+                }
                 if (sql.Contains("insert into semantic_processing_outbox", StringComparison.Ordinal)) {
                     db.BeforePublish?.Invoke(); db.Publications++;
                     return Task.FromResult(Rows(new JsonObject { ["job_id"] = "synthetic" }));
