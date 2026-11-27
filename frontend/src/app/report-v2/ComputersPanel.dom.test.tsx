@@ -68,8 +68,9 @@ it("keeps individual observations selected by row ID through paging and resets o
   expectSelected(0);
   fireEvent.keyDown(rows()[1], { key: "Enter" });
   expectSelected(1);
-  expect(rows().map((row) => within(row).getByRole("link").getAttribute("href")?.split("?")[0]))
-    .toEqual(["/app/events/81", "/app/events/81"]);
+  expect(screen.getByRole("link", { name: t("reports.computers.open_event") }).getAttribute("href")?.split("?")[0])
+    .toBe("/app/events/81");
+  expect(screen.queryByText("#81")).toBeNull();
 
   fireEvent.click(screen.getByRole("button", { name: t("table.loadMore") }));
   await waitFor(() => expect(rows()).toHaveLength(3));
@@ -121,7 +122,8 @@ it("shows grouped stored logons and pages them independently of the computer lis
   expect(row.textContent).toContain("SOURCE-PC");
   expect(row.textContent).toContain("192.0.2.21");
   expect(row.textContent).toContain("×4");
-  expect(within(row).getByRole("link").getAttribute("href")).toMatch(/^\/app\/events\/81(?:\?|$)/);
+  expect(within(row).getByRole("link", { name: new RegExp(t("reports.computers.open_event")) }).getAttribute("href")).toMatch(/^\/app\/events\/81(?:\?|$)/);
+  expect(within(row).queryByText("#81")).toBeNull();
   expect(request.mock.calls[0][1]).toBe("host-1-cGMtdGVzdA");
   expect(request.mock.calls[0][2].get("limit")).toBe("50");
   fireEvent.click(screen.getByRole("button", { name: t("table.next") }));
