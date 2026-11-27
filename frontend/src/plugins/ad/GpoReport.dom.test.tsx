@@ -27,6 +27,9 @@ const details = {
     { id: "audit", side: "computer", setting_name: "Audit", category: "Logging", value_display: "<img src=x>" },
     { id: "audit-subcategory", side: "computer", setting_name: "SubcategoryGuid", path: "AuditSetting/SubcategoryGuid", category: "AuditSetting", value_display: auditGuid, audit_mode: "3" },
     { id: "audit-legacy", side: "computer", setting_name: "SubcategoryGuid", path: "AuditSetting/SubcategoryGuid", category: "AuditSetting", value_display: "{0CCE9242-69AE-11D9-BED3-505054503030}" },
+    { id: "audit-logoff", side: "computer", setting_name: "SubcategoryGuid", path: "AuditSetting/SubcategoryGuid", category: "AuditSetting", value_display: "{0CCE9216-69AE-11D9-BED3-505054503030}", audit_mode: "0" },
+    { id: "audit-lockout", side: "computer", setting_name: "SubcategoryGuid", path: "AuditSetting/SubcategoryGuid", category: "AuditSetting", value_display: "{0CCE9217-69AE-11D9-BED3-505054503030}", audit_mode: "1" },
+    { id: "audit-special", side: "computer", setting_name: "SubcategoryGuid", path: "AuditSetting/SubcategoryGuid", category: "AuditSetting", value_display: "{0CCE921B-69AE-11D9-BED3-505054503030}", audit_mode: "2" },
     { id: "audit-value", side: "computer", setting_name: "SettingValue", path: "AuditSetting/SettingValue", category: "AuditSetting", value_display: "3" },
     { id: "audit-target", side: "computer", setting_name: "PolicyTarget", path: "AuditSetting/PolicyTarget", category: "AuditSetting", value_display: "System" },
     { id: "audit-mode", side: "computer", setting_name: "AuditSetting", path: "AuditSetting/AuditSetting", category: "AuditSetting", value_display: "Success and Failure" },
@@ -126,6 +129,12 @@ it.each([
   const { container } = openDetails("linked", "settings", "audit-subcategory");
   const setting = await screen.findByRole("button", { name });
   expect(within(setting.closest("tr")!).getByText(value)).toBeTruthy();
+  for (const [label, mode] of locale === "en"
+    ? [["Logoff", "Not configured"], ["Account Lockout", "Success"], ["Special Logon", "Failure"]]
+    : [["Выход из системы", "Не задано"], ["Блокировка учётной записи", "Успех"], ["Особый вход", "Отказ"]]) {
+    const item = screen.getByRole("button", { name: label });
+    expect(within(item.closest("tr")!).getByText(mode)).toBeTruthy();
+  }
   expect(screen.getByRole("button", { name: locale === "en" ? "Kerberos Authentication Service" : /Служба проверки подлинности Kerberos/ })).toBeTruthy();
   expect(screen.getAllByText(value).length).toBeGreaterThan(0);
   expect(screen.getAllByText(new RegExp(path)).length).toBeGreaterThan(0);

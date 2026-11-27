@@ -63,7 +63,8 @@ public sealed class AdV2Store(IPostgresConnectionFactory connections, IConfigura
         else
         {
             bool users = request.Key == "ad.users.v2";
-            var sources = await Snapshots(db, users ? "users_v2" : "computers_v6", request.Domains, ct);
+            var sources = await Snapshots(db, users ? "users_v2" : "computers_v6", request.Domains, ct,
+                computerDirectoryFacts: request.Key == "ad.computers.v6" && request.Tab is not ("changes" or "checks"));
             if (users && request.Action == "detail") result = await AdUserCard.ReadAsync(db, request, sources, fields, configuration, ct);
             else if (request.Key == "ad.computer-logons") result = await AdLogonReports.ReadAsync(db, request, sources, ct);
             else if(users&&request.Tab is "disabled_active" or "temporary_memberships") result=await AdUsersActivity.QueryAsync(db,request,sources,fields,ct,configuration);
@@ -78,18 +79,21 @@ public sealed class AdV2Store(IPostgresConnectionFactory connections, IConfigura
         if (request.Tab == "changes") result["collections"]!["changes"] = new JsonArray();
         return result;
     }
-    internal static async Task<List<JsonObject>> Snapshots(NpgsqlConnection db, string family, long[] domains, CancellationToken ct)
+    internal static async Task<List<JsonObject>> Snapshots(NpgsqlConnection db, string family, long[] domains, CancellationToken ct,
+        bool computerDirectoryFacts = false)
     {
         string table = family == "users_v2" ? "users_report_v2_snapshots" : "computers_v6_source_snapshots", identifier = family == "users_v2" ? "snapshot_id" : "snapshot_uuid",scope=family=="users_v2"?"scope_json":"source_options_json";
         var rows = await AdJson.ReadAsync(db, $"""
             select d.id as domain_id,d.fqdn,m.manifest_id::text,m.coverage_state,s.source_state,s.observed_at_utc,
-                   encode(s.payload_sha256,'hex') as payload_sha256,snap.payload_json::text as payload,snap.{scope}::text as scope
+                   encode(s.payload_sha256,'hex') as payload_sha256,snap.payload_json::text as payload,snap.{scope}::text as scope,
+                   $3 and exists(select 1 from ad_snapshot_manifest_sources member
+                       where member.manifest_id=m.manifest_id and member.family='ad_context_base') as has_directory_context
             from domains d left join lateral(select manifest_id,coverage_state from ad_snapshot_manifests where domain_id=d.id
                 order by slot_start_utc desc,manifest_id desc limit 1) m on true
             left join ad_snapshot_manifest_sources s on s.manifest_id=m.manifest_id and s.family=$2
             left join {table} snap on snap.domain_id=d.id and snap.{identifier}::text=s.source_id and snap.payload_sha256=s.payload_sha256
             where d.id=any($1) order by d.id
-            """, ct, domains, family);
+            """, ct, domains, family, computerDirectoryFacts);
         foreach (var row in rows) if (row.Text("payload") is {} text)
         {
             JsonObject payload;
@@ -111,9 +115,40 @@ public sealed class AdV2Store(IPostgresConnectionFactory connections, IConfigura
             {
                 var aliases=await AdJson.ReadAsync(db,"select normalized_value,entity_id from ad_context_entity_aliases where domain_id=$1 and alias_type='object_guid' and normalized_value=any($2)",ct,row.Int("domain_id"),payload["objects"]!.AsArray().Select(o=>o!.Text("objectGuid")!.ToLowerInvariant()).ToArray());
                 var ids=new JsonObject(); foreach(var alias in aliases) ids[alias.Text("normalized_value")!]=alias["entity_id"]!.DeepClone(); row["entity_ids"]=ids;
+                if (aliases.Count > 0 && row["has_directory_context"]!.GetValue<bool>())
+                    row["computer_directory_attributes"] = await ComputerDirectoryAttributes(db, row, aliases.Select(a => a.Int("entity_id")).ToArray(), ct);
             }
         }
         return rows;
+    }
+
+    static async Task<JsonObject> ComputerDirectoryAttributes(NpgsqlConnection db, JsonObject source, long[] entities, CancellationToken ct)
+    {
+        // Use the directory-account observation from the same authorized manifest, including unchanged entity versions.
+        var facts = await AdJson.ReadAsync(db, """
+            select distinct on (v.entity_id) v.attributes_json#>>'{identity,object_guid}' as object_guid,
+                   jsonb_build_object('operating_system',v.attributes_json#>'{attributes,operating_system}',
+                       'operating_system_version',v.attributes_json#>'{attributes,operating_system_version}',
+                       'operating_system_service_pack',v.attributes_json#>'{attributes,operating_system_service_pack}',
+                       'user_account_control',v.attributes_json#>'{attributes,user_account_control}',
+                       'last_logon_timestamp_utc',v.attributes_json#>'{attributes,last_logon_timestamp_utc}',
+                       'last_logon_utc',v.attributes_json#>'{attributes,last_logon_utc}')::text as facts
+            from ad_snapshot_manifest_sources member
+            join ad_context_runs run on run.run_id::text=member.source_id and run.bundle_sha256=member.payload_sha256
+                and run.domain_id=$1 and run.status='completed'
+            join ad_context_entity_versions v on v.entity_id=any($3) and v.source_section='directory_accounts'
+                and v.valid_from_utc<=run.observed_at_utc and v.last_observed_at_utc>=run.observed_at_utc
+                and (v.valid_to_utc is null or v.valid_to_utc>run.observed_at_utc or v.source_run_id=run.run_id)
+            join ad_context_evidence evidence on evidence.source_run_id=run.run_id
+                and evidence.evidence_key='adctx:' || run.run_id::text || ':' || (v.attributes_json->>'record_key')
+            where member.manifest_id=$2::uuid and member.family='ad_context_base'
+              and v.attributes_json#>>'{identity,kind}'='ad_computer'
+            order by v.entity_id,(v.source_run_id=run.run_id) desc,v.valid_from_utc desc,v.id desc
+            """, ct, source.Int("domain_id"), source.Text("manifest_id"), entities);
+        var byGuid = new JsonObject();
+        foreach (var fact in facts)
+            if (fact.Text("object_guid") is {} guid) byGuid[guid.ToLowerInvariant()] = JsonNode.Parse(fact.Text("facts")!);
+        return byGuid;
     }
     internal static async Task<JsonObject?> PreviousSnapshot(NpgsqlConnection db,JsonObject source,string family,CancellationToken ct,DateTimeOffset? at=null)
     {

@@ -194,20 +194,30 @@ internal static class AdInventoryRows
         foreach (var (field, from) in map) row[field] = raw[from]?.DeepClone();
         row["entity_id"] = source["entity_ids"]?[raw.Text("objectGuid") ?? ""]?.DeepClone(); row["domain_id"] = source["domain_id"]!.DeepClone(); row["domain_name"] = source["fqdn"]?.DeepClone();
         row["identity"] = Obj(new { object_guid = raw.Text("objectGuid"), object_sid = raw.Text("sid") }); row["observed_at_utc"] = observed;
-        var osSource = raw["sources"]?["os"];
-        if (row.Text("operating_system") is null && osSource.Text("status") == "observed")
-            row["operating_system"] = osSource.Text("value");
-        string? os = row.Text("operating_system");
-        string? collectedRole = new[] { raw["classification"].Text("result"), raw.Text("deviceType") }
+        var directory = source["computer_directory_attributes"]?[raw.Text("objectGuid")?.ToLowerInvariant() ?? ""];
+        var osSource = ComputerSourceValue(raw, "os");
+        string? os = ComputerOs(raw["osName"]) ?? ComputerOs(osSource is JsonObject osInfo ? osInfo["name"] : osSource)
+            ?? ComputerOs(directory?["operating_system"]);
+        row["operating_system"] = os;
+        row["operating_system_version"] = raw.Text("osVersion") ?? (osSource as JsonObject).Text("version") ?? directory.Text("operating_system_version");
+        row["operating_system_service_pack"] = raw.Text("servicePack") ?? (osSource as JsonObject).Text("service_pack") ?? directory.Text("operating_system_service_pack");
+        string? collectedRole = new[] { raw["classification"].Text("result"), raw.Text("deviceType"), raw["classification"].Text("value") }
             .FirstOrDefault(role => role is "server" or "domain_controller" or "workstation");
-        long? uac = raw["userAccountControl"]?.GetValueKind() == System.Text.Json.JsonValueKind.Number ? raw.Int("userAccountControl") : null;
+        long? rawUac = ComputerUac(raw["userAccountControl"]);
+        long? directoryUac = rawUac is null or 0 ? ComputerUac(directory?["user_account_control"]) : null;
+        long? uac = directoryUac ?? rawUac;
+        row["user_account_control"] = uac;
         string type = ((uac ?? 0) & 8192) != 0 ? "domain_controller" : collectedRole ??
             (os?.Contains("server", StringComparison.OrdinalIgnoreCase) == true ? "server" :
              os?.Contains("windows", StringComparison.OrdinalIgnoreCase) == true ? "workstation" : "unknown");
-        bool? enabled = Bool(raw["enabled"]) ?? (uac is > 0 ? (uac.Value & 2) == 0 : null);
+        bool? enabled = directoryUac is > 0 ? (directoryUac.Value & 2) == 0
+            : Bool(raw["enabled"]) ?? (uac is > 0 ? (uac.Value & 2) == 0 : null);
         row["enabled"] = enabled;
         row["computer_type"] = type; row["account_state"] = enabled switch { true => "enabled", false => "disabled", _ => "unknown" };
-        int? age = Age(raw["lastLogonTimestamp"], time) is {} days?Math.Max(0,days):null; int threshold = parameters.Int("threshold_days") > 0 ? (int)parameters.Int("threshold_days") : 90;
+        var directoryLogon = ComputerLogonDate(raw["lastLogonTimestamp"]) ?? ComputerLogonDate(ComputerSourceValue(raw, "last_logon_timestamp"))
+            ?? Date(directory?["last_logon_timestamp_utc"]) ?? Date(directory?["last_logon_utc"]);
+        int? age = directoryLogon is {} replicated ? Math.Max(0, (int)Math.Floor((time - replicated).TotalDays)) : null;
+        int threshold = parameters.Int("threshold_days") > 0 ? (int)parameters.Int("threshold_days") : 90;
         string activity = enabled==false?"not_applicable":enabled is null||age is null?"not_evaluated":age>60?"inactive":"recent";
         row["activity_state"] = activity; row["activity"] = Obj(new { state = activity, age_days = age, time_semantics = "replicated_lastLogonTimestamp_approximation", source_attribute = "LastLogonDate" }); row["age_days"] = age;
         row["ip_addresses"] = Array((raw["ipv4s"] as JsonArray ?? []).Concat(raw["ipv6s"] as JsonArray ?? []).Select(n => n!.ToString())); row["ip_text"] = string.Join(", ", row["ip_addresses"]!.AsArray().Select(n => n!.ToString()));
@@ -217,11 +227,10 @@ internal static class AdInventoryRows
         void Reason(bool match, string code, string label) { if (match) reasons.Add(Obj(new { code, label })); }
         Reason(type == "unknown", "unknown_type", "Тип объекта не определён"); Reason(enabled == true && age > threshold, "stale_activity", "Активность старше " + threshold + " дней"); Reason(enabled == true && age is null, "unavailable_activity", "Нет доступной даты активности"); Reason((raw.Int("userAccountControl") & 524288) != 0 || Bool(raw["trustedForDelegation"]) == true, "unconstrained_delegation", "Неограниченное делегирование");
         row["reasons"] = Array(reasons); row["reason_text"] = string.Join(", ", reasons.Select(r => r.Text("label"))); row["quality_issues"] = new JsonArray(); row["quality_text"] = null; row["semantic_findings"] = new JsonArray();
-        row["ad_last_logon_utc"] = raw["lastLogonTimestamp"]?.DeepClone();
+        row["ad_last_logon_utc"] = directoryLogon is {} adLogon ? PythonIso(adLogon) : null;
 
         var eventLogon = Date(raw["eventLastSeen"]);
         var controllerLogon = Date(raw["exactLastLogon"]);
-        var directoryLogon = Date(raw["lastLogonTimestamp"]);
         var lastLogon = new[] { eventLogon, controllerLogon, directoryLogon }.Max();
         row["last_logon_utc"] = lastLogon is {} logon ? PythonIso(logon) : null;
         row["last_logon_source"] = lastLogon is null ? null
@@ -244,8 +253,24 @@ internal static class AdInventoryRows
         row["evidence"]!["collection_errors"]=raw["collectionErrors"]?.DeepClone()??new JsonArray();
         row["evidence"]!["activity_sources"]=new JsonObject{["replicated_last_logon"]=raw["sources"]?["last_logon_timestamp"]?.DeepClone()??new JsonObject(),["exact_last_logon"]=raw["sources"]?["exact_last_logon"]?.DeepClone()??new JsonObject(),["dc_logon_events"]=raw["sources"]?["dc_events"]?.DeepClone()??new JsonObject()};
         row["evidence"]!["network_sources"]=new JsonObject{["dns_addresses"]=raw["sources"]?["dns"]?.DeepClone()??new JsonObject(),["ad_site"]=raw["sources"]?["site"]?.DeepClone()??new JsonObject()};
-        AdComputerPosture.Apply(row,raw,time);ComputerQuality(row,raw,source);ComputerReasons(row,raw,threshold,time);
+        AdComputerPosture.Apply(row,raw,time,uac);ComputerQuality(row,raw,source);ComputerReasons(row,threshold,time);
         return row;
+    }
+    static JsonNode? ComputerSourceValue(JsonObject raw, string name)
+    {
+        var state = raw["sources"]?[name];
+        return state.Text("status") == "observed" ? state?["value"] : null;
+    }
+    static string? ComputerOs(JsonNode? value) => value is JsonValue scalar && scalar.TryGetValue<string>(out var text)
+        && text.Trim().ToLowerInvariant() is not ("" or "unknown" or "none" or "null" or "неизвестно") ? text.Trim() : null;
+    internal static long? ComputerUac(JsonNode? value) => long.TryParse(value?.ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out long uac)
+        && uac is >= 0 and <= int.MaxValue ? uac : null;
+    static DateTimeOffset? ComputerLogonDate(JsonNode? value)
+    {
+        if (Date(value) is {} date) return date;
+        long maxFileTime = DateTime.MaxValue.ToFileTimeUtc();
+        return long.TryParse(value?.ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out long fileTime)
+            && fileTime > 0 && fileTime <= maxFileTime ? DateTimeOffset.FromFileTime(fileTime).ToUniversalTime() : null;
     }
     static readonly JsonObject ComputerTemplates=AdV2Store.Resource("computer-reasons");
     static void ComputerQuality(JsonObject row,JsonObject raw,JsonObject source)
@@ -254,9 +279,9 @@ internal static class AdInventoryRows
         var codes=new HashSet<string>();foreach(var(name,state)in raw["sources"] as JsonObject??new())
         {string? code=state.Text("status") switch{"failed" or "access_denied" or "parse_error"=>"source_error","not_collected" when requested.GetValueOrDefault(name)=>"not_collected","not_evaluated"=>"not_evaluated","no_record" or "missing_in_source"=>"no_record_or_missing_source","partial"=>"partial",_=>null};if(code is not null)codes.Add(code);}
         var issues=new List<JsonObject>();foreach(var(code,label)in new[]{("source_error","Ошибка источника"),("not_collected","Не собиралось"),("not_evaluated","Не оценивалось"),("no_record_or_missing_source","Запись или значение не найдено"),("partial","Частичный результат")})if(codes.Contains(code))issues.Add(Obj(new{code,label}));
-        var missing=new[]{("osName",raw.Text("osName")),("dnsHostName",raw.Text("dnsHostName")),("lastObserved",raw.Text("eventLastSeen")??raw.Text("exactLastLogon")??raw.Text("lastLogonTimestamp")),("distinguishedName",raw.Text("distinguishedName"))}.Where(p=>p.Item2 is null).Select(p=>p.Item1).ToArray();if(missing.Length>0)issues.Add(Obj(new{code="missing_field",label="Поле отсутствует",fields=missing}));row["quality_issues"]=Array(issues);row["quality_text"]=issues.Count>0?string.Join(", ",issues.Select(i=>i.Text("label"))):null;
+        var missing=new[]{("osName",row.Text("operating_system")),("dnsHostName",raw.Text("dnsHostName")),("lastObserved",row.Text("last_logon_utc")),("distinguishedName",raw.Text("distinguishedName"))}.Where(p=>p.Item2 is null).Select(p=>p.Item1).ToArray();if(missing.Length>0)issues.Add(Obj(new{code="missing_field",label="Поле отсутствует",fields=missing}));row["quality_issues"]=Array(issues);row["quality_text"]=issues.Count>0?string.Join(", ",issues.Select(i=>i.Text("label"))):null;
     }
-    internal static void ComputerReasons(JsonObject row,JsonObject raw,int threshold,DateTimeOffset at)
+    internal static void ComputerReasons(JsonObject row,int threshold,DateTimeOffset at)
     {
         var reasons=new List<JsonObject>();JsonObject Add(string code){var r=(JsonObject)ComputerTemplates[code]!.DeepClone();reasons.Add(r);return r;}
         var end=AdComputerPosture.SupportEnd(row.Text("operating_system"),row.Text("operating_system_version"));
@@ -268,7 +293,7 @@ internal static class AdInventoryRows
         int? age=row["activity"]?["age_days"]?.GetValue<int>();
         if(Bool(row["enabled"])==true&&age>threshold){var r=Add("stale_activity");r["label"]=$"Активность старше {threshold} дней";r["observed"]=$"Последнее приблизительное AD-наблюдение: {row.Text("last_logon_utc")??"нет"}; возраст: {age} дней.";r["condition"]=$"Разница строго больше выбранного порога {threshold} дней, а учётная запись включена в AD.";r["qualification"]=$"Последнее доступное AD-наблюдение старше {threshold} дней.";r["threshold_days"]=threshold;}
         else if(Bool(row["enabled"])==true&&age is null)Add("unavailable_activity");
-        if(row.Text("operating_system") is null||raw["sources"]?["os"]?.Text("status") is not ("observed" or "present"))Add("unknown_os");
+        if(row.Text("operating_system") is null)Add("unknown_os");
         foreach(var reason in reasons)
         {
             string code=reason.Text("code")!;

@@ -37,11 +37,17 @@ public sealed class DirectorySnapshotReaderTests
         request["local_dc"] = LocalDc;
         ReplaceFunction(request, "New-Entry", RootDse);
         ReplaceFunction(request, "Search-Rows", """
-            function Search-Rows([string]$Dc, [string]$Base, [string]$Filter) {
+            function Search-Rows([string]$Dc, [string]$Base, [string]$Filter, [string[]]$Names) {
                 switch -Wildcard ($Filter) {
                     '(objectClass=domainDNS)' { @{ objectsid=$policy.domain_sid; objectguid='440c6e5e-25aa-4bc0-a94c-5442eef94a10'; objectclass=@('domainDNS') } }
                     '*objectCategory=person*' { @{ objectguid='440c6e5e-25aa-4bc0-a94c-5442eef94a11'; objectclass=@('user'); name='Fixture User' } }
-                    '*objectCategory=computer*ManagedServiceAccount*' { @{ objectguid='440c6e5e-25aa-4bc0-a94c-5442eef94a12'; objectclass=@('computer'); name='Fixture Computer' } }
+                    '*objectCategory=computer*ManagedServiceAccount*' {
+                        $computer = @{ objectguid='440c6e5e-25aa-4bc0-a94c-5442eef94a12'; objectclass=@('computer'); name='Fixture Computer' }
+                        if ('operatingsystem' -in $Names) { $computer.operatingsystem = 'Windows 11 Pro' }
+                        if ('useraccountcontrol' -in $Names) { $computer.useraccountcontrol = 4096 }
+                        if ('lastlogontimestamp' -in $Names) { $computer.lastlogontimestamp = [DateTimeOffset]::Parse('2026-08-29T12:00:00Z').ToFileTime() }
+                        $computer
+                    }
                     '(objectCategory=group)' { @{ objectguid='440c6e5e-25aa-4bc0-a94c-5442eef94a13'; objectclass=@('group'); name='Fixture Group' } }
                 }
             }
@@ -53,6 +59,11 @@ public sealed class DirectorySnapshotReaderTests
         Assert.Contains("ad_user", kinds);
         Assert.Contains("ad_computer", kinds);
         Assert.Contains("ad_group", kinds);
+        var computer = Assert.Single(families["computers_v6"].Data["objects"]!.AsArray())!;
+        Assert.Equal("Windows 11 Pro", computer["osName"]!.ToString());
+        Assert.Equal("workstation", computer["deviceType"]!.ToString());
+        Assert.Equal(4096L, computer["userAccountControl"]!.GetValue<long>());
+        Assert.Equal(DateTimeOffset.Parse("2026-08-29T12:00:00Z"), DateTimeOffset.Parse(computer["lastLogonTimestamp"]!.ToString()));
     }
 
     [Theory]
@@ -100,6 +111,40 @@ public sealed class DirectorySnapshotReaderTests
             Assert.Equal(version, row["gpt"]!["ini_version"]?.GetValue<int>());
         }
         finally { Directory.Delete(sysvol, recursive: true); }
+    }
+
+    [Fact]
+    public async Task EmbeddedGpoNormalizerKeepsTheValueOfEachAuditSubcategory()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var policy = Policy("gpo-full");
+        var request = DirectorySnapshotReader.Request(policy);
+        request["collector"] = """
+            param($Policy, $LocalDc, $LocalSysvol)
+            [xml]$fixture = @'
+            <GPO><Computer><ExtensionData><Extension>
+                <AuditSetting><SubcategoryGuid>0cce9215-69ae-11d9-bed3-505054503030</SubcategoryGuid><SettingValue>0</SettingValue></AuditSetting>
+                <AuditSetting><SubcategoryGuid>0cce9216-69ae-11d9-bed3-505054503030</SubcategoryGuid><InclusionSetting>Success</InclusionSetting></AuditSetting>
+                <AuditSetting><SubcategoryGuid>0cce9217-69ae-11d9-bed3-505054503030</SubcategoryGuid><SettingValue>2</SettingValue></AuditSetting>
+                <AuditSetting><SubcategoryGuid>0cce921b-69ae-11d9-bed3-505054503030</SubcategoryGuid><InclusionSetting>Success and Failure</InclusionSetting></AuditSetting>
+                <AuditSetting><SubcategoryGuid>0cce921c-69ae-11d9-bed3-505054503030</SubcategoryGuid><SettingValue>2</SettingValue></AuditSetting>
+                <AuditSetting><SubcategoryGuid>0cce9224-69ae-11d9-bed3-505054503030</SubcategoryGuid></AuditSetting>
+            </Extension></ExtensionData></Computer></GPO>
+            '@
+            ConvertTo-SLIGpoV2Settings -Xml $fixture -GpoId fixture -GpoName 'Fixture GPO' -Side computer -Maximum 50 -ObservedAt '2026-11-27T10:00:00Z' |
+                ConvertTo-Json -Depth 12 -Compress
+            """;
+
+        var result = await DirectorySnapshotReader.RunCollectorAsync(policy.ModuleId, request, CancellationToken.None);
+        var auditRows = result["rows"]!.AsArray().Where(row => row?["setting_name"]?.ToString() == "SubcategoryGuid")
+            .ToDictionary(row => row!["value_display"]!.ToString()[4..8], row => row!["audit_mode"]?.ToString());
+
+        Assert.Equal("0", auditRows["9215"]);
+        Assert.Equal("1", auditRows["9216"]);
+        Assert.Equal("2", auditRows["9217"]);
+        Assert.Equal("3", auditRows["921b"]);
+        Assert.Equal("2", auditRows["921c"]);
+        Assert.Null(auditRows["9224"]);
     }
 
     [Fact]

@@ -98,6 +98,59 @@ public sealed class ComputersV6SourceContractTests
         Assert.Equal("server", row["computer_type"]!.GetValue<string>());
     }
 
+    [Fact]
+    public void Report_reads_non_dc_facts_from_observed_source_values()
+    {
+        var snapshot = Snapshot();
+        var item = Item(snapshot);
+        item["osName"] = "";
+        item["osVersion"] = null;
+        item["deviceType"] = "unknown";
+        item["classification"] = new JsonObject { ["value"] = "workstation" };
+        item["lastLogonTimestamp"] = null;
+        item["exactLastLogon"] = null;
+        item["eventLastSeen"] = null;
+        var stamp = DateTimeOffset.Parse("2026-08-29T12:00:00Z");
+        State(snapshot, "os")["value"] = new JsonObject { ["name"] = "Windows 11 Pro", ["version"] = "10.0 (26100)" };
+        State(snapshot, "last_logon_timestamp")["value"] = stamp.ToFileTime();
+
+        var row = Report(snapshot);
+
+        Assert.Equal("Windows 11 Pro", row["operating_system"]!.GetValue<string>());
+        Assert.Equal("10.0 (26100)", row["operating_system_version"]!.GetValue<string>());
+        Assert.Equal("workstation", row["computer_type"]!.GetValue<string>());
+        Assert.Equal(stamp, AdInventoryRows.Date(row["ad_last_logon_utc"]));
+        Assert.Equal(stamp, AdInventoryRows.Date(row["last_logon_utc"]));
+    }
+
+    [Theory]
+    [InlineData("Windows 11 Pro", "workstation")]
+    [InlineData("Windows Server 2022", "server")]
+    public void Report_recovers_directory_facts_for_the_same_computer(string os, string role)
+    {
+        var snapshot = Snapshot();
+        var item = Item(snapshot);
+        item["classification"] = null;
+        item["deviceType"] = "unknown";
+        item["osName"] = item["enabled"] = item["userAccountControl"] = null;
+        item["lastLogonTimestamp"] = item["exactLastLogon"] = item["eventLastSeen"] = null;
+        SetStatus(snapshot, "missing_in_source", "os");
+        SetStatus(snapshot, "missing_in_source", "last_logon_timestamp");
+        var attrs = new JsonObject { ["operating_system"] = os, ["user_account_control"] = 4096,
+            ["last_logon_timestamp_utc"] = "2026-08-29T12:00:00Z" };
+        var source = new JsonObject { ["domain_id"] = 7, ["fqdn"] = "example.test", ["snapshot"] = snapshot,
+            ["computer_directory_attributes"] = new JsonObject { [item["objectGuid"]!.ToString()] = attrs } };
+
+        var row = AdInventoryRows.Computer(item, source, snapshot["metadata"]!["completed_at"]!.ToString(), new JsonObject());
+
+        Assert.Equal(os, row["operating_system"]!.GetValue<string>());
+        Assert.Equal(role, row["computer_type"]!.GetValue<string>());
+        Assert.True(row["enabled"]!.GetValue<bool>());
+        Assert.Equal(DateTimeOffset.Parse("2026-08-29T12:00:00Z"), AdInventoryRows.Date(row["last_logon_utc"]));
+        Assert.Equal("active_directory", row["last_logon_source"]!.GetValue<string>());
+        Assert.Null(item["osName"]);
+    }
+
     [Theory]
     [InlineData(0, "within_30_days")]
     [InlineData(30, "within_30_days")]
@@ -111,6 +164,7 @@ public sealed class ComputersV6SourceContractTests
         var item = Item(snapshot);
         item["lastLogonTimestamp"] = null;
         item["eventLastSeen"] = null;
+        SetStatus(snapshot, "missing_in_source", "last_logon_timestamp");
         var observed = DateTimeOffset.Parse(snapshot["metadata"]!["completed_at"]!.ToString());
         item["exactLastLogon"] = observed.AddDays(-days).ToString("O");
         var row = Report(snapshot);
@@ -269,11 +323,15 @@ public sealed class ComputersV6SourceContractTests
         var item = Item(snapshot);
         item["osName"] = null; item["dnsHostName"] = ""; item["distinguishedName"] = null;
         item["eventLastSeen"] = null; item["exactLastLogon"] = null; item["lastLogonTimestamp"] = null;
+        SetStatus(snapshot, "missing_in_source", "os");
+        SetStatus(snapshot, "missing_in_source", "last_logon_timestamp");
+        IEnumerable<string> MissingFields() => Assert.Single(Report(snapshot)["quality_issues"]!.AsArray(),
+            issue => issue!["code"]!.ToString() == "missing_field")!["fields"]!.AsArray().Select(f => f!.ToString());
         Assert.Equal(new[] { "osName", "dnsHostName", "lastObserved", "distinguishedName" },
-            Assert.Single(Report(snapshot)["quality_issues"]!.AsArray())!["fields"]!.AsArray().Select(f => f!.ToString()));
+            MissingFields());
         foreach (string field in new[] { "eventLastSeen", "exactLastLogon", "lastLogonTimestamp" }) {
             item[field] = "2026-08-29T12:00:00Z";
-            Assert.DoesNotContain("lastObserved", Assert.Single(Report(snapshot)["quality_issues"]!.AsArray())!["fields"]!.AsArray().Select(f => f!.ToString()));
+            Assert.DoesNotContain("lastObserved", MissingFields());
             item[field] = null;
         }
     }

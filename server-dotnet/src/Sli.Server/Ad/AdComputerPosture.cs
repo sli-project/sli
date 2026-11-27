@@ -21,11 +21,11 @@ internal static class AdComputerPosture
         }
         internal JsonObject[] Candidates(long domain,string? guid,long entity)=>guids.GetValueOrDefault((domain,(guid??"").Trim('{','}').ToLowerInvariant()),[]).Concat(entities.GetValueOrDefault((domain,entity),[])).Distinct(ReferenceEqualityComparer.Instance).Cast<JsonObject>().ToArray();
     }
-    internal static void Apply(JsonObject row,JsonObject raw,DateTimeOffset at)
+    internal static void Apply(JsonObject row,JsonObject raw,DateTimeOffset at,long? uac=null)
     {
-        bool uacKnown=raw["userAccountControl"]?.GetValueKind()==System.Text.Json.JsonValueKind.Number;
-        if(uacKnown&&(raw.Int("userAccountControl")&8192)!=0)row["computer_type"]="domain_controller";
-        bool? unconstrained=uacKnown?(raw.Int("userAccountControl")&524288)!=0:AdInventoryRows.Bool(raw["trustedForDelegation"]);
+        uac ??= AdInventoryRows.ComputerUac(raw["userAccountControl"]);
+        if((uac.GetValueOrDefault()&8192)!=0)row["computer_type"]="domain_controller";
+        bool? unconstrained=uac is not null?(uac.Value&524288)!=0:AdInventoryRows.Bool(raw["trustedForDelegation"]);
         bool? constrained=raw["allowedToDelegateTo"] is JsonArray targets?targets.Count>0:null;
         row["delegation"]=Obj(new{unconstrained,constrained,resource_based=AdInventoryRows.Bool(raw["resourceBasedDelegationPresent"])});row["trusted_for_delegation"]=unconstrained;row["constrained_delegation"]=constrained;
         foreach(var(from,to)in new[]{("allowedToDelegateTo","allowed_to_delegate_to"),("resourceBasedDelegationPresent","resource_based_delegation_present"),("resourceBasedDelegationSids","resource_based_delegation_sids"),("resourceBasedDelegationStatus","resource_based_delegation_status"),("resourceBasedDelegationDescriptorSha256","resource_based_delegation_descriptor_sha256"),("passwordLastSetStatus","password_last_set_status"),("lapsPasswordExpirationStatus","laps_password_expiration_status"),("legacyLapsPasswordExpirationStatus","legacy_laps_password_expiration_status"),("lapsPasswordExpiration","laps_password_expiration_utc"),("legacyLapsPasswordExpiration","legacy_laps_password_expiration_utc")})row[to]=raw[from]?.DeepClone();

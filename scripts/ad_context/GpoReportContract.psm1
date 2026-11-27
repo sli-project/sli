@@ -724,6 +724,31 @@ function SLIV2-Get-RegistrySettings($Node) {
     }
 }
 
+function Get-SLIGpoAuditMode {
+    param([System.Xml.XmlElement]$Leaf, [hashtable]$GuidCounts)
+
+    $parent = $Leaf.ParentNode
+    if ($Leaf.LocalName -eq 'SubcategoryGuid') {
+        if ($GuidCounts[$Leaf.InnerText.Trim()] -ne 1) { return }
+    } elseif ($Leaf.LocalName -ne 'SubcategoryName' -or $parent.SelectSingleNode("./*[local-name()='SubcategoryGuid']")) {
+        return
+    }
+
+    $values = $parent.SelectNodes("./*[local-name()='SettingValue']")
+    if ($values.Count -eq 1 -and $values[0].InnerText.Trim() -match '^[0-4]$') {
+        return $values[0].InnerText.Trim()
+    }
+    $inclusion = $parent.SelectNodes("./*[local-name()='InclusionSetting']")
+    if ($inclusion.Count -ne 1) { return }
+    switch -Regex ($inclusion[0].InnerText.Trim()) {
+        '^(0|None|Not Configured)$' { '0' }
+        '^(1|Success)$' { '1' }
+        '^(2|Failure)$' { '2' }
+        '^(3|Success and Failure|Success,\s*Failure)$' { '3' }
+        '^(4|No Auditing)$' { '4' }
+    }
+}
+
 function ConvertTo-SLIGpoV2Settings {
     [CmdletBinding()]
     param(
@@ -829,13 +854,8 @@ function ConvertTo-SLIGpoV2Settings {
                 source_state    = SLIV2-New-SourceState -Status "observed" -Source "Get-GPOReport XML normalizer" -Detail $null -Error $null -Coverage $null -Value $null
                 fingerprint     = $fingerprint
             }
-            if (($leaf.LocalName -eq "SubcategoryGuid" -and $auditCounts[$value] -eq 1) -or
-                ($leaf.LocalName -eq "SubcategoryName" -and $null -eq $leaf.ParentNode.SelectSingleNode("./*[local-name()='SubcategoryGuid']"))) {
-                $modes = $leaf.ParentNode.SelectNodes("./*[local-name()='SettingValue']")
-                if ($modes.Count -eq 1 -and $modes[0].InnerText.Trim() -match "^[0-4]$") {
-                    $setting["audit_mode"] = $modes[0].InnerText.Trim()
-                }
-            }
+            $mode = Get-SLIGpoAuditMode -Leaf $leaf -GuidCounts $auditCounts
+            if ($null -ne $mode) { $setting['audit_mode'] = $mode }
             [void]$rows.Add([pscustomobject]$setting)
         }
     }
@@ -844,4 +864,4 @@ function ConvertTo-SLIGpoV2Settings {
 }
 
 
-Export-ModuleMember -Function ConvertTo-SLIGpoV2Settings
+Export-ModuleMember -Function ConvertTo-SLIGpoV2Settings, Get-SLIGpoAuditMode
