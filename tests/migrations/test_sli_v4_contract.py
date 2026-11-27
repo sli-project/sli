@@ -15,6 +15,7 @@ from server.sli.reporting.ui_api_models import UiBootstrapResponse, V4ObjectDeta
 ROOT = Path(__file__).resolve().parents[2]
 
 
+@pytest.mark.legacy
 def test_v4_route_capabilities_cover_existing_sensitive_read_paths() -> None:
     assert route_capability("/api/v1/events") == "events.view"
     assert route_capability("/api/v1/investigations/42") == "investigations.view"
@@ -24,6 +25,7 @@ def test_v4_route_capabilities_cover_existing_sensitive_read_paths() -> None:
     assert route_capability("/api/auth/users") == "access.manage"
 
 
+@pytest.mark.legacy
 def test_builder_rejects_sql_structure_but_allows_bound_user_text() -> None:
     assert _definition_has_unsafe_text({"raw_sql": "select * from events"})
     assert _definition_has_unsafe_text({"filter": {"expression": "event_id > 0"}})
@@ -31,6 +33,7 @@ def test_builder_rejects_sql_structure_but_allows_bound_user_text() -> None:
     assert not _definition_has_unsafe_text({"name": "copy operation", "actions": ["view"]})
 
 
+@pytest.mark.legacy
 def test_dashboard_metric_contract_is_bounded_and_expression_free() -> None:
     metric = {
         "key": "ad.vpn_disabled_accounts",
@@ -57,6 +60,7 @@ def test_dashboard_metric_contract_is_bounded_and_expression_free() -> None:
         ])
 
 
+@pytest.mark.legacy
 def test_workspace_focus_uses_only_visible_publisher_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
     report = {
         "report_key": "vpn.audit",
@@ -105,6 +109,7 @@ def test_workspace_focus_uses_only_visible_publisher_metrics(monkeypatch: pytest
     assert reporting_v4._workspace_focus_metrics(None, {"reports": [report]}, [report]) == []
 
 
+@pytest.mark.legacy
 def test_workspace_focus_does_not_drop_required_metrics_from_later_reports(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -131,6 +136,7 @@ def test_workspace_focus_does_not_drop_required_metrics_from_later_reports(
     assert [metric["key"] for metric in metrics] == [f"metric.{index}" for index in range(6)]
 
 
+@pytest.mark.legacy
 def test_ad_snapshot_summary_is_scoped_and_respects_field_categories(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[str, tuple]] = []
 
@@ -172,6 +178,7 @@ def test_ad_snapshot_summary_is_scoped_and_respects_field_categories(monkeypatch
     assert summary["collection"]["directory_accounts"]["state"] == "complete"
 
 
+@pytest.mark.legacy
 def test_ad_snapshot_summary_does_not_expose_observation_aggregates_without_security_category(monkeypatch: pytest.MonkeyPatch) -> None:
     queries: list[str] = []
 
@@ -191,6 +198,7 @@ def test_ad_snapshot_summary_does_not_expose_observation_aggregates_without_secu
     assert any("from ad_context_runs run" in sql for sql in queries)
 
 
+@pytest.mark.legacy
 def test_privileged_account_summary_is_scoped_and_category_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[str, tuple]] = []
 
@@ -218,6 +226,7 @@ def test_privileged_account_summary_is_scoped_and_category_bounded(monkeypatch: 
     assert summary["collection"]["privileged_membership"]["state"] == "scope_not_applicable"
 
 
+@pytest.mark.legacy
 def test_gpo_governance_summary_is_scoped_and_does_not_claim_external_sources(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[str, tuple]] = []
 
@@ -266,6 +275,7 @@ def test_gpo_governance_summary_is_scoped_and_does_not_claim_external_sources(mo
     assert summary["collection"]["gpo_governance"]["state"] == "partial"
 
 
+@pytest.mark.legacy
 def test_vpn_account_summary_uses_exact_collector_sections_and_separates_hygiene(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[str, tuple]] = []
 
@@ -316,6 +326,7 @@ def test_vpn_account_summary_uses_exact_collector_sections_and_separates_hygiene
     assert any("снимка участника VPN-группы" in item for item in summary["limitations"])
 
 
+@pytest.mark.legacy
 def test_vpn_account_attribute_fallback_prefers_directory_snapshot() -> None:
     sql = reporting_v4.VPN_ACCOUNT_ATTRIBUTES_LATERAL
 
@@ -324,6 +335,7 @@ def test_vpn_account_attribute_fallback_prefers_directory_snapshot() -> None:
     assert "current.valid_to_utc is null" in sql
 
 
+@pytest.mark.legacy
 def test_context_section_coverage_preserves_failed_and_skipped_states(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_query(_sql: str, _params: tuple = (), **_kwargs):
         return [
@@ -346,6 +358,7 @@ def test_context_section_coverage_preserves_failed_and_skipped_states(monkeypatc
     assert server_scoped["vpn_membership"]["state"] == "scope_not_applicable"
 
 
+@pytest.mark.legacy
 def test_report_definition_registry_supports_bounded_repeat_read(monkeypatch: pytest.MonkeyPatch) -> None:
     rows = [{
         "report_key": "security.events", "version": 3, "name": "События", "owner_name": "ИБ",
@@ -387,6 +400,7 @@ def test_report_definition_registry_supports_bounded_repeat_read(monkeypatch: py
     assert [{k: v for k, v in item.items() if k != "code_defined"} for item in result["items"]] == rows
 
 
+@pytest.mark.legacy
 def test_report_catalog_excludes_working_and_administrative_tools() -> None:
     access = {
         "capabilities": ["reports.catalog"],
@@ -405,6 +419,7 @@ def test_report_catalog_excludes_working_and_administrative_tools() -> None:
     assert result["total_count"] == 1
 
 
+@pytest.mark.legacy
 def test_report_catalog_adds_vpn_connections_surface_from_existing_vpn_access() -> None:
     access = {
         "capabilities": ["reports.catalog", "vpn.sessions.view"],
@@ -449,6 +464,7 @@ def test_report_catalog_adds_vpn_connections_surface_from_existing_vpn_access() 
     assert result["allowed_count"] == 1
 
 
+@pytest.mark.legacy
 def test_vpn_connections_catalog_surface_fails_closed_without_session_capability() -> None:
     access = {
         "capabilities": ["reports.catalog"],
@@ -471,6 +487,7 @@ def test_vpn_connections_catalog_surface_fails_closed_without_session_capability
     assert report["missing_capabilities"] == ["vpn.sessions.view"]
 
 
+@pytest.mark.legacy
 def test_report_preference_persists_only_for_allowed_session_report(monkeypatch: pytest.MonkeyPatch) -> None:
     from server.sli.access import access_control_v4
 
@@ -568,6 +585,7 @@ def test_stage6_dashboard_metric_migration_has_bounded_rollback() -> None:
     assert "drop " not in rollback.lower()
 
 
+@pytest.mark.legacy
 def test_report_grant_options_are_limited_by_the_report_definition(monkeypatch: pytest.MonkeyPatch) -> None:
     from server.sli.access import access_control_v4
 
@@ -612,6 +630,7 @@ def test_report_grant_options_are_limited_by_the_report_definition(monkeypatch: 
     assert result["items"][0]["scope_kinds"] == ["all", "server", "domain", "channel"]
 
 
+@pytest.mark.legacy
 def test_report_assignment_mutation_requires_admin_role_and_assignment_capability() -> None:
     source = (ROOT / "server" / "api" / "routes" / "access.py").read_text(encoding="utf-8")
     start = source.index('if path == "/api/v1/access/assignments"', source.index("def try_handle_post"))
@@ -620,6 +639,7 @@ def test_report_assignment_mutation_requires_admin_role_and_assignment_capabilit
     assert '_require_capability("reports.assign")' in route
 
 
+@pytest.mark.legacy
 def test_package_assignment_mutation_requires_admin_role_and_access_capability() -> None:
     source = (ROOT / "server" / "api" / "routes" / "access.py").read_text(encoding="utf-8")
     route = source[source.index('if path == "/api/v1/access/package-assignments"'):source.index('if path.startswith("/api/v1/reports/") and path.endswith("/preference")')]
@@ -627,6 +647,7 @@ def test_package_assignment_mutation_requires_admin_role_and_access_capability()
     assert '_require_capability("access.manage")' in route
 
 
+@pytest.mark.legacy
 def test_package_assignment_route_dispatches_only_after_both_guards(monkeypatch: pytest.MonkeyPatch) -> None:
     from server.api import http_server
     from server.api.routes import access as routes_access
@@ -647,6 +668,7 @@ def test_package_assignment_route_dispatches_only_after_both_guards(monkeypatch:
     assert called == ["create"]
 
 
+@pytest.mark.legacy
 def test_package_assignment_handler_returns_created_item(monkeypatch: pytest.MonkeyPatch) -> None:
     from http import HTTPStatus
     from types import SimpleNamespace
@@ -675,6 +697,7 @@ def test_package_assignment_handler_returns_created_item(monkeypatch: pytest.Mon
     }}, HTTPStatus.CREATED)]
 
 
+@pytest.mark.legacy
 def test_temporary_package_assignment_requires_expiry(monkeypatch: pytest.MonkeyPatch) -> None:
     from server.sli.access import access_control_v4
 
@@ -686,6 +709,7 @@ def test_temporary_package_assignment_requires_expiry(monkeypatch: pytest.Monkey
         }, actor={"type": "session", "id": 1})
 
 
+@pytest.mark.legacy
 def test_package_assignment_is_written_with_audit_record(monkeypatch: pytest.MonkeyPatch) -> None:
     from server.sli.access import access_control_v4
 
@@ -744,6 +768,7 @@ def test_package_assignment_is_written_with_audit_record(monkeypatch: pytest.Mon
     )
 
 
+@pytest.mark.legacy
 def test_report_assignment_cannot_grant_action_outside_report_definition(monkeypatch: pytest.MonkeyPatch) -> None:
     from server.sli.access import access_control_v4
 
@@ -792,12 +817,14 @@ def test_report_assignment_cannot_grant_action_outside_report_definition(monkeyp
     assert not any("insert into access_report_assignments" in query for query in executed)
 
 
+@pytest.mark.legacy
 def test_assignment_time_contract_requires_timezone() -> None:
     assert _optional_utc("2026-07-19T10:00:00+07:00", "bad") is not None
     with pytest.raises(ValueError, match="bad"):
         _optional_utc("2026-07-19T10:00:00", "bad")
 
 
+@pytest.mark.legacy
 def test_bootstrap_exposes_server_authoritative_v4_policy_metadata() -> None:
     model = UiBootstrapResponse(
         principal=None,
@@ -811,6 +838,7 @@ def test_bootstrap_exposes_server_authoritative_v4_policy_metadata() -> None:
     assert model.capabilities == ["workspace.view"]
 
 
+@pytest.mark.legacy
 def test_object_detail_contract_includes_real_findings_collection() -> None:
     model = V4ObjectDetailResponse(
         api_version="v4",
@@ -832,6 +860,7 @@ def test_object_detail_contract_includes_real_findings_collection() -> None:
     assert model.findings[0]["id"] == 7
 
 
+@pytest.mark.legacy
 def test_object_facade_accepts_the_physical_storage_v2_type(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(object_facade_v4, "effective_access", lambda _principal: {
         "capabilities": ["objects.view", "field.security", "tasks.create", "investigations.manage"],
@@ -866,6 +895,7 @@ def test_object_facade_accepts_the_physical_storage_v2_type(monkeypatch: pytest.
     assert result["actions"] == ["copy_link"]
 
 
+@pytest.mark.legacy
 def test_object_facade_exposes_timed_out_events_as_a_limitation(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(object_facade_v4, "effective_access", lambda _principal: {
         "capabilities": ["objects.view", "field.security", "evidence.exact"],
@@ -890,6 +920,7 @@ def test_object_facade_exposes_timed_out_events_as_a_limitation(monkeypatch: pyt
     assert any("Лента событий временно недоступна" in item for item in result["limitations"])
 
 
+@pytest.mark.legacy
 def test_object_search_filters_each_row_by_resource_scope(monkeypatch: pytest.MonkeyPatch) -> None:
     access = {
         "capabilities": ["objects.view", "field.technical"],
@@ -911,6 +942,7 @@ def test_object_search_filters_each_row_by_resource_scope(monkeypatch: pytest.Mo
     assert result["scope_filtered"] is True
 
 
+@pytest.mark.legacy
 def test_object_detail_applies_scoped_fields_and_explicit_deny(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(object_facade_v4, "ensure_access_schema", lambda: None)
     monkeypatch.setattr(
@@ -969,6 +1001,7 @@ def test_object_detail_applies_scoped_fields_and_explicit_deny(monkeypatch: pyte
         object_facade_v4.object_detail(None, object_type="ad_user", object_id="7", access=no_capability_access)
 
 
+@pytest.mark.legacy
 def test_object_detail_projects_nested_ad_context_fields_by_category(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1107,6 +1140,7 @@ def test_stage6_report_workspace_migration_registers_entity_links_and_gpo_sectio
     assert "delete from schema_migrations" in rollback
 
 
+@pytest.mark.legacy
 def test_stage6_report_runtime_exposes_registered_entity_and_gpo_fields() -> None:
     assert reporting_v4.RUNTIME_SORT_FIELDS["ad.accounts.privileged"]["object_id"] == "source_entity.id"
     assert reporting_v4.RUNTIME_SORT_FIELDS["ad.accounts.vpn"]["object_id"] == "source_entity.id"
@@ -1117,6 +1151,7 @@ def test_stage6_report_runtime_exposes_registered_entity_and_gpo_fields() -> Non
     } <= reporting_v4.RUNTIME_SORT_FIELDS["ad.gpo.governance"].keys()
 
 
+@pytest.mark.legacy
 def test_access_request_reviewer_can_only_narrow_scope() -> None:
     from server.sli.access.access_requests_v4 import _scope_is_subset
 
@@ -1135,6 +1170,7 @@ def test_access_request_reviewer_can_only_narrow_scope() -> None:
     )
 
 
+@pytest.mark.legacy
 def test_vite_build_is_staged_before_python_server_publish() -> None:
     config = (ROOT / "frontend" / "vite.config.ts").read_text(encoding="utf-8")
     static_routes = (ROOT / "server" / "api" / "routes" / "static.py").read_text(encoding="utf-8")
@@ -1148,6 +1184,7 @@ def test_vite_build_is_staged_before_python_server_publish() -> None:
     assert 'return Path(override).resolve() if override else (WEB_DIR / "react").resolve()' in static_routes
 
 
+@pytest.mark.legacy
 def test_production_object_route_redirects_to_the_single_entity_card() -> None:
     source = (ROOT / "frontend" / "src" / "product-main.tsx").read_text(encoding="utf-8")
     assert "sli-parity" not in source
@@ -1160,6 +1197,7 @@ def test_production_object_route_redirects_to_the_single_entity_card() -> None:
     assert "objectRouteRedirect(params.objectId, location.search" in source
 
 
+@pytest.mark.legacy
 def test_prototype_object_identifiers_are_isolated_from_live_page_source() -> None:
     live_pages = "".join(
         (ROOT / "frontend" / "src" / "app" / name).read_text(encoding="utf-8")

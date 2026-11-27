@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import fnmatch
 import hashlib
 import io
 import json
@@ -450,6 +451,147 @@ def _validate_update(manifest):
             raise PackageError("update_invalid_updater_payload")
 
 
+# Top-level paths that may be updated from a clean source ZIP.
+ALLOWED_TOP_LEVEL = {
+    "frontend",
+    "server",
+    "sli_collect",
+    "sli_agent",
+    "scripts",
+    "web",
+    "config",
+    "docs",
+    "tests",
+    "tools",
+}
+
+# Root files that may be updated.
+ALLOWED_ROOT_FILES = {
+    "LICENSE",
+    "AGENTS.md",
+    "README.md",
+    "CHANGELOG.md",
+    "PROJECT_MAP.md",
+    "PROJECT_RULES.md",
+    "package.json",
+    "package-lock.json",
+    "requirements.lock.txt",
+    "requirements.txt",
+    "requirements-dev.txt",
+    "pyproject.toml",
+    "pytest.ini",
+    "setup.cfg",
+    "mypy.ini",
+    ".gitignore",
+    ".env.example",
+    "security-log-intelligence-roadmap.html",
+}
+
+# Local environment configuration is preserved by default. Use
+# --allow-local-config only for an intentional local restore.
+LOCAL_CONFIG_FILES = {
+    "config/domain_controllers.json",
+}
+
+# Paths and patterns that must never be copied into the working project.
+DENY_PATTERNS = [
+    ".env",
+    ".env.*",
+    "*.local",
+    "*.local.*",
+    "*.sqlite",
+    "*.sqlite3",
+    "*.db",
+    "*.db-*",
+    "*.log",
+    "*.jsonl",
+    "*.evtx",
+    "*.zip",
+    "*.7z",
+    "*.rar",
+    "*.tar",
+    "*.gz",
+    "__pycache__/*",
+    "*/__pycache__/*",
+    ".pytest_cache/*",
+    "*/.pytest_cache/*",
+    ".mypy_cache/*",
+    "*/.mypy_cache/*",
+    ".ruff_cache/*",
+    "*/.ruff_cache/*",
+    ".venv/*",
+    "venv/*",
+    "env/*",
+    ".git/*",
+    ".idea/*",
+    ".vscode/*",
+    "data/*",
+    "dist/*",
+    "build/*",
+    "bin/*",
+    "obj/*",
+    "*/bin/*",
+    "*/obj/*",
+]
+
+# Local config/runtime subtrees that should be preserved even under allowed top-level folders.
+DENY_PATH_PREFIXES = [
+    "data/",
+    "dist/",
+    "build/",
+    "bin/",
+    "obj/",
+    ".git/",
+    ".venv/",
+    "venv/",
+    "env/",
+    "frontend/node_modules/",
+    "config/local/",
+    "config/secrets/",
+    "config/private/",
+    # These are deliberately distributed only by package_admin_toolkit.py and
+    # must never arrive in a normal product update ZIP.
+    "scripts/manual_dc_audit/",
+    "scripts/dc_client/",
+]
+
+
+def is_denied(rel: str, *, allow_local_config: bool = False) -> bool:
+    rel_posix = rel.replace("\\", "/").lstrip("/").casefold()
+
+    if rel_posix == ".env.example":
+        return False
+
+    if not allow_local_config and rel_posix in LOCAL_CONFIG_FILES:
+        return True
+
+    for prefix in DENY_PATH_PREFIXES:
+        if rel_posix == prefix.rstrip("/") or rel_posix.startswith(prefix):
+            return True
+
+    name = PurePosixPath(rel_posix).name
+    for pattern in DENY_PATTERNS:
+        if fnmatch.fnmatch(rel_posix, pattern) or fnmatch.fnmatch(name, pattern):
+            return True
+
+    return False
+
+
+def is_allowed(rel: str, *, allow_local_config: bool = False) -> bool:
+    rel_posix = rel.replace("\\", "/").lstrip("/")
+    parts = PurePosixPath(rel_posix).parts
+    if not parts:
+        return False
+
+    if is_denied(rel_posix, allow_local_config=allow_local_config):
+        return False
+
+    if len(parts) == 1:
+        return parts[0] in ALLOWED_ROOT_FILES
+
+    return parts[0] in ALLOWED_TOP_LEVEL
+
+
 def validate_manifest(manifest: dict[str, Any], limits: PackageLimits) -> None:
     schema = _manifest_fields(manifest)
     kind = manifest["package_type"]
@@ -530,8 +672,6 @@ def validate_manifest(manifest: dict[str, Any], limits: PackageLimits) -> None:
             if parts[0] not in {"backend", "ui"} or len(parts) < 2:
                 raise PackageError("plugin payload exceeds its owned roots")
         elif schema == 1:
-            from scripts.apply_project_zip import is_allowed
-
             if not is_allowed(path):
                 raise PackageError("core payload exceeds immutable source roots")
         if type(item["size"]) is not int or not 0 <= item["size"] <= limits.max_file_bytes or not _match(_SHA256, item["sha256"]):

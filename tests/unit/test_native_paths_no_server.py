@@ -1,12 +1,19 @@
 """The installed native paths must stand alone."""
 
 import ast
+import json
+import os
 import subprocess
 import sys
+import tarfile
 from collections import deque
 from functools import cache
 from importlib.util import resolve_name
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+
+import pytest
+
+from deploy.linux import build_beta_kit
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -29,6 +36,74 @@ HEALTH_ENTRY_POINTS = {
     "installed_state": ("native_ledger_matches", "native_pointers_match"),
     "notification_health": ("healthy",),
 }
+
+
+def old_server_module(name):
+    return name.split('.', 1)[0] in {'server', 'sli'}
+
+
+def assert_native_payload(members):
+    violations = []
+    for path, read in members:
+        if 'server' in path.parts or path.parts[:2] == ('scripts', 'runtime'):
+            violations.append(str(path))
+        elif path.suffix == '.py' and read is not None:
+            for node in ast.walk(ast.parse(read(), filename=str(path))):
+                names = []
+                if isinstance(node, ast.Import):
+                    names = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
+                    names = [node.module]
+                elif isinstance(node, ast.Call) and node.args:
+                    function = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, 'attr', '')
+                    arg = node.args[0]
+                    if (function in {'import_module', '__import__'} and isinstance(arg, ast.Constant)
+                            and isinstance(arg.value, str)):
+                        names = [arg.value]
+                violations.extend(f'{path}:{node.lineno}: {name}' for name in names if old_server_module(name))
+    assert not violations, '\n'.join(violations)
+
+
+@pytest.fixture(scope='module')
+def staged_payload(tmp_path_factory):
+    release = tmp_path_factory.mktemp('beta-kit') / 'release'
+    build_beta_kit.copy_release(ROOT, release)
+    return release
+
+
+def test_staged_kit_payload_has_no_python_server(staged_payload):
+    assert (staged_payload / 'deploy/linux/native_install.py').is_file()
+    assert_native_payload((path.relative_to(staged_payload), path.read_bytes if path.is_file() else None)
+                          for path in sorted(staged_payload.rglob('*')))
+
+
+def test_built_kit_payload_has_no_python_server():
+    directory = os.environ.get('SLI_TEST_BETA_KIT')
+    if not directory:
+        pytest.skip('requires the built Debian beta kit')
+    kit = Path(directory)
+    manifest = json.loads((kit / 'manifest.json').read_bytes())
+    release = manifest['release']
+    prefix = PurePosixPath('opt/sli/releases', release)
+    packages = {row['package']: row['filename'] for row in manifest['packages']}
+    for name, root, required in (
+        (f'sli-release-{release}', prefix, PurePosixPath('deploy/linux/native_install.py')),
+        ('sli-host', PurePosixPath('usr/lib/sli'), PurePosixPath('native_install.py')),
+    ):
+        found = set()
+        with subprocess.Popen(['dpkg-deb', '--fsys-tarfile', kit / packages[name]], stdout=subprocess.PIPE) as process:
+            with tarfile.open(fileobj=process.stdout, mode='r|') as archive:
+                for member in archive:
+                    path = PurePosixPath(member.name)
+                    if path.is_relative_to(root):
+                        path = path.relative_to(root)
+                        found.add(path)
+                    read = (lambda: archive.extractfile(member).read()) if member.isfile() else None
+                    assert_native_payload([(path, read)])
+            # Drain any tar padding before checking the producer's exit status.
+            process.stdout.read()
+            assert process.wait() == 0
+        assert required in found
 
 
 def main_block(node):
@@ -151,7 +226,7 @@ def server_imports(root, entries):
         if (module, name) in seen:
             continue
         seen.add((module, name))
-        if module == "server" or module.startswith("server."):
+        if old_server_module(module):
             violations.append(" -> ".join(chain))
             continue
         file = local_file(root, module)
@@ -256,20 +331,21 @@ def test_guard_follows_child_module_and_inline_python(tmp_path):
     assert any(chain.endswith("server.sli.inline") for chain in violations)
 
 
-def test_native_entry_point_imports():
+def test_native_entry_point_imports(staged_payload):
     subprocess.run(
-        [sys.executable, "-B", "-c", """
+        [sys.executable, "-I", "-B", "-c", """
 import importlib
+import os
 import sys
 
 class RejectServer:
     def find_spec(self, fullname, path=None, target=None):
-        if fullname == 'server' or fullname.startswith('server.'):
+        if fullname.split('.', 1)[0] in {'server', 'sli'}:
             raise AssertionError(f'native path tried importing {fullname}')
 
+sys.path.insert(0, os.getcwd())
 sys.meta_path.insert(0, RejectServer())
 from deploy.linux import entrypoint, migrate
-import os
 
 for name in sys.argv[1:]:
     importlib.import_module(f'deploy.linux.{name}')
@@ -286,6 +362,6 @@ migrate.migrate = check_history
 sys.argv = ['entrypoint', 'migrate']
 assert entrypoint.main() == 0
 """, *ENTRY_POINTS],
-        cwd=Path(__file__).resolve().parents[2],
+        cwd=staged_payload,
         check=True,
     )

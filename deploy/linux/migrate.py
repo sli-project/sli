@@ -170,12 +170,9 @@ def configure_workstation_history() -> None:
     if os.environ.get("SLI_DEPLOYMENT_MODE") != "native":
         if os.environ.get("SLI_CORE_JOB_WORKSTATIONS_RETENTION", "0") != "1":
             return
-        from server.sli.storage.workstation_history import configured_history, ensure_schema
+        from deploy.linux.legacy_runtime import configure_workstation_history as legacy_history
 
-        history = configured_history()
-        if history is None:
-            raise RuntimeError("workstation_history_unavailable")
-        ensure_schema(history.port)
+        legacy_history()
 
 
 def configure_permanent_history() -> None:
@@ -188,14 +185,9 @@ def configure_permanent_history() -> None:
     if os.environ.get("SLI_DEPLOYMENT_MODE") == "native":
         raise ValueError("history_read_mode_invalid")
     else:
-        from server.sli.storage import ad_snapshot_change_history, permanent_fact_history
+        from deploy.linux.legacy_runtime import configure_permanent_history as legacy_history
 
-        permanent_fact_history.primary_read_enabled()
-        port = permanent_fact_history.configured_read_port()
-        if port is None:
-            raise RuntimeError("permanent_history_unavailable")
-        permanent_fact_history.ensure_schema(port)
-        ad_snapshot_change_history.ensure_schema(port)
+        legacy_history()
 
 
 def pgpass_escape(value: str) -> str:
