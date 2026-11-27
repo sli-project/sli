@@ -194,7 +194,7 @@ public sealed class AgentRegistrationReconciliation(IServiceScopeFactory scopes,
                 }
                 failure = "agent_console_token_cleanup_failed";
                 await using var cleanup = new NpgsqlCommand(
-                    "delete from sli_agent_console_tokens where expires_at<=statement_timestamp()", db);
+                    "delete from sli_agent_console_tokens where installer is null and expires_at<=statement_timestamp()", db);
                 await cleanup.ExecuteNonQueryAsync(stoppingToken);
             }
             catch(OperationCanceledException) when(stoppingToken.IsCancellationRequested) { return; }

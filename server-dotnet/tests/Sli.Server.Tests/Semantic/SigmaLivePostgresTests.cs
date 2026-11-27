@@ -19,13 +19,14 @@ public sealed class SigmaLivePostgresTests
     public async Task Starter_rules_follow_admitted_events_and_publish_once_per_subject()
     {
         var ct = TestContext.Current.CancellationToken;
-        var migrations = MigrationDirectory.Read().Where(item => item.Version <= 433).ToArray();
-        string migration = migrations.Single(item => item.Version == 433).Path;
+        const int version = 447;
+        var migrations = MigrationDirectory.Read();
+        string migration = migrations.Single(item => item.Version == version).Path;
         string starter = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(migration)!, "../sigma/starter"));
         var yaml = Directory.GetFiles(starter, "*.yml").Select(File.ReadAllText)
             .Select(raw => SigmaRule.Compile(raw, "DRL-1.1")).ToDictionary(rule => rule.Id);
         await using var fixture = new SqlPostgresFixture();
-        await fixture.StartAsync(ct, migrations.Last(item => item.Version < 433).Version);
+        await fixture.StartAsync(ct, migrations.Last(item => item.Version < version).Version);
         await fixture.Pg.ApplyFileAsync(migration, null, ct);
         await using var owner = await fixture.Pg.OpenAsync(ct);
         await using var runtime = PasswordProducerRuntime.Create(
