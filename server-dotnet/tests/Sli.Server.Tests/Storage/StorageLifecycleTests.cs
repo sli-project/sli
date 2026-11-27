@@ -39,7 +39,7 @@ public sealed class StorageLifecycleTests
         public Task HeartbeatAsync(string status, string phase, int interval, JsonObject details, CancellationToken ct) {
             Beats.Add((status, phase, interval, (JsonObject)details.DeepClone())); OnHeartbeat?.Invoke(details); return Task.CompletedTask;
         }
-        public Task<JsonObject> ExpirePartitionsAsync(DateTime now, CancellationToken ct) { Phases.Add("partitions"); return Partition?.Invoke(ct) ?? Task.FromResult(new JsonObject()); }
+        public Task<JsonObject> ExpirePartitionsAsync(DateTime now, int batch, CancellationToken ct) { Phases.Add("partitions"); return Partition?.Invoke(ct) ?? Task.FromResult(new JsonObject()); }
         internal static JsonObject Page(string cursor, Guid after, string status = "complete") => new() {
             ["status"] = status, [cursor] = after.ToString(), ["selected_count"] = 1L, ["deleted_count"] = 0L,
             ["held_count"] = 1L, ["payloads_cleared"] = 0L, ["held_reasons"] = new JsonObject { ["quarantine"] = 1L }

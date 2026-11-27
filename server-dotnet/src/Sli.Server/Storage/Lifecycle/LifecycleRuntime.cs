@@ -170,7 +170,7 @@ internal sealed class LifecycleRuntime : ILifecycleSession
             return new JsonObject { ["status"] = "known", ["read_only"] = true, ["disk_free_bytes"] = drive.AvailableFreeSpace, ["free_bytes"] = drive.AvailableFreeSpace, ["total_bytes"] = drive.TotalSize, ["free_percent"] = 100.0 * drive.AvailableFreeSpace / drive.TotalSize };
         } catch { return new JsonObject { ["status"] = "unknown", ["reason"] = "capacity_evidence_unavailable" }; }
     }
-    public async Task<JsonObject> ExpirePartitionsAsync(DateTime now, CancellationToken ct)
+    public async Task<JsonObject> ExpirePartitionsAsync(DateTime now, int batch, CancellationToken ct)
     {
         int Days(string name, int fallback) {
             string raw = get("Sli:Storage:" + name) ?? get("Sli__Storage__" + name) ?? fallback.ToString(CultureInfo.InvariantCulture);
@@ -186,10 +186,28 @@ internal sealed class LifecycleRuntime : ILifecycleSession
         if (!int.TryParse(configured, NumberStyles.None, CultureInfo.InvariantCulture, out int snapshots) || snapshots is < 7 or > 3650)
             throw new LifecycleBlocked("ad_snapshot_history_days_must_be_7_to_3650");
         await using var db = await Maintenance().OpenConnectionAsync(ct);
-        var result = await LifecyclePostgres.Rows(db, null,
+        var hotCutoff = day.AddDays(-hot);
+        var rows = await LifecyclePostgres.Rows(db, null,
             "select * from public.expire_short_storage_partitions342(@hot,@cold,@snapshots)", ct,
-            ("hot", day.AddDays(-hot)), ("cold", day.AddDays(-cold)), ("snapshots", day.AddDays(-snapshots)));
-        return result.Single();
+            ("hot", hotCutoff), ("cold", day.AddDays(-cold)), ("snapshots", day.AddDays(-snapshots)));
+        var result = rows.Single();
+        await using var ready = new NpgsqlCommand(
+            "select to_regprocedure('public.prune_account_detection_pending455(timestamptz,integer)') is not null", db);
+        if (await ready.ExecuteScalarAsync(ct) is true)
+        {
+            await using var prune = new NpgsqlCommand("select public.prune_account_detection_pending455(@hot,@batch)", db);
+            prune.Parameters.AddWithValue("hot", hotCutoff);
+            prune.Parameters.AddWithValue("batch", batch);
+            long count, deleted = 0;
+            do
+            {
+                await EnsureLocksAsync(ct);
+                count = (long)(await prune.ExecuteScalarAsync(ct))!;
+                deleted += count;
+            } while (count == batch);
+            result["account_detection_pending_deleted"] = deleted;
+        }
+        return result;
     }
     public Task<JsonObject> RetainInboxAsync(DateTime cutoff, DateTime afterReceivedAt, Guid after, int limit, CancellationToken ct) =>
         new InboxRetention(Maintenance(), files, WaitingForLock).RunAsync(cutoff, after, limit, ct, afterReceivedAt);

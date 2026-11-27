@@ -7,7 +7,7 @@ namespace Sli.Server.Storage.Lifecycle;
 internal interface ILifecycleSession : IAsyncDisposable
 {
     Task<long> ReadDatabaseSizeAsync(CancellationToken ct);
-    Task<JsonObject> ExpirePartitionsAsync(DateTime now, CancellationToken ct);
+    Task<JsonObject> ExpirePartitionsAsync(DateTime now, int batch, CancellationToken ct);
     Task<bool> TryLockAsync(string name, CancellationToken ct);
     Task EnsureLocksAsync(CancellationToken ct);
     Task ReleaseLockAsync(string name, CancellationToken ct);
@@ -86,7 +86,7 @@ internal sealed class StorageLifecycleWorker(ILifecycleSession session, Lifecycl
         if (!inboxOnly) {
             ReportProgress("partition_retention", state);
             await session.EnsureLocksAsync(ct);
-            state["partitions"] = await session.ExpirePartitionsAsync(Now, ct);
+            state["partitions"] = await session.ExpirePartitionsAsync(Now, batch, ct);
             await Drain("agent_receipt_retention", "receipt_retention", "last_scanned_packet_id", (a, _) => session.RetainReceiptsAsync(cutoff, a, batch, ct));
         }
         // Completed jobs need only a short retry tail even between full passes.
