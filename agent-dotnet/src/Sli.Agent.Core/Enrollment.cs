@@ -11,8 +11,7 @@ namespace Sli.Agent.Core;
 
 /// <summary>Enrollment and renewal use the existing server contract and the same key as the durable spool.</summary>
 public sealed class Enrollment(HostIdentityStore store, IAgentControlTransport transport, TimeProvider clock,
-    Func<string?>? readProductType = null, Func<(string Dns, string Forest, string? Sid)?>? readDomain = null,
-    Func<CancellationToken, bool>? hasFileShares = null)
+    Func<string?>? readProductType = null, Func<(string Dns, string Forest, string? Sid)?>? readDomain = null)
 {
     private static string? ReadProductType()
     {
@@ -23,6 +22,20 @@ public sealed class Enrollment(HostIdentityStore store, IAgentControlTransport t
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         { return null; }
+    }
+
+    public static string? RoleForProductType(string? productType) => productType switch
+    {
+        "WinNT" => "workstation",
+        "ServerNT" => "file_server", // Existing server role read by File Audit.
+        "LanmanNT" => "domain_controller",
+        _ => null,
+    };
+
+    public string? ReadWindowsProductType()
+    {
+        var type = (readProductType ?? ReadProductType)();
+        return RoleForProductType(type) is null ? null : type;
     }
 
     private static (string Dns, string Forest, string? Sid)? ReadDcDomain()
@@ -77,10 +90,11 @@ public sealed class Enrollment(HostIdentityStore store, IAgentControlTransport t
         var request = new JsonObject { ["token"] = token, ["csr_pem"] = store.CreateCsrPem(), ["reported_hostname"] = Environment.MachineName };
         request["agent_version"]=typeof(Enrollment).Assembly.GetName().Version!.ToString(3);
         // Local discovery is a registration hint. The server owns scope authorization.
-        bool isDc = (readProductType ?? ReadProductType)() == "LanmanNT";
-        request["machine_role"] = isDc ? "domain_controller"
-            : hasFileShares?.Invoke(cancellationToken) == true ? "file_server" : "workstation";
-        if (isDc && (readDomain ?? ReadDcDomain)() is { } domain)
+        var productType = ReadWindowsProductType();
+        var role = RoleForProductType(productType) ?? "workstation";
+        request["machine_role"] = role;
+        if (productType is not null) request["windows_product_type"] = productType;
+        if (role == "domain_controller" && (readDomain ?? ReadDcDomain)() is { } domain)
         {
             request["domain_dns"] = domain.Dns;
             request["forest_dns"] = domain.Forest;

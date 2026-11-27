@@ -24,10 +24,11 @@ public static class WorkstationAgentScope
     private static readonly Dictionary<string,string> Columns=new(StringComparer.Ordinal)
     { ["plugin_ids"]="r.plugin_id",["source_instance_ids"]="r.source_instance_id",["entity_ids"]="r.entity_id",["device_ids"]="r.device_id",["collection_scope_ids"]="r.collection_scope_id" };
     private static InvalidDataException Invalid()=>new("invalid_workstation_scope");
-    public static WorkstationPredicate Build(AccessFacts facts,AccessDecision access,bool inventory=false,string? reportKey=null,bool reportOnly=false,bool workspace=false)
+    public static WorkstationPredicate Build(AccessFacts facts,AccessDecision access,bool inventory=false,string? reportKey=null,bool reportOnly=false,bool workspace=false,
+        string parameterPrefix = "ws")
     {
         var parameters=new List<NpgsqlParameter>();bool unresolved=false;
-        string Param(string[] values){string name="ws"+parameters.Count.ToString(CultureInfo.InvariantCulture);parameters.Add(new(name,values));return "@"+name;}
+        string Param(string[] values){string name=parameterPrefix+parameters.Count.ToString(CultureInfo.InvariantCulture);parameters.Add(new(name,values));return "@"+name;}
         string Exists(JsonElement raw)=>"exists(select 1 from "+(inventory?"station_resources r where r.station_id=s.station_id":
             workspace?"resources r where r.station_id=a.station_id":"resources r where r.agent_key=a.agent_key")+" and ("+Compile(raw,Param)+"))";
         string Union(IEnumerable<JsonElement> scopes)

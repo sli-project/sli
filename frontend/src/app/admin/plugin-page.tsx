@@ -19,6 +19,7 @@ const tabIds = ["overview", "connection", "settings", "rules", "reports"] as con
 export function PluginPage({ pluginId, title }: { pluginId: string; title: string }) {
   const access = useEffectiveAccess();
   const sigmaPlugin = pluginId === "sli.sigma";
+  const workstationPlugin = pluginId === "sli.workstations";
   const fileAudit = pluginId === "sli.file-audit";
   const [tab, setTab] = useState<string>(sigmaPlugin ? "rules" : fileAudit ? "settings" : "overview");
   const client = useQueryClient();
@@ -57,7 +58,7 @@ export function PluginPage({ pluginId, title }: { pluginId: string; title: strin
     || !!settings.data.schema["x-core-settings"]?.length);
   const availableTabs = tabIds.filter((key) => {
     switch (key) {
-      case "connection":
+      case "connection": return !fileAudit && !workstationPlugin;
       case "overview": return !fileAudit;
       case "settings": return hasSettings || settings.isError;
       case "rules": return sigmaPlugin || pluginRules.length > 0 || settings.isError;
@@ -70,7 +71,6 @@ export function PluginPage({ pluginId, title }: { pluginId: string; title: strin
   const overview = activeTab === "overview";
   const domainPlugin = pluginId === "sli.ad" || pluginId === "sli.gpo";
   const radiusPlugin = pluginId === "sli.remote-access";
-  const agentPlugin = pluginId === "sli.workstations";
   const pluginStatus = item ? t(item.enabled ? "plugins.enabled" : "plugins.status.disabled") : undefined;
   const counts = resourceCounts.data?.coverage.audit_resources as { servers: number; audited: number; shares: number } | undefined;
   const statusText = fileAudit ? pluginStatus && counts && !resourceCounts.isError
@@ -91,14 +91,16 @@ export function PluginPage({ pluginId, title }: { pluginId: string; title: strin
       : change.error instanceof ApiResponseError && change.error.code === "plugin_revision_conflict" ? "plugins.error.revisionConflict" : "plugins.changeFailed")}</p> : null}
     {activeTab ? <Tabs active={activeTab} onChange={setTab} items={availableTabs.map((key) => ({ key, label: t(`pluginPage.tab.${key}`) }))}>
       <TabList label={title}/><TabPanel>
-        {connection && statusText && (agentPlugin || openAgents)
-          ? <p>{openAgents ? <a href="/app/agents">{statusText}</a> : statusText}</p> : null}
+        {connection && statusText && openAgents
+          ? <p><a href="/app/agents">{statusText}</a></p> : null}
         {connection || overview && (domainPlugin || radiusPlugin) ? radiusPlugin ? <PluginRadiusSources/>
           : <PluginSources key={pluginId} pluginId={pluginId} connection={connection}
             sourceCount={item?.source_count ?? item?.source_names?.length}/> : null}
         {overview && !fileAudit && !domainPlugin && !radiusPlugin && item ? item.source_names?.length
           ? <ul>{item.source_names.map((name, index) => <li key={`${name}:${index}`}>{name}</li>)}</ul>
-          : <p>{sigmaPlugin ? rulesButton : connectionButton}</p> : null}
+          : workstationPlugin
+            ? item.status?.next_action === "install_workstation_agent" && nextAction ? <p><a href="/app/agents">{nextAction}</a></p> : null
+            : <p>{sigmaPlugin ? rulesButton : connectionButton}</p> : null}
         {activeTab === "settings" || activeTab === "rules" && !sigmaPlugin ? <PluginReadState loading={settings.isLoading} error={settings.error}
           message={t(activeTab === "settings" ? "pluginPage.settingsFailed" : "pluginPage.rulesFailed")} retry={() => void settings.refetch()}/> : null}
         {hasSettings && settings.data ? <div hidden={activeTab !== "settings" || settings.isError}><PluginSettingsForm key={pluginId} data={settings.data}

@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using System.Security.AccessControl;
 using System.Security.Principal;
@@ -22,6 +24,16 @@ public sealed class AgentRuntimeTests : IDisposable
             throw new HttpRequestException("synthetic connection refused");
     }
 
+    private sealed class EnrollmentServer(Func<HttpRequestMessage, CancellationToken, Task<JsonObject>> enroll) : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            if (request.RequestUri!.AbsolutePath != "/api/v1/agent/enroll")
+                throw new HttpRequestException("synthetic check-in refusal");
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(await enroll(request, ct)) };
+        }
+    }
+
     private readonly string _directory = Helpers.TempDirectory();
 
     public void Dispose() => Directory.Delete(_directory, recursive: true);
@@ -37,6 +49,39 @@ public sealed class AgentRuntimeTests : IDisposable
     private AgentRuntime Runtime(AgentOptions options) => new(Microsoft.Extensions.Options.Options.Create(options), TimeProvider.System);
 
     private JsonNode Status() => JsonNode.Parse(File.ReadAllText(Path.Combine(_directory, "state", "status.json")))!;
+
+    [Fact]
+    public async Task LocalSharesDoNotAffectEnrollment()
+    {
+        var options = Options();
+        var store = AgentRuntime.CreateIdentityStore(options);
+        var clock = new TestClock();
+        using var authority = new TestAuthority();
+        options.CaCertificate = Convert.ToBase64String(authority.Root.RawData);
+        var tokenFile = options.TokenFile!;
+        File.WriteAllText(tokenFile, new string('t', 43));
+        File.SetLastWriteTimeUtc(tokenFile, clock.GetUtcNow().UtcDateTime);
+        int shareReads = 0;
+        JsonNode? enrollment = null;
+        using var runtime = new AgentRuntime(Microsoft.Extensions.Options.Options.Create(options), clock,
+            _ => new AgentHttpClient(new HttpClient(new EnrollmentServer(async (request, ct) =>
+            {
+                enrollment = JsonNode.Parse(await request.Content!.ReadAsStringAsync(ct));
+                return authority.Issue(store);
+            })) { BaseAddress = new Uri(options.ServerUrl) }),
+            localShareReader: _ =>
+            {
+                shareReads++;
+                return new LocalSmbCatalog(LocalSmbCatalogState.Ready, [new("Users", @"C:\Users")]);
+            });
+
+        await runtime.RunCycleAsync(CancellationToken.None);
+
+        Assert.NotNull(enrollment);
+        Assert.Equal(0, shareReads);
+        var productType = (string?)enrollment["windows_product_type"];
+        Assert.Equal(Enrollment.RoleForProductType(productType) ?? "workstation", (string?)enrollment["machine_role"]);
+    }
 
     [Fact]
     public async Task WithoutServerSettingsItReportsAConfigurationErrorAndDoesNothing()

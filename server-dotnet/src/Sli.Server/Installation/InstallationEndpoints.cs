@@ -109,7 +109,7 @@ public static class InstallationEndpoints
             }
             using var body = mutation ? await AuthJsonBody.ReadAsync(context, ct) : JsonDocument.Parse("{}");
             var result = await service.DispatchAsync(context.Request.Method, path, JsonNode.Parse(body.RootElement.GetRawText())!.AsObject(),
-                principal, identity.Address, canManage, mutation ? CancellationToken.None : ct);
+                principal, identity.Address, canManage, mutation ? CancellationToken.None : ct, facts);
             int status = mutation && path is "/api/v1/setup/domains" or "/api/v1/setup/domain-controllers" ? 201 : 200;
             await DomainHttp.WriteAsync(context, result, status, ct);
         }

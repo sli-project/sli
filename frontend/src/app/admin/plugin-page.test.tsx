@@ -163,10 +163,22 @@ it("shows the workstation state consistently even when the legacy source pack is
   mount("sli.workstations");
   const expected = "Включён · Нет подключённых источников · Установите агент SLI на рабочую станцию";
   const header = await screen.findByText(expected, { selector: "header p" });
-  fireEvent.click(screen.getByRole("tab", { name: "Подключение" }));
+  expect(screen.queryByRole("tab", { name: "Подключение" })).toBeNull();
   const panel = screen.getByRole("tabpanel");
-  expect(within(panel).getByRole("link", { name: header.textContent! }).getAttribute("href")).toBe("/app/agents");
+  expect(header).toBeTruthy();
+  expect(within(panel).getByRole("link", { name: "Установите агент SLI на рабочую станцию" }).getAttribute("href")).toBe("/app/agents");
   expect(panel.textContent).not.toMatch(/Плагин выключен|Сведения о последних данных недоступны/);
+});
+
+it("counts a workstation with an agent before it has collection", async () => {
+  pluginStates["sli.workstations"] = { source_count: 1, source_names: ["fixture-workstation"], status: {
+    state: "no_sources", reason: "no_collection", next_action: null,
+    last_data_at: null, error_at: null, error_object: null,
+  } };
+  mount("sli.workstations");
+  expect(await screen.findByText("Включён · 1 компьютер подключён", { selector: "header p" })).toBeTruthy();
+  expect(within(screen.getByRole("tabpanel")).getByText("fixture-workstation")).toBeTruthy();
+  expect(screen.queryByRole("tab", { name: "Подключение" })).toBeNull();
 });
 
 it("keeps VPN setup and declared rules available while hiding empty Settings and Reports", async () => {

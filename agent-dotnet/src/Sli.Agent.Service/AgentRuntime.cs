@@ -112,8 +112,7 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
                     ArchiveIdentity(store);
                     store.Prepare(_options.HostId);
                 }
-                var enrollment = new Enrollment(store, bootstrapHttp, clock,
-                    hasFileShares: string.IsNullOrEmpty(_options.CaCertificate) ? null : HasFileShares);
+                var enrollment = new Enrollment(store, bootstrapHttp, clock);
                 var issued = input.ComputerEntityId is { } entity
                     ? await enrollment.EnrollGroupAsync(input.Token, entity, cancellationToken, _options.InstanceName).ConfigureAwait(false)
                     : await enrollment.EnrollAsync(input.Token, cancellationToken, _options.InstanceName).ConfigureAwait(false);
@@ -197,6 +196,9 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
             if (state != "drain")
             {
                 var report = policy.Report(state, rights);
+                if (assignment["windows_product_type_required"] is JsonValue typeRequired && typeRequired.TryGetValue<bool>(out bool typeRequested) && typeRequested
+                    && enrolled.ReadWindowsProductType() is { } productType)
+                    report["windows_product_type"] = productType;
                 if (assignment["dc_identity_required"] is JsonValue required && required.TryGetValue<bool>(out bool requested) && requested)
                     report["dc_identity"] = enrolled.ReadDcIdentity();
                 await http.PostAsync("/api/v1/agent/policy-report", report, cancellationToken).ConfigureAwait(false);
@@ -495,12 +497,6 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
         if (_options.TokenFile is { Length: > 0 } path && File.Exists(path)) File.Delete(path);
         _files.Delete(Path.Combine(_options.StateDir, "bootstrap.json"));
         if (OperatingSystem.IsWindows() && string.IsNullOrEmpty(_options.TokenFile)) MsiConfiguration.ClearToken();
-    }
-
-    private bool HasFileShares(CancellationToken ct)
-    {
-        var catalog = localShareReader?.Invoke(ct) ?? (OperatingSystem.IsWindows() ? NativeFileAuditApi.ListLocalShares(ct) : null);
-        return catalog is { State: LocalSmbCatalogState.Ready, Shares.Count: > 0 };
     }
 
     private AgentHttpClient NewHttp(AgentIdentity? identity)

@@ -28,7 +28,7 @@ public sealed class EnrollmentTests : IDisposable
             Assert.Equal("/api/v1/agent/enroll", path);
             Assert.Equal(new string('t', 43), body["token"]!.GetValue<string>());
             Assert.Equal(Environment.MachineName, body["reported_hostname"]!.GetValue<string>());
-            Assert.Contains(body["machine_role"]!.GetValue<string>(), new[] { "workstation", "domain_controller" });
+            Assert.Contains(body["machine_role"]!.GetValue<string>(), new[] { "workstation", "domain_controller", "file_server" });
             Assert.StartsWith("-----BEGIN CERTIFICATE REQUEST-----", body["csr_pem"]!.GetValue<string>(), StringComparison.Ordinal);
             return _ca.Issue(Store);
         });
@@ -41,7 +41,7 @@ public sealed class EnrollmentTests : IDisposable
 
     [Theory]
     [InlineData("WinNT", "workstation", true, true)]
-    [InlineData("ServerNT", "workstation", true, true)]
+    [InlineData("ServerNT", "file_server", true, true)]
     [InlineData("LanmanNT", "domain_controller", true, true)]
     [InlineData("LanmanNT", "domain_controller", true, false)]
     [InlineData("LanmanNT", "domain_controller", false, false)]
@@ -74,16 +74,19 @@ public sealed class EnrollmentTests : IDisposable
         Assert.Equal(reportsDirectory && hasSid ? sid : null, (string?)report["domain_sid"]);
     }
 
-    [Fact]
-    public async Task EnrollmentWithLocalFileSharesReportsTheFileServerRole()
+    [Theory]
+    [InlineData("WinNT", "workstation")]
+    [InlineData("ServerNT", "file_server")]
+    public async Task EnrollmentRoleFollowsProductType(string productType, string role)
     {
         var transport = new Transport((_, body) =>
         {
-            Assert.Equal("file_server", body["machine_role"]!.GetValue<string>());
+            Assert.Equal(role, body["machine_role"]!.GetValue<string>());
+            Assert.Equal(productType, body["windows_product_type"]!.GetValue<string>());
             Assert.Null(body["domain_dns"]);
             return _ca.Issue(Store);
         });
-        using var identity = await new Enrollment(Store, transport, _clock, () => "ServerNT", hasFileShares: _ => true)
+        using var identity = await new Enrollment(Store, transport, _clock, () => productType)
             .EnrollAsync(new string('t', 43), CancellationToken.None);
         Assert.Equal(Helpers.AgentId, identity.AgentId);
     }

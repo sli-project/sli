@@ -34,7 +34,7 @@ export function moduleStatusText(item: PluginState, timeZone: string) {
   const connected = count && count > 0 ? t(`plugins.connected.${noun}.${form}`, { count: formatNumber(count) }) : null;
   let detail: string | null;
   switch (status.state) {
-    case "no_sources": detail = status.reason === "no_folders"
+    case "no_sources": detail = status.reason === "no_collection" && item.plugin_id === "sli.workstations" ? connected : status.reason === "no_folders"
       ? [connected, t("plugins.status.noFolders")].filter(Boolean).join(" · ")
       : t("plugins.status.noSources");
       break;

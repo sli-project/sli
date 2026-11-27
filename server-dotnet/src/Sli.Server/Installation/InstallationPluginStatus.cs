@@ -1,7 +1,11 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
 using Npgsql;
+using Sli.Server.Access;
+using Sli.Server.Agents.Control;
+using Sli.Server.Agents.Diagnostics;
 using Sli.Server.Agents.FileAudit;
+using Sli.Server.Workstations;
 
 namespace Sli.Server.InstallationSetup;
 
@@ -90,6 +94,27 @@ public sealed partial class InstallationService
         { return null; }
     }
 
+    internal async Task<JsonArray?> WorkstationStatusSourcesAsync(AccessFacts facts, CancellationToken ct)
+    {
+        try
+        {
+            var access = new ReportEligibility().Compose(facts, new CapabilityComposer().Compose(facts));
+            WorkstationReportContract.Admit(access, WorkstationWorkspaceReader.Key);
+            var scope = WorkstationAgentScope.Build(facts, access, reportKey: WorkstationWorkspaceReader.Key,
+                workspace: true, parameterPrefix: "p");
+            return await database.ReadAsync(s => s.QueryAsync(WorkstationWorkspaceReader.Population + """
+
+                select 'sli.workstations' as module,a.transport_agent_id as agent_id,a.display_name as source_name,
+                       agent.collection_policy->>'interval_seconds' as interval_seconds,
+                       a.agent_status='active' and a.collection_state='enabled' as collects
+                from bound a join sli_agents agent on agent.id=a.transport_agent_id::uuid
+                where
+                """ + scope.Sql, ct, scope.Parameters.Select(parameter => parameter.Value).ToArray()), ct);
+        }
+        catch (Exception e) when (e is WorkstationException or AgentControlException or NpgsqlException or TimeoutException or InvalidOperationException)
+        { return null; }
+    }
+
     private async Task<JsonObject?> SigmaStatusAsync(CancellationToken ct)
     {
         try
@@ -122,7 +147,7 @@ public sealed partial class InstallationService
         var collecting = assigned.Where(row => Bool(row["collects"])).ToArray();
         if (agentBacked && sources is not null)
         {
-            var agents = (id == "sli.file-audit" ? assigned : collecting).GroupBy(row => Text(row["agent_id"])).ToArray();
+            var agents = (id is "sli.file-audit" or "sli.workstations" ? assigned : collecting).GroupBy(row => Text(row["agent_id"])).ToArray();
             item["source_count"] = agents.Length;
             item["source_names"] = new JsonArray(agents.Select(group => group.Select(row => Text(row["source_name"]))
                 .FirstOrDefault(name => name.Length > 0)).Where(name => name is not null)
@@ -186,6 +211,7 @@ public sealed partial class InstallationService
         string reason = status.State switch
         {
             "no_sources" when id == "sli.file-audit" && assigned.Length > 0 => "no_folders",
+            "no_sources" when id == "sli.workstations" && assigned.Length > 0 => "no_collection",
             "error" when unavailable => "status_unavailable",
             "error" when failure is null => "collection_delayed",
             "error" => "collection_failed",
