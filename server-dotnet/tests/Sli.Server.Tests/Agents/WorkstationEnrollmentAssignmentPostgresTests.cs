@@ -182,8 +182,8 @@ public sealed class WorkstationEnrollmentAssignmentPostgresTests
             Assert.True(effective["enabled"]!.GetValue<bool>());
             var config = effective["config"]!.AsObject();
             Assert.Equal(WorkstationJournalAdmission.EventIds, config["allow_event_ids"]!.AsArray().Select(value => value!.GetValue<int>()));
-            Assert.False(config["families"]!["processes"]!.GetValue<bool>());
-            Assert.False(config["families"]!["usb"]!.GetValue<bool>());
+            Assert.True(config["families"]!["processes"]!.GetValue<bool>());
+            Assert.True(config["families"]!["usb"]!.GetValue<bool>());
             var scope = await WorkstationJournalAdmission.ReadAsync(db, tx, agent, host.ToString("D"), "4", ct);
             Assert.NotNull(scope);
             Assert.Equal(machine, scope.Computer);

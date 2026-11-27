@@ -112,7 +112,7 @@ public sealed class WorkstationWorkspaceTests
         var limited = WorkstationWorkspaceReader.Profile(policy)["event_ids"]!.AsArray().Select(id => id!.GetValue<int>()).ToArray();
         Assert.DoesNotContain(4624, limited); Assert.DoesNotContain(4732, limited); Assert.DoesNotContain(4733, limited);
         Assert.DoesNotContain(7045, limited); Assert.Contains(5001, limited);
-        var legacy = WorkstationWorkspaceReader.Profile(new JsonObject { ["allow_event_ids"] = new JsonArray(4688) });
+        var legacy = WorkstationWorkspaceReader.Profile(new JsonObject { ["allow_event_ids"] = new JsonArray(4104) });
         Assert.Equal("unsupported", legacy["state"]!.ToString()); Assert.Empty(legacy["event_ids"]!.AsArray());
         Assert.Equal("unbound", WorkstationWorkspaceReader.Profile(null)["state"]!.ToString());
     }

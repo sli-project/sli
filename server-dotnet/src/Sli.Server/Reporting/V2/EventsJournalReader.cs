@@ -60,9 +60,11 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
             string code = $"events.semantic.{entry["channel"]}:{entry["provider_name"]}:{identity.EventId}.title";
             string english = ReportResult.Message(code, true).Text("text");
             if (english == code) english = ReportResult.Message("events.unknown_type", true).Text("text");
+            string russian = identity.EventId is 4688 or 6416 ? ReportResult.Message(code, false).Text("text") : code;
+            if (russian == code) russian = entry["title"]!.GetValue<string>();
             var title = ReportResult.Message("events.catalog_title");
-            title["params"] = new JsonObject { ["ru"] = entry["title"]!.DeepClone(), ["en"] = english };
-            title["text"] = entry["title"]!.DeepClone();
+            title["params"] = new JsonObject { ["ru"] = russian, ["en"] = english };
+            title["text"] = russian;
             titles[identity] = title;
         }
 

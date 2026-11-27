@@ -15,6 +15,9 @@ public sealed class FileAuditModule(string hostId, FileAuditPolicy policy, IFile
 {
     public const string ModuleId = FileAuditPolicy.ModuleId;
     private static readonly string[] PermissionsKey = ["collection_scope_id","path","subject_user_sid","minute_utc"];
+    private readonly Dictionary<(string Sid, ulong Logon, ulong Process, ulong Handle), DateTimeOffset> _scopedHandles = [];
+    private string? _handleGeneration;
+    private Cursor? _handleCursor;
     public static bool ValidGeneration(string g, string host) => g == host || g.StartsWith(host + ":",StringComparison.Ordinal)
         && Guid.TryParseExact(g[(host.Length+1)..],"D",out var id) && id.ToString() == g[(host.Length+1)..];
     public Sample Collect(CapturedPosition? captured, DateTimeOffset now)
@@ -57,6 +60,11 @@ public sealed class FileAuditModule(string hostId, FileAuditPolicy policy, IFile
             batch = new([]); error = "file_audit_journal_gap";
         }
         catch (Exception e) when (e is EventLogReadException or IOException) { batch = new([]); error = "file_audit_read_failed"; }
+        if (_handleGeneration != generation || _handleCursor != before)
+        {
+            _scopedHandles.Clear();
+            _handleGeneration = generation;
+        }
         if (batch.BookmarkRecovered) throw new AgentException("file_audit_unproven_gap");
         if (batch.Rows.Count > Math.Min(policy.Number("max_events"),256)) throw new AgentException("file_audit_range_invalid");
         var records = new List<PacketRecord>(); var previous = start;
@@ -81,6 +89,19 @@ public sealed class FileAuditModule(string hostId, FileAuditPolicy policy, IFile
             var (allowed,scopes,path) = FileAuditEvents.Admit(row,data,policy);
             var eventId = row["event_id"]!.GetValue<int>();
             var journalCleared = eventId == 1102;
+            var handle = !policy.Workstation && !permissionsOnly && eventId is 4656 or 4658 or 4660 or 4663
+                ? FileAuditEvents.Handle(data) : null;
+            var eventTime = handle is null ? default : Iso8601.ParseUtc(row["time_created"]!.GetValue<string>());
+            bool pathless = string.IsNullOrEmpty(data.GetValueOrDefault("ObjectName"))
+                && string.IsNullOrEmpty(data.GetValueOrDefault("ShareLocalPath"));
+            // Delete and close records can omit the object name. Use the same handle evidence window as projection.
+            if (!policy.Workstation && eventId == 4660)
+                allowed = allowed && pathless && handle is { } deleted && _scopedHandles.TryGetValue(deleted,out var seen)
+                    && seen <= eventTime && seen >= eventTime.AddMinutes(-5);
+            if (!policy.Workstation && eventId == 4658 && pathless)
+                allowed = policy.OptionalEvents && row["provider_name"]?.ToString() == FileAuditPolicy.Provider
+                    && handle is { } closed && _scopedHandles.TryGetValue(closed,out var seenAt)
+                    && seenAt <= eventTime && seenAt >= eventTime.AddMinutes(-5);
             JsonObject? action = null;
             if (allowed && permissionsOnly && !journalCleared)
             {
@@ -122,6 +143,17 @@ public sealed class FileAuditModule(string hostId, FileAuditPolicy policy, IFile
                 records = candidates;
             }
             else if (!unavailable) filtered++;
+            if (journalCleared) _scopedHandles.Clear();
+            if (handle is { } key)
+            {
+                if (allowed && eventId is 4656 or 4663)
+                {
+                    if (_scopedHandles.Count >= 4096 && !_scopedHandles.ContainsKey(key))
+                        _scopedHandles.Remove(_scopedHandles.MinBy(pair => pair.Value).Key);
+                    _scopedHandles[key] = eventTime;
+                }
+                else _scopedHandles.Remove(key);
+            }
             progress["record_id"]=(long)id; progress["bookmark"]=raw.Bookmark; progress["generation"]=generation;
             progress["anchor_sha256"]=Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(raw.Xml)));
             if (allowed && permissionsOnly && journalCleared) break;
@@ -129,6 +161,7 @@ public sealed class FileAuditModule(string hostId, FileAuditPolicy policy, IFile
         var payload = Packet(records);
         if (CanonicalJson.ToBytes(payload).Length > Math.Min(policy.Number("max_bytes"),44*1024)) throw new AgentException("file_audit_event_size_limit");
         var after = progress["record_id"] is not null || generation != hostId || progress.ContainsKey("since_utc") ? new Cursor("bookmark",CanonicalJson.Serialize(progress)) : before;
+        _handleCursor = after;
         return new(ModuleId,hostId,"Security",generation,before,after,payload,PolicyRevision:policy.Revision,
             FilteredCount:filtered,LostCount:error is null ? lost : null,ContinuityState:error is not null || lost > 0 ? "gap" : filtered > 0 ? "filtered" : "not_proven");
     }

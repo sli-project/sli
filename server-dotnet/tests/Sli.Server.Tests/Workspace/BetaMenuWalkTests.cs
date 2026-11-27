@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Sli.Server.Agents.Ingress;
 using Sli.Server.Notifications;
 using Sli.Server.Tests.Ad;
 using Sli.Server.Tests.Agents;
@@ -131,7 +132,7 @@ public sealed class BetaMenuWalkTests
             {
                 url = client.BaseAddress.AbsoluteUri, preview_url = previewClient.BaseAddress!.AbsoluteUri,
                 token, results, file_servers = fileServers,
-                workstations
+                workstations, workstation_event_ids = WorkstationJournalAdmission.EventIds
             }));
             browser.StandardInput.Close();
             await browser.WaitForExitAsync(ct);

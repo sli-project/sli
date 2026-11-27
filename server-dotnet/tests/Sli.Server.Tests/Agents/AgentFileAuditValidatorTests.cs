@@ -52,6 +52,21 @@ public sealed class AgentFileAuditValidatorTests
     }
 
     [Fact]
+    public void File_audit_reasons_distinguish_host_revision_scope_and_event_id()
+    {
+        var (envelope,packet,policy)=ActionPacket();
+        string? Reason(Envelope candidate) =>
+            Assert.Throws<ProtocolException>(()=>AgentFileAuditValidator.Validate(candidate,packet,policy,ActionHost)).Reason;
+        Assert.Equal("host_mismatch",Reason(envelope with { SourceInstanceId=Guid.Empty.ToString() }));
+        Assert.Equal("revision_mismatch",Reason(envelope with { PolicyRevision="2" }));
+        var action=packet["records"]![0]!["payload"]!;
+        action["path"]=@"C:\Files-other\item.txt";
+        Assert.Equal("scope_mismatch",Reason(envelope));
+        action["event_id"]=4625;
+        Assert.Equal("event_id_not_file_audit",Reason(envelope));
+    }
+
+    [Fact]
     public void One_native_record_can_supply_distinct_file_actions_but_not_duplicate_buckets()
     {
         var (e,p,policy)=ActionPacket();

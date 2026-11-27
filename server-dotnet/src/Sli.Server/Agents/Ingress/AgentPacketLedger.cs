@@ -45,7 +45,7 @@ public sealed class AgentPacketLedger(NpgsqlConnection connection, NpgsqlTransac
     }
 
     // One transport tip and one latest gap per module, rather than an unbounded rejection ledger.
-    public async Task ExpireAsync(Envelope envelope, JsonObject? previous, JsonObject? summary, CancellationToken ct)
+    public async Task ExpireAsync(Envelope envelope, JsonObject? previous, JsonObject? summary, CancellationToken ct, string? rejectionReason=null)
     {
         summary ??= new JsonObject();
         if (summary["expiry_pending"]?.GetValue<bool>() != true)
@@ -53,6 +53,12 @@ public sealed class AgentPacketLedger(NpgsqlConnection connection, NpgsqlTransac
         summary["data_gap"]!["to_utc"] = envelope.ObservedAtUtc;
         summary["expired_envelope"] = envelope.ToJson();
         summary["expiry_pending"] = true;
+        summary["expired_envelope_rejection"] = rejectionReason;
+        if (rejectionReason is not null)
+        {
+            summary["last_rejection_reason"] = rejectionReason;
+            summary["rejected_count"] = (summary["rejected_count"]?.GetValue<long>() ?? 0) + 1;
+        }
         await SaveSummaryAsync(envelope,summary,ct);
     }
 
