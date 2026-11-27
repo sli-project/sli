@@ -356,6 +356,10 @@ foreach ($side in @('computer','user')) {
 }
 [xml]$auditXml='<GPO><Computer><ExtensionData><Extension><AuditSetting><PolicyTarget>System</PolicyTarget><SubcategoryGuid>{0CCE9215-69AE-11D9-BED3-505054503030}</SubcategoryGuid><SettingValue>3</SettingValue></AuditSetting><AuditSetting><PolicyTarget>System</PolicyTarget><SubcategoryGuid>{0CCE9242-69AE-11D9-BED3-505054503030}</SubcategoryGuid><SettingValue>1</SettingValue></AuditSetting></Extension></ExtensionData></Computer></GPO>'
 $output.audit=(ConvertTo-SLIGpoV2Settings -Xml $auditXml -GpoId 'gpo-test' -GpoName 'Synthetic policy' -Side computer -Maximum 50 -ObservedAt $script:ObservedAt).rows
+[xml]$registryXml='<GPO><Computer><ExtensionData><Extension><RegistrySetting><KeyPath>Software\Example</KeyPath><Value><Name>First</Name><Number>42</Number></Value><Value><Name>Second</Name><String>sample</String></Value><Blocked>false</Blocked></RegistrySetting><RegistrySetting><KeyPath>Software\Example\Token</KeyPath><Value><Name>Third</Name><String>synthetic-redaction-marker</String></Value></RegistrySetting></Extension></ExtensionData></Computer></GPO>'
+$output.registry=(ConvertTo-SLIGpoV2Settings -Xml $registryXml -GpoId 'gpo-test' -GpoName 'Synthetic policy' -Side computer -Maximum 50 -ObservedAt $script:ObservedAt).rows
+[xml]$accountXml='<GPO><Computer><ExtensionData><Extension><Account><Name>LockoutBadCount</Name><SettingNumber>20</SettingNumber><Type>Account Lockout</Type></Account></Extension></ExtensionData></Computer></GPO>'
+$output.account=(ConvertTo-SLIGpoV2Settings -Xml $accountXml -GpoId 'gpo-test' -GpoName 'Synthetic policy' -Side computer -Maximum 50 -ObservedAt $script:ObservedAt).rows
 $output.facts=ConvertFrom-SLIGpoReportXml -XmlText $xml.OuterXml
 $policy=@{max_bytes=128}; $script:CapturedBytes=0; $script:overflow=$false
 $output.budget=@{small=(Within-Budget @{name='synthetic'}); large=(Within-Budget @{name=('x' * 200)}); overflow=$script:overflow}
@@ -375,6 +379,12 @@ $output | ConvertTo-Json -Depth 30 -Compress
     result = json.loads(completed.stdout.decode("utf-8-sig"))
     assert result["computer"]["legacy"] == result["computer"]["agent"]
     assert result["user"]["legacy"] == result["user"]["agent"]
+    assert [(row["path"], row["value_display"]) for row in result["registry"][:2]] == [
+        (r"Software\Example\First", "42"),
+        (r"Software\Example\Second", "sample"),
+    ]
+    assert len({row["id"] for row in result["registry"]}) == len(result["registry"]) == 3
+    assert [(row["setting_name"], row["value_display"]) for row in result["account"]] == [("LockoutBadCount", "20")]
     assert {
         row["value_display"]: row["audit_mode"]
         for row in result["audit"]

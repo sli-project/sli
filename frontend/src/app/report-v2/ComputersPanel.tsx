@@ -76,7 +76,7 @@ function eventLink(row: Row) {
 }
 
 export function computerInventoryColumns(columns: ReportColumnDto[], timeZone: string, select: (row: Row) => void): TableColumn<Row>[] {
-  const displayed = ["display_name", "computer_type", "operating_system", "ou_path", "last_logon_utc", "ip_addresses", "laps_state", "sli_agent"];
+  const displayed = ["display_name", "computer_type", "operating_system", "enabled", "ou_path", "last_logon_utc", "ip_addresses", "laps_state", "sli_agent"];
   return tableColumns(columns, timeZone).filter((column) => displayed.includes(column.key)).sort((a, b) => displayed.indexOf(a.key) - displayed.indexOf(b.key))
     .map((column) => {
       const overrides: Record<string, Partial<TableColumn<Row>>> = {
@@ -84,8 +84,9 @@ export function computerInventoryColumns(columns: ReportColumnDto[], timeZone: s
           event.stopPropagation(); select(row);
         }}>{typeof row.enabled === "boolean" ? <span role="img"
           aria-label={t(row.enabled ? "reports.computers.enabled" : "reports.computers.disabled")}>{row.enabled ? "✓" : "−"} </span> : null}{text(row.display_name) ?? dash()}</button> },
-        computer_type: { label: t("reports.ad.computers.role"), render: (row) => computerRole(row.computer_type) },
-        operating_system: { render: (row) => computerOs(row) ?? dash() },
+        computer_type: { label: t("reports.ad.computers.role"), render: (row) => row.computer_type && row.computer_type !== "unknown" ? computerRole(row.computer_type)
+          : t("reports.v2.ad.computers.v6.columns.computer_type.labels.unknown") },
+        operating_system: { render: (row) => computerOs(row) ?? t("reports.v2.ad.computers.v6.quality.not_collected") },
         last_logon_utc: { label: t("reports.computers.last_logon"), render: (row) => <ComputerLastLogon row={row}/>, sortable: false },
         ip_addresses: { label: t("reports.computers.dns"), render: (row) => addressText(row) ?? dash() },
         laps_state: { label: t("reports.computers.laps"), kind: "datetime", value: (row) => record(row.laps).expiration_utc, render: undefined },
@@ -251,7 +252,6 @@ function Observations({ row, params, strip }: { row: Row; params: string; strip:
     { key: "observed_at_utc", label: t("reports.computers.time"), kind: "datetime" },
     ...(rows.some((observation) => observation.user_display_name) ? [{ key: "user_display_name", label: t("reports.computers.user") }] : []),
     { key: "user_name", label: t("reports.computers.account") },
-    { key: "source_event_id", label: t("reports.computers.source_event"), render: eventLink },
   ];
   if (query.isLoading) return <ReportState state="loading"/>;
   if (result?.state === "denied" || query.error instanceof ApiResponseError && query.error.status === 403) return <ReportState state="denied"/>;
@@ -275,7 +275,7 @@ function Observations({ row, params, strip }: { row: Row; params: string; strip:
       onLoadMore={() => void query.fetchNextPage()} showFooter={query.hasNextPage}/>
       : <ComputerLogonsEmpty state={result?.coverage.observation_state ?? result?.state}/>}
     {href && opened ? <div className="sli-ds-header__row">
-      <span>{formatDateTime(text(opened.observed_at_utc))} · {text(opened.user_name) ?? dash()} · #{String(opened.source_event_id)}</span>
+      <span>{formatDateTime(text(opened.observed_at_utc))} · {text(opened.user_name) ?? dash()}</span>
       <div className="sli-ds-header__actions"><a className="sli-ds-button" data-variant="primary" href={href}>{t("reports.computers.open_event")}</a></div>
     </div> : null}
   </>;
@@ -309,8 +309,11 @@ function StoredLogons({ computer, params, timeZone }: { computer: string; params
     repeat_count: Number(row.repeat_count), source_event_id: id(row.source_event_id),
   }));
   const columns: TableColumn<StoredLogonRow>[] = [
-    { key: "observed_at_utc", label: t("reports.v2.ad.computer-logons.detail.columns.time.label"),
-      render: (row) => formatZonedDateTime(row.observed_at_utc, timeZone, { seconds: true }) },
+    { key: "observed_at_utc", label: t("reports.v2.ad.computer-logons.detail.columns.time.label"), render: (row) => {
+      const time = formatZonedDateTime(row.observed_at_utc, timeZone, { seconds: true });
+      const href = eventHref(row.source_event_id);
+      return href ? <a href={href} aria-label={`${t("reports.computers.open_event")} · ${time}`}>{time}</a> : time;
+    } },
     { key: "user_name", label: t("reports.v2.ad.computer-logons.detail.columns.user.label"), render: (row) => {
       return <>{row.user_name ?? dash()}{row.repeat_count > 1 ? ` ×${formatNumber(row.repeat_count)}` : null}</>;
     } },
@@ -321,7 +324,6 @@ function StoredLogons({ computer, params, timeZone }: { computer: string; params
       return label === key ? row.logon_type : label;
     } },
     { key: "source", label: t("reports.v2.ad.computer-logons.detail.columns.source.label") },
-    { key: "source_event_id", label: t("reports.v2.ad.computer-logons.detail.columns.event.label"), render: eventLink },
   ];
   return <DataTable caption={subject} columns={columns} rows={rows} rowKey={(row) => row.row_id} compact wrapCells="all"
     emptyContent={t("reports.states.empty.text")} showFooter={rows.length > 0}
