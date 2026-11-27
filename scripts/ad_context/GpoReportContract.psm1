@@ -283,7 +283,7 @@ function Protect-SLIGpoXmlValues {
             }
         }
         foreach ($child in @($context.SelectNodes('./*'))) {
-            if ($child.LocalName -in @('Name', 'Key', 'ValueName', 'Property') -and
+            if ($child.LocalName -in @('Name', 'PolicyName', 'DisplayName', 'Key', 'KeyPath', 'ValueName', 'Property') -and
                 (Test-SLIGpoSensitiveFieldName $child.InnerText)) {
                 $sensitive = $true
                 $null = $RedactedFields.Add(([string]$child.InnerText).ToLowerInvariant())
@@ -706,6 +706,24 @@ function SLIV2-Get-XmlNodePath {
     return ($parts -join "/")
 }
 
+function SLIV2-Get-RegistrySettings($Node) {
+    $key = $Node.SelectSingleNode("./*[local-name()='KeyPath' or local-name()='Key']")
+    if ($null -eq $key -or [string]::IsNullOrWhiteSpace($key.InnerText)) { return }
+    $policyName = $Node.SelectSingleNode("./*[local-name()='PolicyName' or local-name()='DisplayName' or local-name()='Name']")
+    $valueNodes = @($Node.SelectNodes("./*[local-name()='Value']"))
+    if ($valueNodes.Count -eq 0) { $valueNodes = @($Node) }
+    foreach ($valueNode in $valueNodes) {
+        $valueName = if ($valueNode -eq $Node) { $Node.SelectSingleNode("./*[local-name()='ValueName']") }
+            else { $valueNode.SelectSingleNode("./*[local-name()='Name' or local-name()='ValueName']") }
+        $data = @($valueNode.SelectNodes(".//*[not(*) and (local-name()='Number' or local-name()='String' or local-name()='Data' or local-name()='ValueData')]/text()"))
+        if ($data.Count -eq 0 -and $valueNode -ne $Node) { $data = @($valueNode.SelectNodes('./text()')) }
+        $path = $key.InnerText.Trim().TrimEnd('\')
+        if ($null -ne $valueName -and -not [string]::IsNullOrWhiteSpace($valueName.InnerText)) { $path += '\' + $valueName.InnerText.Trim() }
+        [pscustomobject]@{ path = $path; name = if ($null -ne $policyName) { $policyName.InnerText.Trim() } else { '' };
+            value = ($data | ForEach-Object { $_.Value.Trim() } | Where-Object { $_ -ne '' }) -join "`n" }
+    }
+}
+
 function ConvertTo-SLIGpoV2Settings {
     [CmdletBinding()]
     param(
@@ -747,8 +765,37 @@ function ConvertTo-SLIGpoV2Settings {
         }
         if ([string]::IsNullOrWhiteSpace($extensionName)) { $extensionName = "Extension" }
 
+        $registryGroup = "local-name()='RegistrySetting' and *[local-name()='KeyPath' or local-name()='Key']"
+        $accountGroup = "local-name()='Account' and *[local-name()='Name'] and *[local-name()='SettingNumber' or local-name()='SettingBoolean' or local-name()='SettingString']"
+        $groups = $extensionNode.SelectNodes(".//*[($registryGroup) or ($accountGroup)]")
+        foreach ($group in $groups) {
+            $xmlPath = SLIV2-Get-XmlNodePath -Node $group -StopNode $extensionNode
+            $category = if ($group.LocalName -eq 'RegistrySetting') { 'Registry' } else { 'Account Policy' }
+            $entries = if ($group.LocalName -eq 'RegistrySetting') { @(SLIV2-Get-RegistrySettings $group) } else {
+                $name = $group.SelectSingleNode("./*[local-name()='Name']").InnerText.Trim()
+                $content = $group.SelectSingleNode("./*[local-name()='SettingNumber' or local-name()='SettingBoolean' or local-name()='SettingString']")
+                [pscustomobject]@{ path = ''; name = $name; value = $content.InnerText.Trim() }
+            }
+            foreach ($entry in $entries) {
+                $identity = "$GpoId|$Side|$category|$($entry.path)"
+                $fingerprint = SLIV2-Get-Sha256Hex -Text "$identity|$($entry.name)|$($entry.value)"
+                if (-not $seenSettingFingerprints.Add($fingerprint)) { continue }
+                if ($rows.Count -ge $Maximum) {
+                    return [pscustomobject][ordered]@{ rows = @($rows); truncated = $true; source_status = "partial" }
+                }
+                [void]$rows.Add([pscustomobject][ordered]@{
+                    id = SLIV2-New-StableId -Prefix 'setting' -Seed "$identity|$($entry.name)|$($entry.value)"
+                    gpo_id = $GpoId; gpo_name = $GpoName; side = $Side; extension = $extensionName
+                    category = $category; path = $entry.path; setting_name = $entry.name; value_display = $entry.value
+                    operation = 'Observed'; source_xml_path = "/GPO/$sideNodeName/ExtensionData/Extension/$xmlPath"
+                    source_state = SLIV2-New-SourceState -Status 'observed' -Source 'Get-GPOReport XML normalizer' -Detail $null -Error $null -Coverage $null -Value $null
+                    fingerprint = $fingerprint
+                })
+            }
+        }
         $leafNodes = $extensionNode.SelectNodes(".//*[not(*)]")
         foreach ($leaf in $leafNodes) {
+            if ($null -ne $leaf.SelectSingleNode("ancestor::*[($registryGroup) or ($accountGroup)]")) { continue }
             if ($rows.Count -ge $Maximum) {
                 return [pscustomobject][ordered]@{ rows = @($rows); truncated = $true; source_status = "partial" }
             }
@@ -782,7 +829,8 @@ function ConvertTo-SLIGpoV2Settings {
                 source_state    = SLIV2-New-SourceState -Status "observed" -Source "Get-GPOReport XML normalizer" -Detail $null -Error $null -Coverage $null -Value $null
                 fingerprint     = $fingerprint
             }
-            if ($leaf.LocalName -eq "SubcategoryGuid" -and $auditCounts[$value] -eq 1) {
+            if (($leaf.LocalName -eq "SubcategoryGuid" -and $auditCounts[$value] -eq 1) -or
+                ($leaf.LocalName -eq "SubcategoryName" -and $null -eq $leaf.ParentNode.SelectSingleNode("./*[local-name()='SubcategoryGuid']"))) {
                 $modes = $leaf.ParentNode.SelectNodes("./*[local-name()='SettingValue']")
                 if ($modes.Count -eq 1 -and $modes[0].InnerText.Trim() -match "^[0-4]$") {
                     $setting["audit_mode"] = $modes[0].InnerText.Trim()

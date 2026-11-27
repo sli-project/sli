@@ -194,17 +194,28 @@ internal static class AdInventoryRows
         foreach (var (field, from) in map) row[field] = raw[from]?.DeepClone();
         row["entity_id"] = source["entity_ids"]?[raw.Text("objectGuid") ?? ""]?.DeepClone(); row["domain_id"] = source["domain_id"]!.DeepClone(); row["domain_name"] = source["fqdn"]?.DeepClone();
         row["identity"] = Obj(new { object_guid = raw.Text("objectGuid"), object_sid = raw.Text("sid") }); row["observed_at_utc"] = observed;
-        string os = raw.Text("osName") ?? ""; string type = (raw.Int("userAccountControl") & 8192) != 0 ? "domain_controller" : raw["classification"]?.Text("result") is "server" or "domain_controller" or "workstation" ? raw["classification"]!.Text("result")! : os.Contains("server", StringComparison.OrdinalIgnoreCase) ? "server" : os.ToLowerInvariant() is not ("" or "unknown" or "неизвестно") ? "workstation" : "unknown";
-        row["computer_type"] = type; row["account_state"] = Bool(raw["enabled"]) switch { true => "enabled", false => "disabled", _ => "unknown" };
+        var osSource = raw["sources"]?["os"];
+        if (row.Text("operating_system") is null && osSource.Text("status") == "observed")
+            row["operating_system"] = osSource.Text("value");
+        string? os = row.Text("operating_system");
+        string? collectedRole = new[] { raw["classification"].Text("result"), raw.Text("deviceType") }
+            .FirstOrDefault(role => role is "server" or "domain_controller" or "workstation");
+        long? uac = raw["userAccountControl"]?.GetValueKind() == System.Text.Json.JsonValueKind.Number ? raw.Int("userAccountControl") : null;
+        string type = ((uac ?? 0) & 8192) != 0 ? "domain_controller" : collectedRole ??
+            (os?.Contains("server", StringComparison.OrdinalIgnoreCase) == true ? "server" :
+             os?.Contains("windows", StringComparison.OrdinalIgnoreCase) == true ? "workstation" : "unknown");
+        bool? enabled = Bool(raw["enabled"]) ?? (uac is > 0 ? (uac.Value & 2) == 0 : null);
+        row["enabled"] = enabled;
+        row["computer_type"] = type; row["account_state"] = enabled switch { true => "enabled", false => "disabled", _ => "unknown" };
         int? age = Age(raw["lastLogonTimestamp"], time) is {} days?Math.Max(0,days):null; int threshold = parameters.Int("threshold_days") > 0 ? (int)parameters.Int("threshold_days") : 90;
-        string activity = Bool(raw["enabled"])==false?"not_applicable":Bool(raw["enabled"]) is null||age is null?"not_evaluated":age>60?"inactive":"recent";
+        string activity = enabled==false?"not_applicable":enabled is null||age is null?"not_evaluated":age>60?"inactive":"recent";
         row["activity_state"] = activity; row["activity"] = Obj(new { state = activity, age_days = age, time_semantics = "replicated_lastLogonTimestamp_approximation", source_attribute = "LastLogonDate" }); row["age_days"] = age;
         row["ip_addresses"] = Array((raw["ipv4s"] as JsonArray ?? []).Concat(raw["ipv6s"] as JsonArray ?? []).Select(n => n!.ToString())); row["ip_text"] = string.Join(", ", row["ip_addresses"]!.AsArray().Select(n => n!.ToString()));
         row["ad_site"] = Obj(new { state = raw.Text("adSite") is null ? "not_collected" : "observed", value = raw.Text("adSite") }); row["site_text"] = raw["adSite"]?.DeepClone(); row["ou_path"] = AdUsersSnapshot.Ou(raw.Text("distinguishedName"));
         row["evidence"] = new JsonObject { ["source_states"] = raw["sources"]?.DeepClone(), ["attribute_states"] = new JsonObject() };
         var reasons = new List<JsonObject>();
         void Reason(bool match, string code, string label) { if (match) reasons.Add(Obj(new { code, label })); }
-        Reason(type == "unknown", "unknown_type", "Тип объекта не определён"); Reason(Bool(raw["enabled"]) == true && age > threshold, "stale_activity", "Активность старше " + threshold + " дней"); Reason(Bool(raw["enabled"]) == true && age is null, "unavailable_activity", "Нет доступной даты активности"); Reason((raw.Int("userAccountControl") & 524288) != 0 || Bool(raw["trustedForDelegation"]) == true, "unconstrained_delegation", "Неограниченное делегирование");
+        Reason(type == "unknown", "unknown_type", "Тип объекта не определён"); Reason(enabled == true && age > threshold, "stale_activity", "Активность старше " + threshold + " дней"); Reason(enabled == true && age is null, "unavailable_activity", "Нет доступной даты активности"); Reason((raw.Int("userAccountControl") & 524288) != 0 || Bool(raw["trustedForDelegation"]) == true, "unconstrained_delegation", "Неограниченное делегирование");
         row["reasons"] = Array(reasons); row["reason_text"] = string.Join(", ", reasons.Select(r => r.Text("label"))); row["quality_issues"] = new JsonArray(); row["quality_text"] = null; row["semantic_findings"] = new JsonArray();
         row["ad_last_logon_utc"] = raw["lastLogonTimestamp"]?.DeepClone();
 
@@ -304,7 +315,7 @@ internal static class AdInventoryRows
         }
         else
         {
-            if(view is "workstation_enabled" or "workstation_disabled"&&(row.Text("computer_type")!="workstation"||Bool(raw["enabled"])!=(view=="workstation_enabled"))||view is "server_enabled" or "server_disabled"&&(row.Text("computer_type") is not ("server" or "domain_controller")||Bool(raw["enabled"])!=(view=="server_enabled")))return false;
+            if(view is "workstation_enabled" or "workstation_disabled"&&(row.Text("computer_type")!="workstation"||Bool(row["enabled"])!=(view=="workstation_enabled"))||view is "server_enabled" or "server_disabled"&&(row.Text("computer_type") is not ("server" or "domain_controller")||Bool(row["enabled"])!=(view=="server_enabled")))return false;
             if(view=="unknown_type"&&row.Text("computer_type")!="unknown"||view=="data_quality"&&row["quality_issues"]!.AsArray().Count==0||view=="semantic"&&row["semantic_findings"]!.AsArray().Count==0)return false;
             if(request.Params.Text("reason_code") is {} code&&!row["reasons"]!.AsArray().Any(r=>r!.Text("code")==code)||request.Params.Text("quality_code") is {} quality&&!row["quality_issues"]!.AsArray().Any(r=>r!.Text("code")==quality))return false;
             if (!MatchesComputerActivity(row, request.Params.Text("activity"), request.Params.Int("threshold_days"))) return false;

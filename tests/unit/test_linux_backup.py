@@ -576,6 +576,7 @@ def test_administrator_guide_passes_sanitary_gate(tmp_path):
     assert scan(tmp_path)["findings"] == []
 
 
+@pytest.mark.legacy
 def test_compose_backup_permissions_secrets_storage_and_limits():
     compose = yaml.safe_load((ROOT / "deploy/linux/docker-compose.yml").read_text(encoding="utf-8"))
     service = compose["services"]["backup"]

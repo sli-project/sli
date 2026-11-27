@@ -9,7 +9,7 @@ import pytest
 import yaml
 
 from deploy.linux import backup, native_backup, native_runtime, sli_secrets
-from server.sli.core.ad_credential_secrets import MASTER_KEY_REF, MASTER_KEY_SETTING, MASTER_KEY_SPEC
+from deploy.linux.sli_core.ad_credential_secrets import MASTER_KEY_REF, MASTER_KEY_SETTING, MASTER_KEY_SPEC
 from tests.unit.test_sli_secrets import ownership  # noqa: F401 -- shared filesystem fixture
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -63,6 +63,7 @@ def overlay():
     return yaml.safe_load((ROOT / 'deploy/linux/docker-compose.ad-credentials.yml').read_text())
 
 
+@pytest.mark.legacy
 @pytest.mark.parametrize('service', ['migrate', 'semantic', 'notification-delivery', 'backup'])
 def test_workers_cannot_mount_master_key(service):
     config = overlay()
@@ -71,6 +72,7 @@ def test_workers_cannot_mount_master_key(service):
         sli_secrets.validate_compose(config)
 
 
+@pytest.mark.legacy
 @pytest.mark.parametrize('change', ['inline', 'empty_inline', 'user', 'entrypoint', 'tmpfs', 'target', 'file'])
 def test_compose_rejects_plaintext_shared_mount_or_missing_private_delivery(change):
     config = overlay()
@@ -121,6 +123,7 @@ def test_native_backup_rejects_manifest_that_reenables_key_backup(tmp_path, monk
         native_backup.secret_sources()
 
 
+@pytest.mark.legacy
 @pytest.mark.posix_only
 def test_entrypoint_requires_private_tmpfs_before_publishing_key(tmp_path, monkeypatch):
     from deploy.linux import ad_credentials_entrypoint as entry
@@ -154,6 +157,7 @@ def test_entrypoint_requires_private_tmpfs_before_publishing_key(tmp_path, monke
         entry.deliver()
 
 
+@pytest.mark.legacy
 @pytest.mark.posix_only
 def test_entrypoint_drops_groups_gid_uid_before_exec_and_preserves_api_arguments(monkeypatch):
     from deploy.linux import ad_credentials_entrypoint as entry
@@ -173,6 +177,7 @@ def test_entrypoint_drops_groups_gid_uid_before_exec_and_preserves_api_arguments
         ('exec', ['-m', 'deploy.linux.entrypoint', 'api', '--host', '0.0.0.0', '--port', '8443'])]
 
 
+@pytest.mark.legacy
 @pytest.mark.posix_only
 def test_entrypoint_never_starts_consumer_after_delivery_failure(monkeypatch, capsys):
     from deploy.linux import ad_credentials_entrypoint as entry

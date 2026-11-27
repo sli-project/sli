@@ -88,13 +88,14 @@ def test_ensure_creates_passwords_without_newlines_and_preserves_files(tmp_path,
         assert all(path.stat().st_mode & 0o777 == 0o640 for path in paths)
 
 
-def test_default_install_provisions_executor_credentials_for_compose_and_native(tmp_path, ownership, monkeypatch):
+@pytest.mark.parametrize('legacy', [False, pytest.param(True, marks=pytest.mark.legacy)])
+def test_default_install_provisions_executor_credentials(tmp_path, ownership, monkeypatch, legacy):
     from deploy.linux import native_install, native_runtime
 
     monkeypatch.delenv('SLI_CORE_JOB_WORKSTATIONS_PROJECTION', raising=False)
     directory = tmp_path / 'synthetic-install-secrets'
     subject.ensure(directory, tls_names=['localhost'])
-    compose = yaml.safe_load((ROOT / 'deploy/linux/docker-compose.yml').read_text('utf-8'))
+    compose = yaml.safe_load((ROOT / 'deploy/linux/docker-compose.yml').read_text('utf-8')) if legacy else None
     native_env = native_install.environment()
     runtime_env, runtime_secrets = native_runtime.environment('executor-light', {'radius_pilot': False})
     values = []
@@ -105,9 +106,10 @@ def test_default_install_provisions_executor_credentials_for_compose_and_native(
         assert re.fullmatch(rb'[A-Za-z0-9_-]{64}', values[-1])
         assert native_env[setting] == str(native_install.SECRETS / name)
         assert name in runtime_secrets and runtime_env[setting] == '%d/' + name
-        for service in ('migrate', 'executor-light'):
-            assert name in compose['services'][service]['secrets']
-            assert compose['services'][service]['environment'][setting] == '/run/secrets/' + name
+        if compose is not None:
+            for service in ('migrate', 'executor-light'):
+                assert name in compose['services'][service]['secrets']
+                assert compose['services'][service]['environment'][setting] == '/run/secrets/' + name
     assert len(set(values)) == 3
     assert native_env['SLI_CORE_JOB_WORKSTATIONS_PROJECTION'] == '0'
     assert runtime_env['SLI_CORE_JOB_WORKSTATIONS_PROJECTION'] == '0'
@@ -461,6 +463,7 @@ def test_agent_transfer_cli_needs_no_new_tls_or_offline_key(tmp_path, ownership,
     assert 'PRIVATE KEY' not in capsys.readouterr().out
 
 
+@pytest.mark.legacy
 def test_agent_overlay_provisioning_accepts_canonical_layout_and_rejects_foreign_override(
         tmp_path, ownership, monkeypatch, capsys):
     source, destination = tmp_path / 'source', tmp_path / 'new'
@@ -501,6 +504,7 @@ def test_cli_reports_safe_error_without_secret_or_traceback(tmp_path, ownership,
     assert 'Traceback' not in output.err and not output.out
 
 
+@pytest.mark.legacy
 def test_installer_uses_manifest_and_rejects_unknown_secret(tmp_path, ownership):
     from deploy.linux.installation import create_secrets
 
@@ -509,6 +513,7 @@ def test_installer_uses_manifest_and_rejects_unknown_secret(tmp_path, ownership)
     assert not (tmp_path / 'secrets').exists()
 
 
+@pytest.mark.legacy
 def test_update_preflight_uses_manifest_without_creating_files(tmp_path):
     from deploy.linux.sli_update import DockerHost
 
@@ -520,6 +525,7 @@ def test_update_preflight_uses_manifest_without_creating_files(tmp_path):
     assert not (tmp_path / 'missing').exists()
 
 
+@pytest.mark.legacy
 @pytest.mark.parametrize('new_secret', ['job_dispatcher_light', 'storage_password'])
 def test_update_provisions_new_password_before_compose_can_mount_it(tmp_path, ownership, monkeypatch, new_secret):
     from deploy.linux.sli_update import DockerHost
@@ -548,6 +554,7 @@ def test_update_provisions_new_password_before_compose_can_mount_it(tmp_path, ow
     assert calls == [['config', '--format', 'json']]
 
 
+@pytest.mark.legacy
 @pytest.mark.parametrize('bad', ['directory', 'split_directory', 'wrong_name', 'unregistered', 'foreign'])
 def test_update_ensure_refuses_unsafe_input_without_creating_password(tmp_path, ownership, monkeypatch, bad):
     from deploy.linux.sli_update import DockerHost, UpdateError

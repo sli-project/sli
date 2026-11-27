@@ -7,6 +7,7 @@ import { t } from "../../i18n";
 import { auditLeaf, auditLeafLabel, auditLeafValue, auditPath } from "./gpo-audit-setting";
 import { formatDateTime } from "../../shared/date-time";
 import { useTimeZone } from "../../shared/time-zone";
+import { gpoSettingLabel, gpoSettingMetadata } from "./gpo-settings";
 
 type SnapshotChoice = { id: string; observed_at: string };
 type SnapshotPair = { before: string; after: string };
@@ -52,9 +53,12 @@ export function GpoSnapshotComparison({ reportKey, domain, policyId, revision }:
   </div>;
   if (snapshots.length < 2) return <div role="status">{t("reports.gpo.snapshots_required")}</div>;
 
-  const differences = (comparison.data?.collections?.snapshot_comparison as Difference[] | undefined)?.map((row) => {
+  const differences = (comparison.data?.collections?.snapshot_comparison as Difference[] | undefined)
+    ?.filter((row) => !gpoSettingMetadata(row.setting_name)).map((row) => {
     const leaf = auditLeaf(row.setting_name, row.path);
-    if (!leaf) return row;
+    if (!leaf) return /(?:^|\/)RegistrySetting(?:\/|$)/i.test(row.path)
+      ? { ...row, setting_name: row.setting_name === "KeyPath" ? t("reports.gpo.path") : t("reports.gpo.registry_setting"), path: "" }
+      : { ...row, setting_name: gpoSettingLabel(row.setting_name) ?? "" };
     const value = row.after_value ?? row.before_value;
     return { ...row, setting_name: auditLeafLabel(leaf, typeof value === "string" ? value : undefined), path: auditPath(row.side),
       before_value: auditLeafValue(leaf, row.before_value, row.side), after_value: auditLeafValue(leaf, row.after_value, row.side) };

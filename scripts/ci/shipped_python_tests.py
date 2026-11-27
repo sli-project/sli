@@ -1,50 +1,48 @@
-"""Select beta Python tests without importing application code or dependencies.
+"""Select tests of the Debian payload, its CI tools and shipped migrations.
 
-Reproduce inventory A: imports (including deferred/conditional imports), literal
-module/source references and embedded Python. Exclude tests referring exclusively
-to server modules outside the installer's conservative closure. Pull requests
-also omit reviewed legacy report tests with equivalent .NET coverage.
-Unknown tests run by default. Package initializers alone do not identify the
-code under test. Output is a pytest @argfile (pytest >= 8.2), one path per line.
+Static references include deferred imports and test helpers. The output is a
+pytest @argfile with one path per line.
 """
 from __future__ import annotations
 
 import argparse
 import ast
-import json
-import os
 from pathlib import Path
 import re
 import sys
 import textwrap
 from functools import cache
 
+from deploy.linux.build_beta_kit import RETIRED_LINUX_PATHS
 
-# Release-tree entry points used by the Debian package and its build, install,
-# upgrade and recovery wrappers. The host package contributes its own HELPERS.
-INSTALLER_ROOTS = (
-    "backup", "backup_restore_check", "build_apt_repo", "build_beta_kit",
-    "entrypoint", "healthcheck", "installed_state", "migrate", "native_backup",
-    "native_dotnet_generator", "native_install", "native_package",
-    "native_pg_inventory", "native_pg_migrate", "native_plugin_runtime",
-    "native_plugins", "native_restore", "native_setup", "notification_delivery",
-    "plugin_update", "restore_existing", "sli_secrets", "sli_update",
-)
-HOST_PACKAGE = "deploy/linux/native_package.py"
+
 PR_TEST_MANIFESTS = ("pr_source_tests.txt", "pr_checkpoint_tests.txt", "pr_posix_tests.txt")
-# Keep explicit trust boundaries while the old Python implementation is
-# present, including installed-agent lifecycle, native fencing and manifests.
-SECURITY_SOURCES = (
-    "server/api/http_server.py", "server/api/proxy.py", "server/api/routes/auth.py",
-    "server/sli/access/", "server/sli/agents/", "server/sli/ops/tls_client.py",
-    "server/sli/sources/plugin_package_manifest.py", "server/sli/sources/plugin_worker_",
-)
+BUILD_TOOLS = {"scripts/maintenance/publish_react_build.py", "scripts/maintenance/github_sanitary_check.py"}
 SECURITY_TESTS = {"tests/tooling/test_sli_agent_local_install.py"}
-# Include path components used in Path(...)/"postgres_migrations" as well as
-# joined strings. Tests can exercise the shipped ledger and SQL via a legacy adapter.
+# These suites use native helpers or real SQL as fixtures for retired services
+# and their Compose installer. The helpers have their own native suites.
+RETIRED_TESTS = {
+    "tests/core/test_core_ops1_collector_storage_dashboard.py",
+    "tests/core/test_findings_pg1_incremental_pipeline.py",
+    "tests/core/test_nps_pipeline_runtime.py",
+    "tests/reporting/test_agent_collection_query_plan_postgres.py",
+    "tests/reporting/test_http_server_route_equivalence.py",
+    "tests/reporting/test_navigation_registry.py",
+    "tests/reporting/test_plugin_receipts_query_plan_postgres.py",
+    "tests/storage/test_permanent_history_lifecycle.py",
+    "tests/tooling/test_sli_install.py",
+} | {f"tests/unit/test_{name}.py" for name in (
+    "ad_gpo_core_jobs", "ad_snapshot_composition", "file_audit_registration", "gpo_plugin_reports",
+    "linux_shutdown", "plugin_update", "release_artifacts", "report_producer_proposal",
+    "sli_accept_candidate", "sli_installation", "sli_update", "sli_update_helper_preload",
+    "smtp_setup_deployment", "stand_update", "telegram_proxy_installation", "telegram_setup",
+    "update_acceptance_drill", "updater_component", "updater_isolated_closure", "updater_transition",
+    "updater_transition_contract", "verify_offline_kit", "workstation_admin", "workstation_projection_jobs",
+    "workstation_retention_jobs",
+)}
 SHIPPED_ASSET = re.compile(
     r"\b(?:postgres_migrations|postgres_baseline|postgres_schema(?:_v8)?\.sql|native_pg_ledger\.json"
-    r"|(?:server-dotnet|agent-dotnet|config/clickhouse)/[\w./-]+)\b"
+    r"|deploy/linux/(?:runtime_grants|default_semantic_policy)\.sql|config/clickhouse/[\w./-]+)\b"
 )
 MIGRATION_TESTS = {
     "tests/access/test_existing_postgres_bootstrap.py",
@@ -57,29 +55,10 @@ MIGRATION_TESTS = {
     "tests/unit/test_report_producer_migration.py",
     "tests/unit/test_update_ledger_reconciliation.py",
 }
-# These exercise the retired Python reporting entry points. The installer
-# closure also reaches them through shared reporting imports and registries.
-PR_LEGACY_REPORT_TESTS = {
-    # ComputersV6MetricsPartitionTests and AdComputerComparisonBatchTests.
-    "tests/reporting/test_computers_v6_metrics_partition.py",
-    "tests/reports/test_computers_v6_comparison_batch.py",
-    # AdV2Tests.NewLogonPairs, NewLogonPairsContextFailuresTests,
-    # and the .NET volume test runs nightly.
-    "tests/reporting/test_new_logon_pairs_context_failures.py",
-    # UiLabelsTests and UsersActivityV2Tests.
-    "tests/reporting/test_ui_labels.py",
-    "tests/reporting/test_users_activity_v2.py",
-}
-# The legacy dispatch paths still have distinct access, export and history guards.
-REPORT_ACCESS_TESTS = {
-    "tests/reporting/test_gpo_effective_access_v2.py",
-    "tests/reporting/test_new_logon_pairs_report_path.py",
-    "tests/reporting/test_new_logon_pairs_v2.py",
-}
 SOURCE_ROOTS = ("server", "deploy", "scripts", "sli_agent", "sli_collect", "tools")
 SKIP_DIRS = {"__pycache__", ".venv", "node_modules", ".git"}
 MODULE_REFERENCE = re.compile(
-    r"\b(?:server|deploy|scripts|sli_agent|sli_collect|tools|tests)(?:\.[A-Za-z_]\w*)+"
+    r"\b(?:server|deploy|scripts|sli|sli_agent|sli_collect|tools|tests)(?:\.[A-Za-z_]\w*)+"
 )
 SOURCE_REFERENCE = re.compile(
     r"\b(?:server|deploy|scripts|sli_agent|sli_collect|tools|tests)(?:/[\w.-]+)+\.py\b"
@@ -105,6 +84,8 @@ def references(path: str, tree: ast.AST, index: dict[str, str], *, embedded=Fals
     found = set()
 
     def add(name):
+        if name == "sli" or name.startswith("sli."):
+            name = "server." + name
         if name in index:
             found.add(index[name])
 
@@ -156,73 +137,14 @@ def parse(root: Path, path: str) -> ast.AST:
     return ast.parse((root / path).read_text(encoding="utf-8-sig"), filename=path)
 
 
-def dynamic_references(root: Path, path: str, index: dict[str, str]) -> set[str]:
-    """Static equivalents of the scanners/aliases described in inventory A."""
-    found = set()
-    if path == "server/sli/reporting/v2/registry.py":
-        registry = parse(root, "server/sli/plugins/registry.py")
-        excluded = set()
-        for node in ast.walk(registry):
-            if isinstance(node, ast.Assign) and any(
-                isinstance(target, ast.Name) and target.id == "PLUGIN_REPORT_MODULES"
-                for target in node.targets
-            ):
-                excluded = set(ast.literal_eval(node.value.args[0]))
-        found.update(p for p in index.values()
-                     if p.startswith("server/sli/reporting/v2/reports/")
-                     and Path(p).stem not in excluded)
-    if path == "server/sli/plugins/ad/registration.py":
-        found.update(p for p in index.values()
-                     if p.startswith("server/sli/plugins/ad/reports/definitions/"))
-    if path == "server/source_packs/windows_ad_dc/__init__.py":
-        found.update(p for p in index.values()
-                     if p.startswith("server/sli/plugins/ad/windows_ad_dc/"))
-    if path == "server/source_packs/registry.py":
-        for config in sorted((root / "config/source_packs").rglob("*.json")):
-            document = json.loads(config.read_text(encoding="utf-8-sig"))
-            # Only resolve module literals; do not load executable plugin code.
-            for match in MODULE_REFERENCE.finditer(json.dumps(document)):
-                name = match.group()
-                if name in index:
-                    found.add(index[name])
-    return found
-
-
-def installer_roots(root: Path) -> set[str]:
-    roots = {f"deploy/linux/{name}.py" for name in INSTALLER_ROOTS}
-    if (root / HOST_PACKAGE).is_file():
-        for statement in parse(root, HOST_PACKAGE).body:
-            if isinstance(statement, ast.Assign) and any(
-                isinstance(target, ast.Name) and target.id == "HELPERS" for target in statement.targets
-            ):
-                roots.update(f"deploy/linux/{name}" for name in ast.literal_eval(statement.value) if name.endswith(".py"))
-                break
-        else:
-            raise ValueError("Native package HELPERS inventory is missing")
-    return roots
-
-
-def installer_closure(root: Path, index: dict[str, str]) -> set[str]:
-    pending = list(installer_roots(root))
-    visited = set()
-    while pending:
-        path = pending.pop()
-        if path in visited:
-            continue
-        visited.add(path)
-        dependencies = references(path, parse(root, path), index)
-        dependencies.update(dynamic_references(root, path, index))
-        # Importing a module also executes its package initializers.
-        for parent in Path(path).parents:
-            initializer = (parent / "__init__.py").as_posix()
-            if index.get(module_name(initializer)) == initializer:
-                dependencies.add(initializer)
-        pending.extend(dependencies - visited)
-    return visited
+def shipped_source(path: str) -> bool:
+    if path.startswith("deploy/linux/"):
+        return path.removeprefix("deploy/linux/") not in RETIRED_LINUX_PATHS
+    return path.startswith("scripts/ci/") or path in BUILD_TOOLS
 
 
 def required_test_paths(root: Path) -> set[str]:
-    required = REPORT_ACCESS_TESTS | SECURITY_TESTS
+    required = set(SECURITY_TESTS)
     for name in PR_TEST_MANIFESTS:
         manifest = root / "scripts/ci" / name
         if manifest.is_file():
@@ -230,9 +152,8 @@ def required_test_paths(root: Path) -> set[str]:
     return required
 
 
-def select_tests(root: Path, *, include_legacy_reports: bool = False):
+def select_tests(root: Path, *, candidates: set[str] | None = None):
     index = source_index(root)
-    closure = installer_closure(root, index)
     tests = [path.relative_to(root).as_posix() for path in python_files(root / "tests")]
     index.update({module_name(path): path for path in tests})
     required = required_test_paths(root)
@@ -247,10 +168,13 @@ def select_tests(root: Path, *, include_legacy_reports: bool = False):
         return imports, assets
 
     selected, excluded = [], []
-    groups = {name: 0 for name in ("installer", "migrations", "closure", "protected",
-                                   "transitive", "shipped", "mixed", "other", "retired", "legacy_reports")}
     for path in tests:
         if not Path(path).name.startswith("test_"):
+            continue
+        if candidates is not None and path not in candidates:
+            continue
+        if path in RETIRED_TESTS:
+            excluded.append(path)
             continue
         direct, direct_asset = inspect_test(path)
         imports = {ref for ref in direct if not ref.startswith("tests/")}
@@ -266,35 +190,22 @@ def select_tests(root: Path, *, include_legacy_reports: bool = False):
             refs, helper_asset = inspect_test(helper)
             dependencies.update(ref for ref in refs if not ref.startswith("tests/"))
             pending.extend(ref for ref in refs if ref.startswith("tests/") and ref not in seen)
-            asset |= helper_asset
+            # A general fixture can bootstrap the schema for a retired service.
+            # Only the migration harness contributes inherited SQL coverage.
+            if path.startswith("tests/migrations/") and helper.startswith("tests/migrations/"):
+                asset |= helper_asset
 
-        installer = any(ref.startswith("deploy/linux/") for ref in dependencies)
-        migrations = path.startswith("tests/migrations/") or path in MIGRATION_TESTS
-        shipped = any(ref.startswith("server/") for ref in dependencies & closure)
-        protected = (path in required or path.startswith("tests/access/")
-                     or any(ref.startswith(SECURITY_SOURCES) for ref in dependencies))
-        server_only = bool(imports) and all(ref.startswith("server/") for ref in dependencies)
-        groups["installer"] += installer
-        groups["migrations"] += migrations
-        groups["closure"] += shipped
-        groups["protected"] += protected
-        groups["transitive"] += bool((dependencies - imports) & closure) or asset and not direct_asset
-        if protected or migrations or asset:
-            groups["shipped"] += 1
+        # Pure SQL migration tests can rely on conftest for the schema.
+        # Mixed tests qualify through a shipped SQL asset or a native module.
+        migration = path in MIGRATION_TESTS or (
+            path.startswith("tests/migrations/") and not dependencies
+        )
+        if path in required or migration or asset or any(map(shipped_source, dependencies)):
             selected.append(path)
-        elif not include_legacy_reports and path in PR_LEGACY_REPORT_TESTS and server_only:
-            groups["legacy_reports"] += 1
-            excluded.append(path)
-        elif installer or shipped:
-            groups["shipped"] += 1
-            selected.append(path)
-        elif server_only:
-            groups["retired"] += 1
-            excluded.append(path)
         else:
-            groups["mixed" if any(ref.startswith("server/") for ref in dependencies) else "other"] += 1
-            selected.append(path)
-    return selected, excluded, closure, groups
+            excluded.append(path)
+    return selected, excluded
+
 
 
 def main() -> int:
@@ -303,12 +214,8 @@ def main() -> int:
     parser.add_argument("--output", type=Path, help="Write pytest @argfile instead of stdout")
     parser.add_argument("--excluded", action="store_true", help="List excluded files instead")
     args = parser.parse_args()
-    selected, excluded, closure, groups = select_tests(
-        args.root.resolve(), include_legacy_reports=os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch",
-    )
-    print(f"total={len(selected) + len(excluded)} selected={len(selected)} excluded={len(excluded)} "
-          f"server_closure={sum(p.startswith('server/') for p in closure)} "
-          + " ".join(f"{name}={count}" for name, count in groups.items()), file=sys.stderr)
+    selected, excluded = select_tests(args.root.resolve())
+    print(f"total={len(selected) + len(excluded)} selected={len(selected)} excluded={len(excluded)}", file=sys.stderr)
     paths = excluded if args.excluded else selected
     if not selected:
         parser.error("empty test selection")

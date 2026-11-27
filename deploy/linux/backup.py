@@ -1582,7 +1582,7 @@ def serve(root: Path, *, interval: int, delay: int, retention: int) -> None:
         startup_light_check,
         startup_restore_cleanup,
     )
-    from server.sli.ops import shutdown
+    from deploy.linux.legacy_runtime import shutdown
 
     startup_restore_cleanup(root)
     status, last_success, last_result = "waiting", None, None
@@ -1676,9 +1676,9 @@ def main(argv: list[str] | None = None) -> int:
             if args.component:
                 raise ValueError("linux_backup_components_require_once")
             step = "serve"
-            from server.sli.ops.shutdown import graceful_shutdown
+            from deploy.linux.legacy_runtime import shutdown
 
-            with graceful_shutdown():
+            with shutdown.graceful_shutdown():
                 serve(root, interval=interval, delay=delay, retention=retention)
     except Exception as error:  # noqa: BLE001 - database, HTTP and filesystem errors may contain private data
         report_failure(error, step)

@@ -183,16 +183,16 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   const computerReport = definition.key === "ad.computers.v6";
   const computerLogons = definition.key === "ad.computer-logons";
   const computersScreen = computerReport || computerLogons;
-  const [wideLogons, setWideLogons] = useState(() => window.matchMedia?.("(min-width: 1376px)").matches ?? true);
+  const [wideComputers, setWideComputers] = useState(() => window.matchMedia?.("(min-width: 1376px)").matches ?? true);
   useEffect(() => {
-    if (!computerLogons) return;
+    if (!computersScreen) return;
     const viewport = window.matchMedia?.("(min-width: 1376px)");
     if (!viewport) return;
-    const update = () => setWideLogons(viewport.matches);
+    const update = () => setWideComputers(viewport.matches);
     update();
     viewport.addEventListener("change", update);
     return () => viewport.removeEventListener("change", update);
-  }, [computerLogons]);
+  }, [computersScreen]);
   const [computerPageSize, setComputerPageSize] = useState(50);
   const [columnsTarget, setColumnsTarget] = useState<HTMLDivElement | null>(null);
   const [logonPeriodTarget, setLogonPeriodTarget] = useState<HTMLDivElement | null>(null);
@@ -415,8 +415,9 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
       || (row.actual_text != null && String(row.actual_text).trim() !== "" && row.actual_text !== "—"));
   }, [data.data, data.isPlaceholderData, independentUsers, userReview, infrastructure, view.key, view.source, userPage, computersScreen]);
   const rowKey = (row: Row) => String(row[computerReport && view.key === "changes" ? "row_id" : definition.row_key] ?? JSON.stringify(row));
+  const fullWidthComputerDetail = !wideComputers && (computerLogons || computerReport && view.key === "computers");
   const activeComputer = computersScreen && detailsVisible ? (selected && rows.find((row) => rowKey(row) === rowKey(selected)))
-    || (view.key === "checks" ? selected : !computerLogons || wideLogons ? rows[0] : undefined) : undefined;
+    || (view.key === "checks" ? selected : !fullWidthComputerDetail ? rows[0] : undefined) : undefined;
   const chooseComputer = (row: Row) => { setDetailsVisible(true); setSelected(row); };
   const compareView = views.find((item) => item.key === "changes" && item.access?.allowed !== false);
   const cardLogonParams = new URLSearchParams(inventoryLogonWindow ? { period: "custom", from: inventoryLogonWindow.from,
@@ -728,7 +729,8 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
       <div className="sli-ds-header__actions">
         <button type="button" className="sli-ds-chip" aria-pressed={compact} onClick={() => setCompact((value) => !value)}>{t("reports.computers.compact")}</button>
         <div ref={setColumnsTarget}/>
-        <button type="button" className="sli-ds-chip" aria-pressed={detailsVisible} onClick={() => setDetailsVisible((value) => !value)}>{t("reports.computers.toggle_details")}</button>
+        <button type="button" className="sli-ds-chip" aria-pressed={fullWidthComputerDetail ? Boolean(computerPanel) : detailsVisible}
+          onClick={() => fullWidthComputerDetail && !computerPanel && rows[0] ? chooseComputer(rows[0]) : setDetailsVisible((value) => !value)}>{t("reports.computers.toggle_details")}</button>
       </div>
     </div> : independentUsers ? <div className="sli-ds-report__toolbar">
       <ViewTabs views={displayedViews}/>
@@ -761,7 +763,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     onRetry={() => void data.refetch()}
     busy={ready && data.isFetching && !data.isFetchingNextPage && !data.isLoading}
     sideSize={computerLogons ? "wide" : "standard"}
-    side={!computerLogons || wideLogons ? computerPanel : undefined}
+    side={fullWidthComputerDetail ? undefined : computerPanel}
     split={independentUsers}
     drawer={computersScreen ? undefined : independentUsers ? selected ? <UserCard key={`${selected.domain_id}:${selected.entity_id ?? selected.id}:${userDetailTab}`} selected={selected} columns={definition.columns} timeZone={timeZone}
       initialTab={userDetailTab} historical={view.key === "privileged" && Boolean(values.as_of)}
@@ -796,7 +798,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
         : <p>{t(state === "not_collected" ? "reports.ad.users.list.not_collected" : userReview ? "reports.ad.users.no_checks" : "reports.ad.users.list.empty")}</p>
       : computerReport && view.key === "checks"
       ? <ComputerChecks result={first} onSelect={chooseComputer} onInventory={() => selectView("computers")}/>
-      : computerLogons && !wideLogons && computerPanel ? computerPanel
+      : fullWidthComputerDetail && computerPanel ? computerPanel
       : computersScreen
       ? rows.length ? <DataTable key={view.key} caption={view.title ?? definition.title}
         columns={computerReport && view.key === "changes" ? computerTableColumns(view.columns ?? [], chooseComputer, [], timeZone) : computerTable}
