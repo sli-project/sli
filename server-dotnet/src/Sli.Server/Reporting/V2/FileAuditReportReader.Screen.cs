@@ -23,11 +23,12 @@ public sealed partial class FileAuditReportReader
         ) server where server.domain_id=$2
         """;
 
-    private static async Task ResourceAuditAsync(ISemanticSession session, JsonArray rows, CancellationToken ct)
+    private static async Task ResourceAuditAsync(ISemanticSession session, ReportQueryContext context, JsonArray rows, CancellationToken ct)
     {
         if (rows.Count == 0) return;
         var receipts = await session.QueryAsync("""
-            select root->>'id' as id, accepted.received_at, agent.current_version, agent.check_version
+            select root->>'id' as id, accepted.received_at, agent.current_version, agent.check_version,
+                   agent.check_revision, agent.check_state, agent.check_receipt
             from jsonb_array_elements($1::jsonb) as r(root)
             left join lateral (
                 select receipt.received_at
@@ -43,26 +44,50 @@ public sealed partial class FileAuditReportReader
                 order by receipt.sequence desc limit 1
             ) accepted on true
             left join lateral (
-                select a.rights_probe->>'agent_version' as current_version, scope->>'agent_version' as check_version
+                select a.rights_probe->>'agent_version' as current_version, scope->>'agent_version' as check_version,
+                    case when configured.matches and a.file_audit->'retired_apply' is null
+                        and a.file_audit->>'may_own_audit' is distinct from 'true' then a.policy_revision end as check_revision,
+                    case when configured.matches and selected.includes then a.file_audit->>'state' end as check_state,
+                    case when configured.matches and selected.includes and scope ? 'state' then jsonb_build_object(
+                        'state',scope->'state','reason_code',scope->'reason_code',
+                        'observed_at',coalesce(scope->'observed_at_utc',a.file_audit->'reported_at')) end as check_receipt
                 from public.sli_agents a
                 cross join lateral (select a.file_audit->'scopes'->(root->>'collection_scope_id') as scope) s
+                cross join lateral (select exists (
+                    select 1 from jsonb_array_elements(a.file_audit#>'{request,config,roots}') c
+                    where c->>'collection_scope_id'=root->>'collection_scope_id' and c->>'path'=root->>'path'
+                        and c->>'share_name'=root->>'share_name') as matches) configured
+                cross join lateral (select (a.file_audit#>'{request,command,collection_scope_ids}')
+                    ? (root->>'collection_scope_id') as includes) selected
                 where a.id=(root->>'agent_id')::uuid and a.status='active'
+                  and coalesce(a.source_host_id,a.host_id)::text=root->>'source_instance_id'
                   and a.file_audit#>>'{request,command,action}'='check'
-                  and a.file_audit#>>'{request,command,command_id}'=root#>>'{audit_receipt,command_id}'
-                  and scope->>'receipt_id'=root#>>'{audit_receipt,receipt_id}'
-                  and root#>>'{audit_receipt,state}'='failed'
-                  and root#>>'{audit_receipt,reason_code}'='native_unavailable'
+                  and coalesce(a.file_audit#>>'{request,config,source_kind}','server')='server'
+                  and (configured.matches or (
+                    a.file_audit#>>'{request,command,command_id}'=root#>>'{audit_receipt,command_id}'
+                    and scope->>'receipt_id'=root#>>'{audit_receipt,receipt_id}'))
             ) agent on true
             """, ct, rows);
         var byId = receipts.OfType<JsonObject>().ToDictionary(row => Text(row, "id")!);
+        var capabilities = context.Access.Capabilities;
+        bool manageAudit = context.Action == "view" && (capabilities.IsOwner || capabilities.Decide("access.manage").Allowed);
         foreach (var row in rows.OfType<JsonObject>())
         {
             if (!byId.TryGetValue(Text(row, "id")!, out var detail)) continue;
             if (detail["received_at"] is { } stamp) row["audit_received_at"] = stamp.DeepClone();
+            if (manageAudit && detail["check_revision"] is { } revision
+                && FileAuditAccess.Allowed(capabilities, context.Principal.Role, context.Principal.Type, context.Principal.Id,
+                    Text(row, "agent_id")!, Text(row, "source_instance_id")!, Text(row, "collection_scope_id")!))
+                row["check_revision"] = revision.DeepClone();
             var current = FileAuditResult.ReportedAgentVersion(Text(detail, "current_version"));
-            var checkedWith = FileAuditResult.ReportedAgentVersion(Text(detail, "check_version")) ?? current;
-            if (current >= FileAuditResult.MinimumNativeCheckVersion || row["audit_receipt"] is not JsonObject receipt) continue;
-            receipt["check_agent_requirement"] = FileAuditResult.CheckAgentRequirement(checkedWith);
+            var checkedWith = FileAuditResult.ReportedAgentVersion(Text(detail, "check_version"));
+            if (detail["check_receipt"] is JsonObject latest && Text(latest, "observed_at") is not null)
+                row["check_receipt"] = latest.DeepClone();
+            if (Text(detail, "check_state") == "pending")
+                row["check_pending"] = true;
+            var receipt = (row["check_receipt"] ?? row["audit_receipt"]) as JsonObject;
+            if (!(current >= FileAuditResult.MinimumNativeCheckVersion) && FileAuditResult.NativeUnavailable(receipt))
+                receipt!["check_agent_requirement"] = FileAuditResult.CheckAgentRequirement(checkedWith ?? current);
         }
     }
 

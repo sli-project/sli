@@ -1,5 +1,7 @@
 import type { ReportColumnDto } from "../../api/report-v2-types";
-import { type TableColumn } from "../../design-system";
+import { useMutation } from "@tanstack/react-query";
+import { api } from "../../api/client";
+import { Button, type TableColumn } from "../../design-system";
 import { formatDateTime } from "../../shared/date-time";
 import { useTimeZone } from "../../shared/time-zone";
 import { useDateFormatters } from "../../design-system/useDateFormatters";
@@ -61,7 +63,8 @@ export function fileAuditOperation(row: FileAuditRow, column?: ReportColumnDto) 
 
 export function fileServerColumns(view: FileServerView, declared: ReportColumnDto[], rows: FileAuditRow[],
   params: URLSearchParams | null, canPermissions: boolean, open: (row: FileAuditRow) => void,
-  hrefFor: (tab: FileAuditTab, row: FileAuditRow, extra?: Record<string, string | null>) => string): TableColumn<FileAuditRow>[] {
+  hrefFor: (tab: FileAuditTab, row: FileAuditRow, extra?: Record<string, string | null>) => string,
+  refresh: () => void): TableColumn<FileAuditRow>[] {
   const operation = declared.find(column => column.key === "operation");
   if (view === "actions") {
     const columns: TableColumn<FileAuditRow>[] = [
@@ -118,22 +121,47 @@ export function fileServerColumns(view: FileServerView, declared: ReportColumnDt
         ? <a href={hrefFor("permission-changes", row)} onClick={event => event.stopPropagation()}>{count(row)}</a> : count(row) },
     { ...when("last_permission_change"), label: t("file-audit.workspace.last_change") },
     { ...when("observed_at"), label: t("file-audit.workspace.snapshot") },
-    { ...when("audit_received_at"), label: t("file-audit.screen.audit"), render: row => <FileAuditReceipt row={row}/> },
+    { ...when("audit_received_at"), label: t("file-audit.screen.audit"), wrap: true, render: row =>
+      <div className="sli-file-audit__resource">
+        <span><FileAuditReceipt row={row}/></span>
+        {Number.isSafeInteger(row.check_revision) && fileAuditShare(row) ? <FileAuditCheck row={row} refresh={refresh}/> : null}
+      </div> },
   ];
 }
 
 function FileAuditReceipt({ row }: { row: FileAuditRow }) {
   const { formatCell } = useDateFormatters();
-  const receipt = row.audit_receipt as { state?: string; reason_code?: string; observed_at?: string;
+  const receipt = (row.check_receipt ?? row.audit_receipt) as { action?: string; state?: string; reason_code?: string; observed_at?: string;
     check_agent_requirement?: { agent_version: string; minimum_version: string } } | undefined;
-  if (receipt?.observed_at && (receipt.state === "failed" || receipt.state === "blocked") &&
-      Date.parse(receipt.observed_at) >= (Date.parse(String(row.audit_received_at)) || 0)) {
+  if (row.check_pending === true) return <>{t("file-audit.screen.check_pending")}</>;
+  const checkResult = row.check_receipt != null || receipt?.action === "check";
+  const failure = receipt?.state === "failed" || receipt?.state === "blocked";
+  if (receipt?.observed_at && (checkResult || failure &&
+      Date.parse(receipt.observed_at) >= (Date.parse(String(row.audit_received_at)) || 0))) {
     const reason = receipt.reason_code === "native_unavailable" ? "file-audit.screen.audit_unreadable"
       : receipt.reason_code === "sacl_missing" ? "file-audit.screen.sacl_missing"
-      : receipt.reason_code === "policy_missing" ? "file-audit.screen.audit_policy_missing" : "file-audit.screen.audit_failed";
+      : receipt.reason_code === "policy_missing" ? "file-audit.screen.audit_policy_missing"
+      : receipt.state === "verified" ? "file-audit.screen.check_verified"
+      : receipt.state === "partial" ? "file-audit.screen.check_partial" : "file-audit.screen.audit_failed";
     const requirement = receipt.check_agent_requirement;
     return <>{requirement ? t("file-audit.screen.update_agent", { version: requirement.agent_version, minimum: requirement.minimum_version })
       : t(reason)} · {formatCell(receipt.observed_at, "datetime")}</>;
   }
   return <>{row.audit_received_at ? formatCell(row.audit_received_at, "datetime") : t("file-audit.screen.no_batch")}</>;
+}
+
+function FileAuditCheck({ row, refresh }: { row: FileAuditRow; refresh: () => void }) {
+  const check = useMutation({
+    mutationFn: () => api.agentAction("file-audit", {
+      agent_id: row.agent_id, source_instance_id: row.source_instance_id,
+      collection_scope_id: row.collection_scope_id, expected_revision: row.check_revision,
+    }),
+    onSettled: refresh,
+  });
+  return <div>
+    <Button disabled={check.isPending || row.check_pending === true} onClick={() => check.mutate()}>
+      {t("file-audit.screen.check")}
+    </Button>
+    {check.isError ? <div role="alert">{t("file-audit.screen.check_request_failed")}</div> : null}
+  </div>;
 }
