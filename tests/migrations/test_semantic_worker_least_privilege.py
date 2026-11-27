@@ -4,9 +4,6 @@ from pathlib import Path
 
 import pytest
 
-from server.sli.semantic.semantic_worker_connection import (
-    assert_semantic_worker_least_privilege,
-)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -47,32 +44,6 @@ def _role_row(**overrides) -> dict[str, object]:
     }
     row.update(overrides)
     return row
-
-
-def test_least_privilege_preflight_accepts_only_exact_role() -> None:
-    result = assert_semantic_worker_least_privilege(Cursor(_role_row()))
-
-    assert result["current_role"] == "adlog_semantic_worker"
-    assert result["elevated_privileges"] is False
-
-
-@pytest.mark.parametrize(
-    "overrides",
-    [
-        {"current_role": "adlog_storage_worker"},
-        {"current_superuser": True},
-        {"session_createdb": True},
-        {"session_bypassrls": True},
-        {"unauthorized_memberships": ["adlog_user"]},
-        {"owned_relations": 1},
-        {"direct_relation_grants": 1},
-    ],
-)
-def test_least_privilege_preflight_rejects_wrong_or_elevated_role(
-    overrides,
-) -> None:
-    with pytest.raises(RuntimeError):
-        assert_semantic_worker_least_privilege(Cursor(_role_row(**overrides)))
 
 
 def test_migration_050_grants_only_bounded_semantic_runtime_surface() -> None:

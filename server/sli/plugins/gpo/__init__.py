@@ -1,1 +1,0 @@
-"""Reviewed GPO plugin package."""

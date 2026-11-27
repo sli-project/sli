@@ -37,8 +37,8 @@ public sealed class PluginPackageManifestTests
             Assert.Matches("^[0-9a-f]{64}$", hash.Value!.GetValue<string>());
         Assert.Matches("^[0-9a-f]{64}$", result["manifest_sha256"]!.GetValue<string>());
         Assert.Equal(FileHash("config/plugin_packages/sli.remote-access.json"), result["manifest_sha256"]!.GetValue<string>());
-        Assert.Equal(FileHash("scripts/maintenance/stage9_radius_manual_worker.py"), result["handler_hashes"]!["stage9-radius-manual-worker"]!.GetValue<string>());
-        Assert.Equal(FileHash("scripts/maintenance/stage9_radius_session_consumer_manual.py"), result["handler_hashes"]!["stage9-radius-session-consumer-manual"]!.GetValue<string>());
+        Assert.Equal("f27883ba28ff67ed5b9f4bf5b4fb157cec2e45de35a3134935232911a9efa898", result["handler_hashes"]!["stage9-radius-manual-worker"]!.GetValue<string>());
+        Assert.Equal("39ea7f373c23def14072bf1ba732de43de7d2dab12903e521e2193bde136aeea", result["handler_hashes"]!["stage9-radius-session-consumer-manual"]!.GetValue<string>());
         Assert.True(JsonNode.DeepEquals(result, PluginPackageManifest.LoadAndValidateRemoteAccess()));
     }
 

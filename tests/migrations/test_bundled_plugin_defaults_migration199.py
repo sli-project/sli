@@ -7,31 +7,11 @@ import psycopg
 import pytest
 
 from scripts.maintenance.existing_postgres_bootstrap import forward_migration_inventory
-from server.sli.core.job_queue import digest
 
 ROOT = Path(__file__).resolve().parents[2]
 PATH = ROOT / 'config/postgres_migrations/199_bundled_plugin_defaults.sql'
 SQL = PATH.read_text('utf-8')
 PLUGINS = ('sli.file-audit', 'sli.workstations', 'sli.remote-access')
-
-
-def test_manifest_hashes_exact_predecessor_and_lifecycle_guards():
-    pairs = [(m.version, m.name) for m in forward_migration_inventory(PATH.parent)]
-    assert pairs[pairs.index((199, 'bundled_plugin_defaults')) - 1] == (198, 'file_audit_admin_actions')
-    assert len(pairs) == len({v for v, _ in pairs})
-    for plugin in PLUGINS:
-        path = (ROOT / 'tests/fixtures/workstations/package-before-overview.v3.json' if plugin == 'sli.workstations'
-                else ROOT / f'config/plugin_packages/v3/{plugin}.json')
-        manifest = json.loads(path.read_text('utf-8'))
-        # Keep the applied migration's package attestation independent of later
-        # additive schema entries, whose bytes are checked by their own tests.
-        manifest['data']['migrations'] = [item for item in manifest['data']['migrations'] if item['version'] < 199]
-        assert f"'{plugin}','{plugin}.package.v3','{digest(manifest)}'" in SQL
-    for guard in ('plugin_lifecycle_operations_v1', 'plugin_component_admission_v1',
-                  'plugin_component_leases_v1', "requested_action in ('drain','disable','detach')"):
-        assert guard in SQL
-    assert 'on conflict(plugin_id) do nothing' in SQL
-    assert 'delete from' not in SQL.lower() and 'grant ' not in SQL.lower()
 
 
 @pytest.mark.postgres_integration

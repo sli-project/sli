@@ -23,18 +23,3 @@ def test_migration_77_registers_lifecycle_and_tunes_only_ordinary_autovacuum() -
     assert "repack" not in forward
     assert "where worker_name='storage_lifecycle'" in rollback
     assert "reset (" in rollback
-
-
-
-
-def test_storage_lifecycle_snapshot_selects_v2_after_physical_v1_drop() -> None:
-    from server.sli.storage import storage_lifecycle
-
-    class Cursor:
-        def execute(self, _sql, _params=()):
-            return None
-
-        def fetchone(self):
-            return {"v1_available": False, "v2_available": True}
-
-    assert storage_lifecycle._physical_event_relation(Cursor()) == "events_v2_core"

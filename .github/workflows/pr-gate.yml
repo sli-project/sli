@@ -61,10 +61,10 @@ jobs:
           cache: pip
       - run: python -m pip install --disable-pip-version-check -r requirements.txt
       - run: python -m pip install --disable-pip-version-check ruff==0.16.9
-      - run: python -m ruff check --config .github/ruff-ci.toml server scripts tests
+      - run: python -m ruff check --config .github/ruff-ci.toml scripts tests
       - run: python scripts/maintenance/github_sanitary_check.py --root . --json
-      - run: python -m compileall -q server scripts tests
-      - run: python -m ruff check --config .github/ruff-ci.toml deploy/linux/sli_secrets.py deploy/linux/installation.py deploy/linux/sli_update.py deploy/linux/updater_component.py deploy/linux/updater_launcher.py tests/unit/test_sli_secrets.py
+      - run: python -m compileall -q scripts tests
+      - run: python -m ruff check --config .github/ruff-ci.toml deploy/linux/sli_secrets.py tests/unit/test_sli_secrets.py
       - name: Select Python tests
         if: needs.changes.outputs.unit == 'true'
         shell: bash

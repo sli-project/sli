@@ -8,7 +8,6 @@ import pytest
 from psycopg import sql
 
 from scripts.maintenance.existing_postgres_bootstrap import forward_migration_inventory
-from sli_agent.updates import REASONS
 
 ROOT = Path(__file__).resolve().parents[2]
 PATH = ROOT / "config/postgres_migrations/196_agent_msi_update_result.sql"
@@ -25,20 +24,6 @@ def test_exact_owner_predecessor_and_next_unique_migration():
     position = pairs.index((196, "agent_msi_update_result"))
     assert pairs[position - 1] == (195, "ad_snapshot_history_composition")
     assert len(pairs) == len({version for version, _ in pairs})
-
-
-def test_extends_both_reason_constraints_without_changing_evidence_or_grants():
-    assert "('sli_agent_update_results','sli_agent_update_results_reason_check')" in SQL
-    assert "('sli_agent_update_wave_members','sli_agent_update_wave_members_reason_check')" in SQL
-    assert "select pg_get_expr(conbin,conrelid) into strict previous" in SQL
-    assert "check ((%s) or reason=''agent_update_msi_required'')" in SQL
-    assert "agent_update_msi_required" in REASONS
-    # Existing allowed reasons survive as the entire original expression.
-    for number in (167, 184):
-        old = next(PATH.parent.glob(f"{number}_*.sql")).read_text("utf-8")
-        assert REASONS - {"agent_update_msi_required"} <= set(re.findall(r"'(agent_update_[a-z_]+)'", old))
-    assert not re.search(r"grant |revoke |delete from|truncate |update public\.|drop table", SQL, re.I)
-    assert SQL.startswith("--") and SQL.rstrip().endswith("commit;")
 
 
 @pytest.mark.postgres_integration

@@ -5,15 +5,15 @@ using Sli.Server.Operations;
 namespace Sli.Server.InstallationSetup;
 
 // Reviewed v2 package metadata, retained alongside the v3 installation contracts.
-// Handler resources are hashed as data and are never loaded or executed as code.
+// Historical handler digests preserve the reviewed registry receipt for existing installations.
 internal static class PluginPackageManifest
 {
     const string ManifestPath = "plugin_packages/sli.remote-access.json";
     static readonly HashSet<string> Forbidden = new(StringComparer.OrdinalIgnoreCase)
         { "argv", "command", "dsn", "entrypoint", "html", "import_path", "javascript", "password", "secret", "sql" };
-    static readonly (string Id, string Resource)[] Handlers = [
-        ("stage9-radius-manual-worker", "stage9_radius_manual_worker.py"),
-        ("stage9-radius-session-consumer-manual", "stage9_radius_session_consumer_manual.py")
+    static readonly (string Id, string Sha256)[] Handlers = [
+        ("stage9-radius-manual-worker", "f27883ba28ff67ed5b9f4bf5b4fb157cec2e45de35a3134935232911a9efa898"),
+        ("stage9-radius-session-consumer-manual", "39ea7f373c23def14072bf1ba732de43de7d2dab12903e521e2193bde136aeea")
     ];
     static string Text(JsonNode? value) => value is JsonValue scalar && scalar.TryGetValue<string>(out var text) ? text : "";
     static void Require(bool valid, string error)
@@ -86,6 +86,7 @@ internal static class PluginPackageManifest
         Require(Equal(components["resource_profiles"], """["stage9-radius-manual-bounded-v1"]"""), "manifest_resource_profile_invalid");
 
         if (manifest["production_runtime"] is not JsonObject runtime) throw new InvalidDataException("manifest_production_runtime_invalid");
+        // Keep the signed descriptor field for existing receipts. Native supervision selects the .NET command.
         Require(Text(runtime["host_script"]) == "scripts/runtime/remote_access_plugin_host.py", "manifest_production_runtime_mismatch");
         if (runtime["components"] is not JsonObject runtimeComponents || !Set(runtimeComponents.Select(p => p.Key), workers.Keys.ToArray()))
             throw new InvalidDataException("manifest_production_runtime_mismatch");
@@ -119,7 +120,7 @@ internal static class PluginPackageManifest
         Require(manifest["explicitly_not_proven"] is JsonArray, "manifest_limitations_required");
 
         var hashes = new JsonObject();
-        foreach (var (id, resource) in Handlers) hashes[id] = Hash(resource);
+        foreach (var (id, sha256) in Handlers) hashes[id] = sha256;
         return new JsonObject {
             ["manifest_id"] = manifest["manifest_id"]!.DeepClone(), ["plugin_id"] = manifest["plugin_id"]!.DeepClone(),
             ["plugin_version"] = manifest["plugin_version"]!.DeepClone(),

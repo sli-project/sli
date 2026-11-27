@@ -180,7 +180,7 @@ def test_ci_gates_cover_locked_runtime_frontend_and_postgres(name: str) -> None:
     assert "npm --prefix frontend run lint" in frontend_runs
     assert "npm --prefix frontend exec vitest run src" in frontend_runs
     assert "npm --prefix frontend run build" in frontend_runs
-    assert any("ruff check --config .github/ruff-ci.toml server scripts tests" in step.get("run", "")
+    assert any("ruff check --config .github/ruff-ci.toml scripts tests" in step.get("run", "")
                for job in jobs.values() for step in job["steps"])
 
     postgres = jobs["postgres"]
@@ -454,7 +454,7 @@ def test_ci_bootstrap_uses_installer_roles_baseline_and_exact_ledger(
     monkeypatch.setenv("ADLOG_TEST_PG_DSN", "postgresql://postgres@127.0.0.1:5432/sli_test_ci")
     monkeypatch.setattr(psycopg, "connect", connect)
     monkeypatch.setattr(
-        "server.sli.access.auth.PASSWORD_HASHER",
+        "deploy.linux.sli_core.auth.PASSWORD_HASHER",
         SimpleNamespace(hash=lambda _password: "synthetic-hash"),
     )
     monkeypatch.setattr("subprocess.run", run)
@@ -506,4 +506,3 @@ def test_ci_bootstrap_uses_installer_roles_baseline_and_exact_ledger(
         assert "--no-password" in command
         assert kwargs["capture_output"] is True
         assert kwargs["check"] is False
-

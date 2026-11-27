@@ -12,13 +12,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_server_app_holds_no_modules() -> None:
-    leftovers = sorted(
-        path.relative_to(ROOT).as_posix()
-        for path in (ROOT / "server" / "app").rglob("*.py")
-        if path.name != "__init__.py" and "__pycache__" not in path.parts
-    )
-    assert leftovers == []
 
 
 def _source_files() -> list[Path]:

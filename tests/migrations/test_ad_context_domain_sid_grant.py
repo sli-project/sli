@@ -26,9 +26,3 @@ def test_rollback_revokes_only_that_grant() -> None:
     sql = _statements(ROLLBACK)
     assert "revoke update (domain_sid) on public.domains from adlog_context_worker;" in sql
     assert "delete from schema_migrations where version = 145;" in sql
-
-
-def test_import_path_needs_exactly_this_update() -> None:
-    from server.ad_context.repository import _resolve_domain
-
-    assert "update domains set domain_sid=%s where id=%s and domain_sid is null" in getsource(_resolve_domain)

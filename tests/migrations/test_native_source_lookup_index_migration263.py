@@ -5,8 +5,9 @@ from uuid import uuid4
 
 import pytest
 
-from tests.migrations.test_default_native_detections_migration262 import defaults_pg as defaults_pg
 from tests.migrations.test_qw_finding_notifications_migration229 import publication_pg as publication_pg
+
+from tests.migrations.test_default_native_detections_migration262 import defaults_pg as defaults_pg
 from tests.migrations.test_qw_semantic_input_migration228 import pg as pg
 
 ROOT = Path(__file__).resolve().parents[2]

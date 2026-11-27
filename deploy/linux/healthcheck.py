@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 from pathlib import Path
@@ -60,35 +59,6 @@ def native_postgres_dsn():
 def native_healthy(service: str, *, process_pid: int, started_at: datetime, status_path: Path | None = None) -> bool:
     return _healthy(service, process_pid=process_pid, started_at=started_at, status_path=status_path,
                     postgres_dsn=native_postgres_dsn)
-
-
-def load_config():
-    from deploy.linux.legacy_runtime import load_config as legacy_config
-
-    return legacy_config()
-
-
-def read_plugin_heartbeat(service):
-    from deploy.linux.legacy_runtime import read_plugin_heartbeat as legacy_heartbeat
-
-    return legacy_heartbeat(service)
-
-
-def healthy(service: str, *, process_pid: int = 1, started_at: datetime | None = None,
-            status_path: Path | None = None) -> bool:
-    """Compose health checks retain their existing configuration and pilot defaults."""
-    try:
-        if service == "radius-session-observation" and started_at is None:
-            from deploy.linux.legacy_runtime import pilot_enabled
-
-            if pilot_enabled():
-                return True  # The legacy service exits without claiming.
-        if service == "radius-session-observation" and status_path is None:
-            return radius_healthy(read_plugin_heartbeat(service), service, process_pid, started_at)
-    except Exception:  # noqa: BLE001 - health probes expose only success/failure
-        return False
-    return _healthy(service, process_pid=process_pid, started_at=started_at, status_path=status_path,
-                    postgres_dsn=lambda: load_config().postgres_dsn)
 
 
 def radius_healthy(row, service, process_pid, started_at):
@@ -163,14 +133,3 @@ def _healthy(service, *, process_pid, started_at, status_path, postgres_dsn):
             return bool(row and row[0])
     except Exception:  # noqa: BLE001 - health probes expose only success/failure
         return False
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("service", choices=("api", *WORKER_MAX_AGES, "radius-session-observation",
-                                           "executor-light", "executor-heavy", "executor-long"))
-    return 0 if healthy(parser.parse_args().service) else 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

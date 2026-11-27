@@ -14,63 +14,6 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ShadowAcceptanceTests(unittest.TestCase):
-    def setUp(self):
-        path = ROOT / "scripts/maintenance/semantic_l1_shadow_control.py"
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        self.ns = {"Any": Any, "datetime": datetime, "timezone": timezone,
-                       "STATE_PATH": "unused-synthetic-path"}
-        nodes = [node for node in tree.body if (
-            isinstance(node, ast.FunctionDef) and node.name in {
-                "_policy_definition", "_shadow_scope", "_shadow_evidence", "apply", "poll"}
-            or isinstance(node, ast.Assign) and any(
-                isinstance(t, ast.Name) and t.id in {"TARGET_KINDS", "POLICIES", "POLICY_VERSION"}
-                for t in node.targets))]
-        # Execute only the selected definitions and literal policy constants.
-        exec(compile(ast.Module(body=nodes, type_ignores=[]), str(path), "exec"), self.ns)  # noqa: S102
-        self.state = {"start_event_id": 100, "watermark_event_id": 100,
-                          "started_at_utc": "2026-10-22T00:00:00+00:00",
-                          "evidence_contract_version": 1,
-                          "policy_versions": {p[0]: 2 for p in self.ns["POLICIES"]},
-                          "policy_ids": [p[0] for p in self.ns["POLICIES"]],
-                          "input_event_ids": [], "production_findings_baseline": 0, "polls": []}
-        self.targets = []
-        self.receipts = []
-        self.queries = []
-        owner = self
-
-        class Cursor:
-            def execute(self, sql, params=()):
-                sql = " ".join(str(sql).split())
-                owner.queries.append((sql, params))
-                self.rows = ([{"id": i} for i in owner.targets]
-                             if "from events_v2_core core" in sql else owner.receipts)
-                if "from semantic_risk_evaluation_jobs job" in sql:
-                    # Model only this query's bounded predicates, using synthetic rows.
-                    self.rows = [r for r in self.rows if
-                                 r.get("evaluation_mode", "shadow") == "shadow"
-                                 and r.get("result_mode", "shadow") == "shadow"
-                                 and r.get("evaluation_status", "completed") == "completed"
-                                 and r.get("source_kind", "canonical_action") == "canonical_action"
-                                 and r.get("created_at", owner.state["started_at_utc"])
-                                 >= owner.state["started_at_utc"]]
-
-            def fetchall(self):
-                return self.rows
-
-        cursor = Cursor()
-        conn = SimpleNamespace(cursor=lambda: nullcontext(cursor), transaction=nullcontext)
-        self.ns.update(
-            _load_environment=lambda: None,
-            _read_state=lambda: self.state,
-            _write_state=lambda state: None,
-            _connect_admin=lambda **kwargs: nullcontext(conn),
-            _snapshot=lambda cur: {"semantic_worker_live": False, "findings": 0,
-                                      "max_event_id": 104,
-                                      "l1_scenarios": [{"scenario_kind": k, "count": 99}
-                                                    for k in set(self.ns["TARGET_KINDS"].values())]},
-            publish_semantic_candidates=lambda cur, ids: {"published": len(ids)},
-            _run_worker_once=lambda **kwargs: {},
-        )
 
     def receipt(self, policy_index):
         policy_id, definition = self.ns["POLICIES"][policy_index]
@@ -172,37 +115,6 @@ class ShadowAcceptanceTests(unittest.TestCase):
         self.assertEqual(target_params, (100, 104, 5000))
 
 
-class CalibrationPrivacyTests(unittest.TestCase):
-    def test_security_evidence_is_report_local_ordinal_and_preserves_coverage(self):
-        path = ROOT / "scripts/maintenance/run_semantic_calibration_window.py"
-        # Execute the real projection loop in isolation, without importing the tool.
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        function = next(n for n in tree.body if isinstance(n, ast.FunctionDef)
-                        and n.name == "_workspace_acceptance")
-        loop = next(n for n in function.body if isinstance(n, ast.For)
-                    and any(isinstance(x, ast.Name) and x.id == "security_rows"
-                            for x in ast.walk(n.iter)))
-        now = datetime(2026, 10, 22, tzinfo=UTC)
-        rows = [{"server_hostname": "synthetic-private-host.example", "server_ordinal": 1,
-                     "last_successful_collection_utc": now, "backfill_completed": True},
-                {"server_hostname": "synthetic-other.example", "server_ordinal": 2,
-                     "last_successful_collection_utc": now, "backfill_completed": False}]
-        ns = {"security": [], "security_rows": rows, "generated": now,
-                  "parse_utc_timestamp": lambda value: value}
-        exec(compile(ast.Module(body=[loop], type_ignores=[]), str(path), "exec"), ns)  # noqa: S102
-        self.assertEqual([item["server"] for item in ns["security"]], ["server-1", "server-2"])
-        self.assertEqual([item["backfill_completed"] for item in ns["security"]], [True, False])
-        self.assertEqual(len(ns["security"]), 2)
-        payload = json.dumps(ns["security"])
-        self.assertNotIn(".example", payload)
-        self.assertNotIn("hostname", payload)
-        queries = [n.value for n in ast.walk(function)
-                   if isinstance(n, ast.Constant) and isinstance(n.value, str)
-                   and "from collection_channel_state" in n.value]
-        self.assertEqual(len(queries), 1)
-        projection = queries[0].split("from collection_channel_state")[0]
-        self.assertIn("row_number() over (order by server_hostname) as server_ordinal", projection)
-        self.assertNotIn("select server_hostname", projection)
 
 
 if __name__ == "__main__":

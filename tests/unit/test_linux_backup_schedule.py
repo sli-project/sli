@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from deploy.linux import backup, update_checkpoint
-from server.sli.ops import shutdown
+from deploy.linux.sli_core import shutdown
 from tests.unit.test_linux_backup import STAMP, fake_components
 from tests.unit.test_linux_backup_paths import full_receipt
 

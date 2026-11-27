@@ -614,7 +614,7 @@ def test_compose_backup_permissions_secrets_storage_and_limits():
 
 
 def test_graceful_stop_drains_one_scheduled_cycle_without_another_submission(tmp_path, monkeypatch):
-    from server.sli.ops import shutdown
+    from deploy.linux.sli_core import shutdown
 
     submissions, drained = [], []
     monkeypatch.setattr(backup, "utc_now", lambda: STAMP)

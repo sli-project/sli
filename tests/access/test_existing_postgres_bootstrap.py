@@ -549,7 +549,7 @@ def test_create_platform_owner_hashes_secret_and_rejects_short_password() -> Non
     assert parameters[0] == "platform-owner"
     assert parameters[2] == "admin"
     assert parameters[1].startswith("$argon2id$")
-    from server.sli.access.auth import PASSWORD_HASHER
+    from deploy.linux.sli_core.auth import PASSWORD_HASHER
 
     assert PASSWORD_HASHER.verify(parameters[1], "synthetic-owner-password") is True
     with pytest.raises(module.BootstrapError, match="^platform_owner_password_invalid$"):

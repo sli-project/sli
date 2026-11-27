@@ -7,11 +7,7 @@ from uuid import uuid4
 import pytest
 
 from scripts.maintenance.existing_postgres_bootstrap import forward_migration_inventory
-from server.sli.semantic import qw_input as qw, semantic_risk_runtime_repository as runtime
-from server.sli.storage.evidence_ref import EvidenceRefError
-from tests.migrations.test_qw_semantic_input_migration228 import pg as pg, seed_policy
-from tests.semantic.test_semantic_risk1 import _snapshot
-from tests.unit.test_qw_semantic_input import signal
+from tests.migrations.test_qw_semantic_input_migration228 import pg as pg
 
 ROOT = Path(__file__).resolve().parents[2]
 PATH = ROOT / "config/postgres_migrations/229_qw_finding_notifications.sql"
@@ -32,7 +28,7 @@ def test_forward_migration_is_additive_dormant_and_uses_the_next_number():
 
 
 @pytest.fixture
-def publication_pg(pg, monkeypatch):
+def publication_pg(pg):
     """Synthetic predecessor tables with actual scenario and link definitions."""
     import psycopg
     from psycopg.rows import dict_row
@@ -91,137 +87,4 @@ def publication_pg(pg, monkeypatch):
             reset role;
         """)
         conn.execute(SQL)
-    monkeypatch.setattr(runtime, "_capture_completeness_snapshot", lambda *a, **kw: _snapshot(complete=False))
-    monkeypatch.setattr(runtime, "record_scenario_identity_supersessions", lambda *a, **kw: None)
-    monkeypatch.setattr(runtime, "record_finding_identity_supersessions", lambda *a, **kw: None)
     return pg
-
-
-def seed(dsn, item, *, recipient=2):
-    import psycopg
-    from psycopg.rows import dict_row
-    with psycopg.connect(dsn, row_factory=dict_row) as conn:
-        seed_policy(conn, item)
-        conn.execute("insert into semantic_policy_admission values('fixture-qw',1,true)")
-        conn.execute("insert into notification_subscriptions(id,owner_user_id,recipient_user_id,channel,enabled) values(%s,1,%s,'smtp',true)",
-                     (str(uuid4()), recipient))
-
-
-def evaluate(conn, item):
-    conn.execute("set role adlog_semantic_worker")
-    cur = conn.cursor()
-    job, = qw.enqueue_qw_signal_risk_jobs(cur, signal=item)
-    claimed, = runtime.claim_risk_evaluation_jobs(cur)
-    work = runtime.load_risk_evaluation_work_item(cur, job_id=job, lease_token=claimed["lease_token"])
-    return runtime.execute_risk_evaluation(cur, work=work, evaluation_ms=1, create_finding=True)
-
-
-@pytest.mark.postgres_integration
-@pytest.mark.postgres_empty
-def test_postgres_enabled_has_one_queue_row_job_and_native_portions(publication_pg):
-    import psycopg
-    from psycopg.rows import dict_row
-    item = signal(evaluation_mode="enabled")
-    ref, = item.evidence_refs
-    item = replace(item, evidence_refs=tuple(replace(ref, native_id=str(n)) for n in range(1, 257)), evidence_total=257)
-    seed(publication_pg, item)
-    with psycopg.connect(publication_pg, row_factory=dict_row) as conn:
-        first = evaluate(conn, item)
-        assert first.finding_id is None and first.publication_state == "evidence_pending"
-        conn.execute("reset role")
-        assert conn.execute("select count(*) as n from notification_outbox").fetchone()["n"] == 0
-        assert conn.execute("select count(*) as n from findings").fetchone()["n"] == 0
-    other = replace(item, evidence_refs=(replace(ref, native_id="257"),))
-    with psycopg.connect(publication_pg, row_factory=dict_row) as conn:
-        conn.execute("insert into fixture_native_evidence values(%s::jsonb,true)", (json.dumps(other.evidence_refs[0].params),))
-    with psycopg.connect(publication_pg, row_factory=dict_row) as conn:
-        second = evaluate(conn, other)
-        assert second.scenario_id == first.scenario_id and second.finding_created
-    with psycopg.connect(publication_pg) as conn:
-        conn.execute("update findings set status='closed'")
-    for _ in range(2):
-        with psycopg.connect(publication_pg, row_factory=dict_row) as conn:
-            conn.execute("set role adlog_semantic_worker")
-            assert qw.enqueue_qw_signal_risk_jobs(conn.cursor(), signal=item)
-            assert conn.execute("select enqueue_qw_finding_notifications(%s)", (first.scenario_id,)).fetchone()["enqueue_qw_finding_notifications"] == 0
-    with psycopg.connect(publication_pg, row_factory=dict_row) as conn:
-        assert conn.execute("select count(*) as n from findings where is_semantic_finding_published_v1(id)").fetchone()["n"] == 1
-        assert conn.execute("select count(*) as n from notification_outbox").fetchone()["n"] == 1
-        assert conn.execute("select evidence_count,status from findings").fetchone() == {"evidence_count": 257, "status": "closed"}
-        assert conn.execute("select count(*) as n from finding_evidence_refs").fetchone()["n"] == 257
-
-
-@pytest.mark.postgres_integration
-@pytest.mark.postgres_empty
-@pytest.mark.parametrize("failure", ["caller_rollback", "outbox_failure", "bad_evidence"])
-def test_postgres_failure_rolls_back_problem_publication_and_outbox(publication_pg, failure):
-    import psycopg
-    from psycopg.rows import dict_row
-    item = signal(evaluation_mode="enabled")
-    seed(publication_pg, item)
-    if failure == "outbox_failure":
-        with psycopg.connect(publication_pg) as conn:
-            conn.execute("""create function fixture_reject_outbox() returns trigger language plpgsql as $$
-                begin raise exception 'synthetic delivery admission failure'; end $$;
-                create trigger fixture_outbox before insert on notification_outbox
-                for each row execute function fixture_reject_outbox();""")
-    with pytest.raises((RuntimeError, psycopg.Error, EvidenceRefError)), psycopg.connect(publication_pg, row_factory=dict_row) as conn:
-        if failure == "bad_evidence":
-            conn.execute("update fixture_native_evidence set allowed=false")
-        evaluate(conn, item)
-        if failure == "caller_rollback":
-            raise RuntimeError("synthetic rollback")
-    with psycopg.connect(publication_pg) as conn:
-        for table_name in ("findings", "semantic_finding_publications", "notification_outbox", "finding_evidence_refs"):
-            assert conn.execute("select count(*) from " + table_name).fetchone()[0] == 0
-
-
-@pytest.mark.postgres_integration
-@pytest.mark.postgres_empty
-def test_postgres_linkage_and_least_privilege(publication_pg):
-    import psycopg
-    from psycopg.rows import dict_row
-    item = signal(evaluation_mode="enabled")
-    seed(publication_pg, item)
-    with psycopg.connect(publication_pg, row_factory=dict_row) as conn:
-        published = evaluate(conn, item)
-    for role, statement in (
-        ("adlog_user", "select enqueue_qw_finding_notifications('00000000-0000-0000-0000-000000000000')"),
-        ("adlog_semantic_worker", "select * from notification_subscriptions"),
-        ("adlog_semantic_worker", "select * from notification_outbox"),
-    ):
-        with pytest.raises(psycopg.errors.InsufficientPrivilege), psycopg.connect(publication_pg) as conn:
-            conn.execute("set role " + role)
-            conn.execute(statement)
-    with psycopg.connect(publication_pg) as conn:
-        conn.execute("set role adlog_user")
-        assert conn.execute("select notification_finding_object(%s)", (published.scenario_id,)).fetchone()[0] == published.finding_id
-    with pytest.raises(psycopg.errors.CheckViolation), psycopg.connect(publication_pg) as conn:
-        conn.execute("update notification_outbox set object_id=%s", (str(uuid4()),))
-    with psycopg.connect(publication_pg) as conn:
-        conn.execute("update semantic_policy_admission set enabled=false")
-    with pytest.raises(psycopg.errors.RaiseException, match="qw_publication_unavailable"), psycopg.connect(publication_pg) as conn:
-        conn.execute("set role adlog_semantic_worker")
-        conn.execute("select enqueue_qw_finding_notifications(%s)", (published.scenario_id,))
-
-
-@pytest.mark.postgres_integration
-@pytest.mark.postgres_empty
-@pytest.mark.parametrize("kind", ["workstation_observation", "file_audit_observation"])
-def test_postgres_plugin_ids_stay_native_and_do_not_become_core_event_ids(publication_pg, kind):
-    import psycopg
-    from psycopg.rows import dict_row
-    item = signal(kind, evaluation_mode="enabled")
-    seed(publication_pg, item)
-    with psycopg.connect(publication_pg, row_factory=dict_row) as conn:
-        published = evaluate(conn, item)
-    with psycopg.connect(publication_pg, row_factory=dict_row) as conn:
-        assert published.finding_created
-        assert conn.execute("select count(*) as n from finding_evidence").fetchone()["n"] == 0
-        assert conn.execute("select storage_kind,native_id from finding_evidence_refs").fetchone() == {
-            "storage_kind": kind, "native_id": item.evidence_refs[0].native_id,
-        }
-        assert conn.execute("select evidence_count,last_evidence_event_id from findings").fetchone() == {
-            "evidence_count": 1, "last_evidence_event_id": None,
-        }
-        assert conn.execute("select count(*) as n from notification_outbox").fetchone()["n"] == 1

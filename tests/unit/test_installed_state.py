@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from deploy.linux import installed_state as state, migrate
-from server.sli.release_package import PackageError
+from deploy.linux.installed_state import PackageError
 
 
 @pytest.fixture
@@ -55,7 +55,7 @@ def test_installed_hash_cannot_disagree_with_immutable_image_inventory(inventory
     installed, observed = inventory
     installed["migrations"]["config/postgres_migrations/009_example.sql"] = "f" * 64
     with pytest.raises(PackageError, match="migration_ledger_mismatch"):
-        state.ledger_matches(installed, observed)
+        state.native_ledger_matches(installed, observed)
 
 
 @pytest.mark.parametrize("version", [9, 177, 178])
@@ -69,15 +69,15 @@ def test_legacy_adoption_keeps_source_hashes_distinct_from_db_attestation(invent
     observed.update(installed_release_available=False, installed_release=None)
     for row in observed["migration_ledger"]:
         row["sha256"] = None
-    state.ledger_matches(installed, observed)
+    state.native_ledger_matches(installed, observed)
     observed["migration_ledger"][-1]["name"] = "foreign_marker"
     with pytest.raises(PackageError, match="migration_ledger_mismatch"):
-        state.ledger_matches(installed, observed)
+        state.native_ledger_matches(installed, observed)
     observed["migration_ledger"] = copy.deepcopy(installed["migration_ledger"])
     observed["migration_ledger"][-1]["sha256"] = None
     observed["installed_release_available"] = True
     with pytest.raises(PackageError, match="migration_ledger_mismatch"):
-        state.ledger_matches(installed, observed)
+        state.native_ledger_matches(installed, observed)
 
 
 def test_installed_release_migration_requires_database_hash_attestation(inventory):
@@ -89,7 +89,7 @@ def test_installed_release_migration_requires_database_hash_attestation(inventor
                     migration_ledger=copy.deepcopy(installed["migration_ledger"]))
     observed["migration_ledger"][-1]["sha256"] = None
     with pytest.raises(PackageError, match="migration_ledger_mismatch"):
-        state.ledger_matches(installed, observed)
+        state.native_ledger_matches(installed, observed)
 
 
 @pytest.mark.parametrize("bad", ["foreign", "build", "digest", "plugin", "untracked_plugin"])
@@ -118,15 +118,7 @@ def test_enabled_and_readiness_do_not_rewrite_installed_inventory(inventory, tmp
         observed["plugins"][0]["configured"] = enabled
         state.validate(installed, observed, tmp_path)
     assert installed == original
-    assert len(state.ledger_matches(installed, observed)["sha256"]) == 64
-
-
-def test_untracked_pointer_is_rejected_for_bundled_plugin(inventory, tmp_path):
-    from deploy.linux.sli_update import atomic_json
-    installed, observed = inventory
-    atomic_json(tmp_path / "plugins/sli.fixture/active.json", {"generation": "f" * 64})
-    with pytest.raises(PackageError, match="plugin_pointer_mismatch"):
-        state.validate(installed, observed, tmp_path)
+    assert len(state.native_ledger_matches(installed, observed)["sha256"]) == 64
 
 
 @pytest.mark.parametrize(("case", "reason"), [
@@ -138,7 +130,7 @@ def test_untracked_pointer_is_rejected_for_bundled_plugin(inventory, tmp_path):
     ("ui-contract", "plugin_ui_unsupported_api"),
     ("handler-rights", "handler_not_allowlisted"),
 ])
-def test_native_pointer_decisions_match_updater(tmp_path, case, reason):
+def test_native_pointer_validation(tmp_path, case, reason):
     plugin_id = "sli.remote-access"
     generation = "a" * 64
     plugin = tmp_path / "plugins" / plugin_id
@@ -172,12 +164,11 @@ def test_native_pointer_decisions_match_updater(tmp_path, case, reason):
         (plugin / "active.json").write_text(pointer, encoding="utf-8")
         if case == "changed-asset":
             (release / "ui/entry.js").write_bytes(b"x" * len(asset))
-    for check in (state.pointers_match, state.native_pointers_match):
-        if reason:
-            with pytest.raises(ValueError, match=reason):
-                check(tmp_path, installed)
-        else:
-            assert check(tmp_path, installed) is None
+    if reason:
+        with pytest.raises(ValueError, match=reason):
+            state.native_pointers_match(tmp_path, installed)
+    else:
+        assert state.native_pointers_match(tmp_path, installed) is None
 
 
 @pytest.mark.parametrize("bad", [None, "checksum", "migration_checksum", "name", "hole"])
@@ -265,7 +256,7 @@ def test_installed_ledger_preserves_historical_newline_hash(inventory, monkeypat
     installed["migration_ledger"][-1]["sha256"] = historical_hash
     observed["migration_ledger"] = copy.deepcopy(installed["migration_ledger"])
     before = copy.deepcopy((installed, observed))
-    state.ledger_matches(installed, observed)
+    state.native_ledger_matches(installed, observed)
     assert (installed, observed) == before
 
 
@@ -283,7 +274,7 @@ def test_only_two_newline_hashes_are_admitted(inventory, monkeypatch, tmp_path, 
     installed["migration_ledger"][-1]["sha256"] = hashlib.sha256(body).hexdigest()
     observed["migration_ledger"] = copy.deepcopy(installed["migration_ledger"])
     with pytest.raises(PackageError, match="migration_ledger_mismatch"):
-        state.ledger_matches(installed, observed)
+        state.native_ledger_matches(installed, observed)
 
 
 def test_newline_equivalence_requires_inventory_pinned_source(inventory, monkeypatch, tmp_path):
@@ -297,4 +288,4 @@ def test_newline_equivalence_requires_inventory_pinned_source(inventory, monkeyp
             source.parent.mkdir(parents=True)
             source.write_bytes(b"select 1;\n")
         with pytest.raises(PackageError, match="migration_ledger_mismatch"):
-            state.ledger_matches(installed, observed)
+            state.native_ledger_matches(installed, observed)

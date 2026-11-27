@@ -31,7 +31,7 @@ _FORWARD_NAME = re.compile(r"^(\d{3})_([a-z0-9_]+)\.sql$")
 _ROLLBACK_NAME = re.compile(r"(?:\.|_)rollback\.sql$")
 _IDENTIFIER = re.compile(r"[a-z_][a-z0-9_]{0,62}")
 _DNS_LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
-from server.sli.release_package import MIGRATION_MARKER as _MARKER
+from deploy.linux.release_package import MIGRATION_MARKER as _MARKER
 
 _BASE_MARKER_BLOCK = re.compile(
     r"insert\s+into\s+(?:public\.)?schema_migrations\s*"
@@ -360,6 +360,14 @@ def read_cluster_snapshot(connection, *, database: str) -> ClusterSnapshot:
     )
 
 
+def validate_report_domain(value: str) -> str:
+    domain = value.strip().lower().rstrip(".")
+    labels = domain.split(".")
+    if len(labels) < 2 or len(domain) > 253 or any(not _DNS_LABEL.fullmatch(label) for label in labels):
+        raise ValueError("value_must_be_dns_name")
+    return domain
+
+
 def _child_environment(
     psql: Path,
     password: str,
@@ -375,9 +383,7 @@ def _child_environment(
     result["PGPASSWORD"] = password
     domain = folded.get("ADLOG_REPORT_DOMAIN_FQDN", "").strip()
     if domain:
-        from server.sli.core.platform_settings import SETTINGS
-
-        domain = SETTINGS["reports.domain_fqdn"].validate(domain)
+        domain = validate_report_domain(domain)
         result["PGOPTIONS"] = f"-c sli.report_domain_fqdn={domain}"
     return result
 
@@ -448,7 +454,7 @@ def create_platform_owner(connection, password: str) -> None:
         or "\x00" in password
     ):
         raise BootstrapError("platform_owner_password_invalid")
-    from server.sli.access.auth import PASSWORD_HASHER
+    from deploy.linux.sli_core.auth import PASSWORD_HASHER
 
     password_hash = PASSWORD_HASHER.hash(password)
     connection.execute(

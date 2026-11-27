@@ -146,27 +146,3 @@ def test_migration_rejects_wrong_predecessor_atomically(ledger):
         ledger.execute(MIGRATION.read_text("utf-8"))
     ledger.execute("rollback")
     assert ledger.execute("select count(*) from public.schema_migrations where version=211").fetchone() == (0,)
-
-
-def test_executor_startup_recovers_after_deadline_migration(ledger, monkeypatch, capsys):
-    import json
-
-    from server.sli.core import job_executor, job_registry
-    from server.sli.plugins.workstations import jobs as workstation_jobs
-    from server.sli.sources import ad_gpo_jobs
-
-    seed(ledger, state="leased", deadline_seconds=-60)
-    monkeypatch.setattr(job_executor, "connect", lambda *_: nullcontext(ledger))
-    monkeypatch.setattr(job_executor, "pilot_enabled", lambda: False)
-    monkeypatch.setattr(job_executor, "write_heartbeat", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(job_executor, "pilot_registry", job_registry.HandlerRegistry)
-    monkeypatch.setattr(ad_gpo_jobs, "enabled", lambda: True)
-    monkeypatch.setattr(ad_gpo_jobs, "schedule", lambda *_: None)
-    monkeypatch.setattr(workstation_jobs, "enabled", lambda: False)
-    assert job_executor.main(["--profile", "light", "--once"]) == 1
-    diagnostic = json.loads(capsys.readouterr().err.strip().split(" ", 1)[1])
-    assert diagnostic == {"error_type": "CheckViolation", "error_code": "job_deadline_constraint", "sqlstate": "23514"}
-    apply_fix(ledger)
-    assert job_executor.main(["--profile", "light", "--once"]) == 0
-    assert capsys.readouterr().err == ""
-    assert ledger.execute("select state from sli_jobs.jobs").fetchone() == ("quarantined",)

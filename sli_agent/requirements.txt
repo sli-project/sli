@@ -1,4 +1,0 @@
-# Agent-only dependencies; shared acquisition helpers use the standard library.
-cryptography>=50.0.1,<51
-tzdata>=2025.2,<2027
-pywin32>=306; sys_platform == "win32"

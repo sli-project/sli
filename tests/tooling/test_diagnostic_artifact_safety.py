@@ -8,61 +8,8 @@ from zipfile import ZipFile
 
 import pytest
 
-from scripts.maintenance import bundle_common as bundle
 from scripts.maintenance import export_report_snapshots as exporter
 from scripts.maintenance import github_sanitary_check as sanitary
-
-
-@pytest.mark.parametrize("failure", [False, True])
-def test_capture_closes_allocated_descriptors(tmp_path, monkeypatch, failure):
-    monkeypatch.setattr(bundle, "TMP_DIR", tmp_path)
-    allocated = []
-    original = bundle.tempfile.mkstemp
-
-    def tracked(*args, **kwargs):
-        fd, name = original(*args, **kwargs)
-        allocated.append(fd)
-        return fd, name
-
-    monkeypatch.setattr(bundle.tempfile, "mkstemp", tracked)
-    command = [str(tmp_path / "missing-executable")] if failure else [sys.executable, "-c", "print('synthetic')"]
-    result = bundle.run_command(command, cwd=tmp_path)
-    assert result["exit_code"] == (-1 if failure else 0)
-    leaked = []
-    for fd in allocated:
-        try:
-            os.fstat(fd)
-        except OSError:
-            continue
-        leaked.append(fd)
-        os.close(fd)  # Do not leak in the baseline reproduction itself.
-    assert not leaked
-    assert list(tmp_path.iterdir()) == []
-
-
-def test_partial_capture_allocation_cleans_up(tmp_path, monkeypatch):
-    monkeypatch.setattr(bundle, "TMP_DIR", tmp_path)
-    original = bundle.tempfile.mkstemp
-    calls = []
-
-    def fail_second(*args, **kwargs):
-        if calls:
-            raise OSError("synthetic allocation failure")
-        fd, name = original(*args, **kwargs)
-        calls.append(fd)
-        return fd, name
-
-    monkeypatch.setattr(bundle.tempfile, "mkstemp", fail_second)
-    try:
-        result = bundle.run_command(["unused"], cwd=tmp_path)
-        assert result["exit_code"] == -1
-        assert not list(tmp_path.iterdir())
-    finally:
-        for fd in calls:
-            try:
-                os.close(fd)
-            except OSError:
-                pass
 
 
 @pytest.mark.parametrize("tracked", [False, True])
@@ -119,30 +66,6 @@ def test_redacted_bundle_metadata_names_and_error_pages(tmp_path, monkeypatch, f
             assert "192.0.2.25" not in text
     manifest = json.loads((out / "snapshot_manifest.json").read_text())
     assert manifest["args"]["redact"] is True
-
-
-def test_timeout_capture_cleans_up(tmp_path, monkeypatch):
-    monkeypatch.setattr(bundle, "TMP_DIR", tmp_path)
-    result = bundle.run_command([sys.executable, "-c", "import time; time.sleep(2)"], cwd=tmp_path, timeout=0)
-    assert result["timed_out"] is True
-    assert result["exit_code"] == -2
-    assert not list(tmp_path.iterdir())
-
-
-def test_reopening_capture_failure_cleans_up(tmp_path, monkeypatch):
-    monkeypatch.setattr(bundle, "TMP_DIR", tmp_path)
-    from pathlib import Path
-    original = Path.open
-
-    def fail_open(path, *args, **kwargs):
-        if path.name.startswith("adlog-cmd-stderr-"):
-            raise OSError("synthetic open failure")
-        return original(path, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "open", fail_open)
-    result = bundle.run_command(["unused"], cwd=tmp_path)
-    assert result["exit_code"] == -1
-    assert not list(tmp_path.iterdir())
 
 
 def test_nonredacted_capture_retains_contract(tmp_path, monkeypatch):

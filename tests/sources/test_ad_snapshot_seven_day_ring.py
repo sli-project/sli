@@ -6,52 +6,10 @@ import re
 
 import pytest
 
-from server.sli.sources.ad_snapshot_retention import (
-    POLICY_HORIZON_DAYS,
-    REQUIRED_AD_RETENTION_RELATIONS,
-    plan_ad_snapshot_retention,
-)
 
 
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS = ROOT / "config" / "postgres_migrations"
-
-
-def _safe_inventory() -> dict[str, dict[str, object]]:
-    return {
-        relation: {
-            "candidate_count": 0,
-            "root_mapping_proven": True,
-            "anchor_proven": True,
-            "owner_admitted": True,
-            "shared_source": False,
-            "dependency_state": "safe",
-            "independent_legacy_cleaner": False,
-            "whole_unit_admitted": True,
-        }
-        for relation in REQUIRED_AD_RETENTION_RELATIONS
-    }
-
-
-def test_read_only_policy_is_a_seven_day_snapshot_scope_without_ad_context() -> None:
-    now = datetime(2026, 9, 1, 12, tzinfo=timezone.utc)
-
-    assert POLICY_HORIZON_DAYS == 7
-    assert "ad_context_runs" not in REQUIRED_AD_RETENTION_RELATIONS
-    assert REQUIRED_AD_RETENTION_RELATIONS == (
-        "ad_snapshot_manifests",
-        "ad_snapshot_manifest_sources",
-        "ad_snapshot_projection_receipts",
-        "ad_snapshot_projection_outputs",
-        "users_report_v2_snapshots",
-        "computers_v6_source_snapshots",
-        "gpo_report_v2_source_snapshots",
-    )
-    result = plan_ad_snapshot_retention(now=now, inventory=_safe_inventory())
-    assert result["policy_horizon_days"] == 7
-    assert result["horizon_before_utc"] == "2026-08-25T12:00:00Z"
-    with pytest.raises(ValueError, match="fixed at 7"):
-        plan_ad_snapshot_retention(now=now, policy_horizon_days=365)
 
 
 def test_migration_131_defines_a_security_definer_seven_day_expiry_ring() -> None:

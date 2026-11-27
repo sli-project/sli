@@ -10,18 +10,6 @@ ROLLBACK = (
     ROOT
     / "config/postgres_migrations/071_semantic_source_retention_decoupling.rollback.sql"
 ).read_text(encoding="utf-8").lower()
-REPOSITORY = (
-    ROOT / "server/sli/semantic/semantic_processing_repository.py"
-).read_text(encoding="utf-8").lower()
-WORKER = (
-    ROOT / "server/sli/semantic/semantic_worker_runtime.py"
-).read_text(encoding="utf-8").lower()
-WORKER_ENTRY = (
-    ROOT / "scripts/runtime/semantic_worker.py"
-).read_text(encoding="utf-8").lower()
-MERGE = (
-    ROOT / "server/sli/entities/entity_identity_merge.py"
-).read_text(encoding="utf-8").lower()
 
 
 def test_migration_71_preserves_identity_without_raw_payload() -> None:
@@ -53,12 +41,3 @@ def test_migration_71_removes_only_stage8_hot_core_foreign_keys() -> None:
 
 def test_migration_71_is_forward_only_after_hot_expiry() -> None:
     assert "rollback 071 is forbidden after retention decoupling" in ROLLBACK
-
-
-def test_worker_uses_claimed_identity_for_archive_and_persistence() -> None:
-    assert 'source_identity=job.get("source_identity_json")' in WORKER
-    assert "semantic_source_identity" in REPOSITORY
-    assert "from events_v2_core" in REPOSITORY  # producer/fallback still hot-only
-    assert "source_identity_json" in REPOSITORY
-    assert "source_event_sha256,source_occurred_at_utc" in MERGE
-    assert "version=71 and name='semantic_source_retention_decoupling'" in WORKER_ENTRY

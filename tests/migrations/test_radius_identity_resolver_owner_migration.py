@@ -14,9 +14,6 @@ ROLLBACK = (
     / "config/postgres_migrations/"
     "060_radius_identity_resolver_owner.rollback.sql"
 ).read_text(encoding="utf-8")
-CONTROLLER = (
-    ROOT / "scripts/maintenance/stage9_radius_identity_owner_migrate.py"
-).read_text(encoding="utf-8")
 
 
 def test_forward_creates_dedicated_nologin_definer_owner() -> None:
@@ -66,13 +63,3 @@ def test_rollback_preserves_runtime_state_and_restores_function() -> None:
     assert "owner to adlog_storage_owner" in lowered
     assert "drop role adlog_radius_identity_resolver" in lowered
     assert "drop function" not in lowered
-
-
-def test_final_identity_attestation_covers_059_and_060_read_only() -> None:
-    lowered = CONTROLLER.casefold()
-    assert '"finalize-applied"' in lowered
-    assert "radius-identity-owner60-production-attestation.json" in lowered
-    assert "finalize_applied_readback" in lowered
-    assert "production_current_state_attestation" in lowered
-    assert "covers_migrations" in lowered
-    assert "begin read only" in lowered

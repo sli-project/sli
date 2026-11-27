@@ -23,7 +23,7 @@ def test_rejects_embedded_hosts_without_printing_them(value):
     "https://learn.microsoft.com/path", "http://schemas.microsoft.com/win/2004/08/events/event",
 ])
 def test_allows_only_reserved_examples_loopback_and_exact_service_hosts(value):
-    assert findings("server/new.py", f'HOST = "{value}"') == []
+    assert findings("server-dotnet/src/new.cs", f'HOST = "{value}"') == []
 
 
 def test_language_identifiers_are_exempt_only_in_their_own_files():
@@ -45,16 +45,16 @@ def test_configuration_and_mail_literals_cannot_bypass_the_suffix_list(text):
 def test_template_urls_query_values_and_url_validation_patterns_are_not_hosts():
     assert findings("frontend/src/new.tsx", '`http://localhost${path}`') == []
     assert findings("frontend/src/new.tsx", '"?return_to=https://outside.invalid&key=value"') == []
-    assert findings("server/new.py", 'r"https://raw\\.githubusercontent\\.com/path"') == []
+    assert findings("server-dotnet/src/new.cs", 'r"https://raw\\.githubusercontent\\.com/path"') == []
 
 
 def test_scan_includes_frontend_tests_and_server_sources(tmp_path: Path):
-    for name in ("frontend/src/new.test.tsx", "server/new.py"):
+    for name in ("frontend/src/new.test.tsx", "server-dotnet/src/new.cs"):
         path = tmp_path / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text('HOST = "tenant.local"', encoding="utf-8")
     assert scan(tmp_path) == [
-        "frontend/src/new.test.tsx:1:embedded_host", "server/new.py:1:embedded_host",
+        "frontend/src/new.test.tsx:1:embedded_host", "server-dotnet/src/new.cs:1:embedded_host",
     ]
 
 

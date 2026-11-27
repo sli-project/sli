@@ -16,24 +16,6 @@ ROLLBACK_PATH = (
 )
 
 
-def test_radius_catalog_revision_registration_matches_the_emitting_contract() -> None:
-    descriptor = json.loads(
-        (ROOT / "config/radius_event_catalog.json").read_text(encoding="utf-8")
-    )
-    source_pack = (
-        ROOT / "server/source_packs/windows_nps_radius.py"
-    ).read_text(encoding="utf-8")
-    forward = FORWARD_PATH.read_text(encoding="utf-8").lower()
-
-    assert descriptor["version"] == CATALOG_VERSION
-    assert f'noise_catalog_version="{CATALOG_VERSION}"' in source_pack
-    assert "migration 082 requires migration 051" in forward
-    assert "migration 082 requires event_catalog_revisions" in forward
-    assert "migration 082 requires the catalog revision trigger" in forward
-    assert "insert into event_catalog_revisions(version)" in forward
-    assert f"values('{CATALOG_VERSION}')" in forward
-    assert "on conflict(version) do nothing" in forward
-    assert "values(82,'radius_event_catalog_revision_registration')" in forward
 
 
 def test_radius_catalog_revision_registration_is_exact_and_additive() -> None:
