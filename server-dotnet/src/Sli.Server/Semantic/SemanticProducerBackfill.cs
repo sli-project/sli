@@ -27,7 +27,7 @@ internal static class SemanticProducerBackfill
         ct.ThrowIfCancellationRequested();
         await using var tx=await db.BeginTransactionAsync(ct);
         var session=new SemanticSession(db,tx);
-        var rows=await session.QueryAsync(SelectionSql,ct,mode,SemanticEvent.Version,Math.Min(batch,SemanticProducer.MaxBatch));
+        var rows=await session.QueryAsync(SelectionSql,ct,mode,SemanticEvent.Version,Math.Min(batch,SemanticProducer.EnqueueBatchSize));
         var ids=rows.Select(x=>x.Number("id")).ToArray();
         int queued=0;
         if(ids.Length>0) {
@@ -38,9 +38,8 @@ internal static class SemanticProducerBackfill
         // A maximum is progress telemetry only. Discovery retains all
         // undecided IDs, including lower IDs committed by parallel importers.
         var progress=(await session.QueryAsync("""
-            select coalesce(max(upper(span)-1),0) as cursor from public.semantic_producer_coverage c
-            cross join lateral unnest(c.decided_ids) span
-            where c.runtime_mode=$1 and c.processor_version=$2
+            select coalesce((select upper(range_merge(c.decided_ids))-1 from public.semantic_producer_coverage c
+                where c.runtime_mode=$1 and c.processor_version=$2),0) as cursor
             """,ct,mode,SemanticEvent.Version)).Single()!;
         await tx.CommitAsync(ct);
         return new JsonObject { ["status"]="short_events",["scanned"]=ids.Length,["queued"]=queued,

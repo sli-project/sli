@@ -53,17 +53,13 @@ internal sealed class SemanticOutboxPump : IAsyncDisposable
             try
             {
                 await using var db = await runtime.OpenControlAsync(ct);
-                // One job at a time after the initial slice bounds join latency;
-                // detector and risk steps retain their original work budgets.
-                var production = new SemanticProduction(runtime, settings, mode, 1, repair);
-                bool initial = true;
-                var initialProduction = new SemanticProduction(runtime, settings, mode, limit, repair);
+                var production = new SemanticProduction(runtime, settings, mode, limit, repair);
                 do
                 {
                     var watch = Stopwatch.StartNew();
-                    var slice = await (initial ? initialProduction : production).ProcessOutbox(db, ct);
+                    var slice = await production.ProcessOutbox(db, ct);
                     rate.Observe(slice.Number("completed"), watch.Elapsed);
-                    initial = false; ready.TrySetResult();
+                    ready.TrySetResult();
                     lock (progress) {
                         foreach (string key in new[] { "claimed", "completed", "failed", "normalized", "actions" })
                             totals[key] = totals.Number(key) + slice.Number(key);
