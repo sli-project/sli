@@ -68,6 +68,12 @@ public sealed partial class SemanticRetainedFactsControlTests
                     return Task.FromResult(Rows(selected.OrderBy(s => s.Id)));
                 }
                 if (sql.StartsWith("select e.id,e.event_id::text as event_key")) return Task.FromResult(new JsonArray(owner.Sources.Where(s => ((long[])values[0]!).Contains(s.Id)).OrderBy(s => s.Id).Select(s => (JsonNode)new JsonObject { ["id"] = s.Id, ["event_key"] = s.Event.ToString(), ["stream"] = "Security", ["provider_name"] = Provider(s.Event) }).ToArray()));
+                if (sql == SemanticProducer.EnqueueSourcesSql) {
+                    var sourceIds = owner.Sources.Select(source => source.Id).ToHashSet();
+                    return Task.FromResult(new JsonArray(((JsonArray)values[0]!)
+                        .Where(row => sourceIds.Contains(row.Number("id")))
+                        .Select(row => row.Copy()).ToArray()));
+                }
                 if (sql.Contains("insert into semantic_processing_outbox")) {
                     if (owner.ThrowPublish) throw new InvalidOperationException("producer transaction failed");
                     pending = ((JsonArray)values[0]!).Select(r => r.Number("id")).ToArray(); owner.Published.Add(pending); owner.Sequence.Add("publish"); return Task.FromResult(new JsonArray(pending.Select(id => (JsonNode)new JsonObject { ["job_id"] = id.ToString() }).ToArray()));
