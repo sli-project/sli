@@ -322,10 +322,12 @@ jobs:
           sudo apt-get install -y --no-install-recommends postgresql-18 postgresql-client-18
       - name: MSI table tools for the Windows agent package tests
         if: runner.environment == 'github-hosted'
+        shell: bash
         run: |
           if command -v msibuild >/dev/null && command -v msiinfo >/dev/null; then exit 0; fi
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends msitools
+          ubuntu_sources=(-o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=-)
+          sudo apt-get "${ubuntu_sources[@]}" -o APT::Update::Error-Mode=any update
+          sudo apt-get "${ubuntu_sources[@]}" install -y --no-install-recommends msitools
       - name: Run and verify server test shard
         shell: bash
         env:

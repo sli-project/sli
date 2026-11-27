@@ -150,12 +150,14 @@ jobs:
     # Preserve the required status check name while the source checks run independently.
     name: source
     needs: [changes, source, tests, frontend, postgres, native-package-upgrade]
-    if: ${{ always() && github.event_name != 'push' }}
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
       - name: Require source checks and applicable suites
+        shell: bash
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
+          SOURCE_REQUIRED: ${{ github.event_name != 'push' }}
           SOURCE_RESULT: ${{ needs.source.result }}
           UNIT_REQUIRED: ${{ needs.changes.outputs.unit }}
           UNIT_RESULT: ${{ needs.tests.result }}
@@ -166,7 +168,6 @@ jobs:
           NATIVE_PACKAGE_UPGRADE_RESULT: ${{ needs.native-package-upgrade.result }}
         run: |
           test "$CHANGES_RESULT" = success
-          test "$SOURCE_RESULT" = success
           require_suite() {
             if [ "$1" = true ]; then
               test "$2" = success
@@ -174,6 +175,7 @@ jobs:
               test "$1" = false && test "$2" = skipped
             fi
           }
+          require_suite "$SOURCE_REQUIRED" "$SOURCE_RESULT"
           require_suite "$UNIT_REQUIRED" "$UNIT_RESULT"
           require_suite "$FRONTEND_REQUIRED" "$FRONTEND_RESULT"
           require_suite "$POSTGRES_REQUIRED" "$POSTGRES_RESULT"

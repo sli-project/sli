@@ -203,7 +203,10 @@ def test_ci_gates_cover_locked_runtime_frontend_and_postgres(name: str) -> None:
         assert {"changes", "source", "tests", "frontend", "postgres"} <= set(gate["needs"])
         assert gate["if"] == "${{ always() }}"
         guard, = gate["steps"]
+        assert guard["env"]["SOURCE_REQUIRED"] == f"${{{{ {jobs['source']['if']} }}}}"
         assert guard["env"]["SOURCE_RESULT"] == "${{ needs.source.result }}"
+        assert guard["env"]["FRONTEND_REQUIRED"] == "${{ needs.changes.outputs.frontend }}"
+        assert guard["env"]["FRONTEND_RESULT"] == "${{ needs.frontend.result }}"
         assert guard["env"]["POSTGRES_RESULT"] == "${{ needs.postgres.result }}"
         assert any('not postgres_integration and not host_dependent' in step.get("run", "")
                    for step in jobs["tests"]["steps"])
@@ -220,12 +223,17 @@ def test_ci_gates_cover_locked_runtime_frontend_and_postgres(name: str) -> None:
         for step in setup_steps(job, "setup-python"):
             assert step["with"]["python-version"] == locked_python
     frontend_runs = [step.get("run", "") for step in jobs["frontend"]["steps"]]
-    assert "python -m pip install --disable-pip-version-check -r requirements.txt" in frontend_runs
-    assert frontend_runs.index("python -m pip install --disable-pip-version-check -r requirements.txt") < frontend_runs.index("npm --prefix frontend exec vitest run src")
-    assert setup_steps(jobs["frontend"], "setup-python")
-    assert "npm --prefix frontend run lint" in frontend_runs
-    assert "npm --prefix frontend exec vitest run src" in frontend_runs
-    assert "npm --prefix frontend run build" in frontend_runs
+    required_frontend_runs = [
+        "npm ci", "npm --prefix frontend ci", "npm --prefix frontend run lint",
+        "npm --prefix frontend exec vitest run src", "npm --prefix frontend run build",
+    ]
+    assert [run for run in frontend_runs if run in required_frontend_runs] == required_frontend_runs
+    if name == "pr-gate.yml":
+        assert not setup_steps(jobs["frontend"], "setup-python")
+        assert not any("pip install" in run for run in frontend_runs)
+    else:
+        assert setup_steps(jobs["frontend"], "setup-python")
+        assert frontend_runs.index("python -m pip install --disable-pip-version-check -r requirements.txt") < frontend_runs.index("npm --prefix frontend exec vitest run src")
     assert any("ruff check --config .github/ruff-ci.toml scripts tests" in step.get("run", "")
                for job in jobs.values() for step in job["steps"])
 
@@ -392,7 +400,6 @@ def test_native_restore_requires_clients_for_a_configured_disposable_database(tm
 
 @pytest.mark.parametrize(("job_name", "action", "revision"), [
     ("source", "setup-python", "a26af69be951a213d495a4c3e4e4022e16d87065"),
-    ("frontend", "setup-python", "a26af69be951a213d495a4c3e4e4022e16d87065"),
     ("frontend", "setup-node", "49933ea5288caeca8642d1e84afbd3f7d6820020"),
 ])
 def test_failed_jobs_fetch_pinned_setup_actions_over_git(job_name, action, revision):
@@ -408,6 +415,71 @@ def test_failed_jobs_fetch_pinned_setup_actions_over_git(job_name, action, revis
         "persist-credentials": False,
     }
     assert steps.index(checkout) < steps.index(setup)
+
+
+@pytest.mark.parametrize(("frontend_result", "expected"), [
+    ("success", 0), ("failure", 1), ("cancelled", 1), ("skipped", 1),
+])
+def test_main_push_gate_requires_a_successful_frontend(tmp_path, frontend_result, expected):
+    config = workflow("pr-gate.yml")
+    jobs = config["jobs"]
+    assert "main" in config[True]["push"]["branches"]
+    assert jobs["frontend"]["needs"] == "changes"
+    assert jobs["frontend"]["if"] == "${{ needs.changes.outputs.frontend == 'true' }}"
+
+    scope, = [step for step in jobs["changes"]["steps"] if step.get("id") == "diff"]
+    outputs_path = tmp_path / "outputs"
+    bash = shutil.which("bash")
+    assert bash
+    subprocess.run([bash, "-eo", "pipefail", "-c", scope["run"]], check=True,
+                   env=os.environ | {"EVENT": "push", "GITHUB_OUTPUT": outputs_path.as_posix()})
+    outputs = dict(line.split("=", 1) for line in outputs_path.read_text().splitlines())
+    assert outputs["frontend"] == "true"
+
+    guard, = jobs["gate"]["steps"]
+    assert guard["shell"] == "bash"
+    result = subprocess.run([bash, "-eo", "pipefail", "-c", guard["run"]], check=False,
+                            env=os.environ | {
+                                "CHANGES_RESULT": "success", "SOURCE_REQUIRED": "false",
+                                "SOURCE_RESULT": "skipped", "UNIT_REQUIRED": outputs["unit"],
+                                "UNIT_RESULT": "skipped", "FRONTEND_REQUIRED": outputs["frontend"],
+                                "FRONTEND_RESULT": frontend_result, "POSTGRES_REQUIRED": outputs["postgres"],
+                                "POSTGRES_RESULT": "skipped", "NATIVE_PACKAGE_UPGRADE_RESULT": "skipped",
+                            })
+    assert result.returncode == expected
+
+
+@pytest.mark.parametrize("update_status", [0, 100])
+def test_msi_tools_use_only_ubuntu_apt_sources(update_status):
+    steps = workflow("server-dotnet.yml")["jobs"]["server-tests"]["steps"]
+    step, = [step for step in steps if "msitools" in step.get("run", "")]
+    bash = shutil.which("bash")
+    assert bash
+    script = """
+        command() { return 1; }
+        sudo() {
+          [[ "$1" = apt-get ]] || return 1
+          shift
+          local sources=false parts=false
+          while [[ "$1" = -o ]]; do
+            case "$2" in
+              Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources) sources=true ;;
+              Dir::Etc::sourceparts=-) parts=true ;;
+            esac
+            shift 2
+          done
+          [[ "$sources" = true && "$parts" = true ]] || return 1
+          case "$1" in
+            update) echo update; return "$UPDATE_STATUS" ;;
+            install) [[ "${@: -1}" = msitools ]] || return 1; echo install ;;
+            *) return 1 ;;
+          esac
+        }
+    """ + step["run"]
+    result = subprocess.run([bash, "-eo", "pipefail", "-c", script], capture_output=True, text=True, check=False,
+                            env=os.environ | {"UPDATE_STATUS": str(update_status)})
+    assert result.returncode == update_status, result.stderr
+    assert result.stdout.splitlines() == (["update"] if update_status else ["update", "install"])
 
 
 def test_disposable_postgres_jobs_keep_shared_gates() -> None:
