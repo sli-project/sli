@@ -12372,7 +12372,7 @@
     ],
     "section": "reports/workstations",
     "title": "Входы на станциях",
-    "description": "Наблюдаемые события; отсутствие строк не подтверждает отсутствие активности.",
+    "description": "",
     "archetype": "journal",
     "intent": {
       "contract_id": "sli.report-intent.v1",
@@ -12636,7 +12636,7 @@
     ],
     "section": "reports/workstations",
     "title": "Процессы и службы",
-    "description": "Наблюдаемые события; отсутствие строк не подтверждает отсутствие активности.",
+    "description": "",
     "archetype": "journal",
     "intent": {
       "contract_id": "sli.report-intent.v1",
@@ -12879,7 +12879,7 @@
     ],
     "section": "reports/workstations",
     "title": "Съёмные носители",
-    "description": "Наблюдаемые события; отсутствие строк не подтверждает отсутствие активности.",
+    "description": "",
     "archetype": "journal",
     "intent": {
       "contract_id": "sli.report-intent.v1",
