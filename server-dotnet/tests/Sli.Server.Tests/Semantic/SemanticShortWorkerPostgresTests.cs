@@ -142,5 +142,67 @@ public sealed class SemanticShortWorkerPostgresTests
         await using(var r=await count.ExecuteReaderAsync(ct)) { Assert.True(await r.ReadAsync(ct)); Assert.Equal(1,r.GetInt64(0)); Assert.Equal(1,r.GetInt64(1)); Assert.Equal(1,r.GetInt64(2)); }
         await fixture.AssertNoSqlErrorsAsync(ct);
     }
+
+    [Fact]
+    public async Task Producer_reads_before_outbox_write_and_a_bad_job_does_not_lose_its_batch()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var environment = new SemanticProducerPostgresTests.Admission();
+        environment.Set("SLI_PLUGIN_LOCK_DIR", Path.Combine(SemanticProduction.SourceBundleRoot(null, AppContext.BaseDirectory), "config/plugin_packages/v3"));
+        await using var fixture = new SqlPostgresFixture(); await fixture.StartAsync(ct);
+        await using var owner = await fixture.Pg.OpenAsync(ct);
+        var rows = await ShortEventAdmissionPostgresTests.SeedAsync(owner, ct, eventKinds: [1102, 4625, 4625]);
+        await ShortEventAdmissionPostgresTests.WriteAsync(fixture, rows, ct);
+        await using var runtime = PasswordProducerRuntime.Create(n => n == "ADLOG_SEMANTIC_WORKER_DSN" ? fixture.Dsn("sli_semantic_login") : null, _ => throw new InvalidOperationException());
+        await using var worker = await runtime.OpenAsync(ct);
+
+        await using (var blocker = await fixture.Pg.OpenAsync(ct))
+        await using (var readFence = await blocker.BeginTransactionAsync(ct))
+        await using (var session = new SemanticSession(worker, await worker.BeginTransactionAsync(ct)))
+        {
+            await PostCollectionPostgres.Sql(blocker, "lock table event_hot in access exclusive mode", ct);
+            var enqueue = SemanticProducer.Enqueue(session, rows.Select(row => new SemanticProducer.Candidate(row.EventId, "signal")), ct);
+            await using var waiting = new NpgsqlCommand("select exists(select 1 from pg_locks where pid=@pid and relation='event_hot'::regclass and not granted)", owner);
+            waiting.Parameters.AddWithValue("pid", worker.ProcessID);
+            while (!(bool)(await waiting.ExecuteScalarAsync(ct))!) {
+                if (enqueue.IsCompleted) { await enqueue; Assert.Fail("Enqueue bypassed the event source read"); }
+                await Task.Delay(10, ct);
+            }
+            await using (var probe = await owner.BeginTransactionAsync(ct)) {
+                await PostCollectionPostgres.Sql(owner, "lock table semantic_processing_outbox in share row exclusive mode nowait", ct);
+                await probe.CommitAsync(ct);
+            }
+            await readFence.CommitAsync(ct);
+            Assert.Equal(3, await enqueue);
+            await session.CommitAsync(ct);
+        }
+
+        // Fail after the normalized row has been written. The savepoint must
+        // roll back that row and let both other jobs commit with their receipts.
+        await PostCollectionPostgres.Sql(owner, $"""
+            create function public.synthetic_reject_action_evidence() returns trigger language plpgsql as $$
+            begin
+                if exists(select 1 from normalized_events where normalized_event_id=new.normalized_event_id
+                    and source_event_id={rows[1].EventId}) then raise check_violation using message='synthetic failure'; end if;
+                return new;
+            end $$;
+            create trigger synthetic_reject_action_evidence before insert on canonical_action_evidence
+                for each row execute function public.synthetic_reject_action_evidence();
+            """, ct);
+        var production = new SemanticProduction(runtime, SemanticRuntimeSettings.Read(Environment.GetEnvironmentVariable), SemanticRuntimeSettings.FindingsMode, 128);
+        var result = await production.ProcessOutbox(worker, ct);
+        Assert.Equal(3, result.Number("claimed")); Assert.Equal(2, result.Number("completed")); Assert.Equal(1, result.Number("failed"));
+        await using var read = new NpgsqlCommand("""
+            select j.status,exists(select 1 from normalized_events n where n.source_event_id=j.source_event_id)
+            from semantic_processing_outbox j order by source_event_id
+            """, owner);
+        await using var records = await read.ExecuteReaderAsync(ct);
+        foreach (string expected in new[] { "completed", "failed", "completed" }) {
+            Assert.True(await records.ReadAsync(ct));
+            Assert.Equal(expected, records.GetString(0));
+            Assert.Equal(expected == "completed", records.GetBoolean(1));
+        }
+        Assert.False(await records.ReadAsync(ct));
+    }
 }
 

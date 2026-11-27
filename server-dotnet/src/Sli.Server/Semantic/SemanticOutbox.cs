@@ -67,90 +67,150 @@ internal sealed partial class SemanticProduction
         return actions.Count;
     }
     internal Task<JsonObject> ProcessOutbox(NpgsqlConnection db, CancellationToken ct, Action<SemanticProcessingStep, TimeSpan>? timing = null, IReadOnlyList<long>? sourceEventIds = null)
-        => ProcessOutbox(token => Transaction(db, token), ct, timing, sourceEventIds);
+        => ProcessOutbox(token => Transaction(db, token), ct, timing, sourceEventIds, batch: true);
 
     internal async Task<JsonObject> ProcessOutbox(Func<CancellationToken, Task<ISemanticSession>> open,
-        CancellationToken stopping, Action<SemanticProcessingStep, TimeSpan>? timing = null, IReadOnlyList<long>? sourceEventIds = null)
+        CancellationToken stopping, Action<SemanticProcessingStep, TimeSpan>? timing = null, IReadOnlyList<long>? sourceEventIds = null, bool batch = false)
     {
         sourceEventIds ??= exactSourceIds;
         ValidateExactSources(mode, sourceEventIds, repairDigest);
         ValidateRepairMode(mode, repairDigest);
         int claimed = 0, completed = 0, failed = 0, normalized = 0, actions = 0;
-        // A stop prevents the next claim; a leased job commits or records its failure first.
+        // A stop prevents the next claim. Finish the bounded lease already taken.
+        int budget = repairDigest is null ? Math.Clamp(limit, 1, 128) : Math.Max(limit, 1);
+        bool batchClaims = batch && repairDigest is null && sourceEventIds is null;
         CancellationToken ct = CancellationToken.None;
-        for (int i = 0; settings.Normalization && i < (repairDigest is null ? Math.Clamp(limit, 1, 128) : Math.Max(limit, 1)); i++)
+        while (settings.Normalization && claimed < budget && !stopping.IsCancellationRequested)
         {
-            if (stopping.IsCancellationRequested) break;
-            JsonNode? job;
-            var step = SemanticProcessingStep.Claim;
-            long stamp = System.Diagnostics.Stopwatch.GetTimestamp();
-            void Mark(SemanticProcessingStep next) {
-                timing?.Invoke(step, System.Diagnostics.Stopwatch.GetElapsedTime(stamp));
-                step = next; stamp = System.Diagnostics.Stopwatch.GetTimestamp();
-            }
+            JsonArray jobs;
+            long claimStarted = System.Diagnostics.Stopwatch.GetTimestamp();
             await using (var session = await open(ct))
             {
-                job = (await Claim(session, ct, repairDigest, sourceEventIds?.ToArray())).FirstOrDefault(); await session.CommitAsync(ct);
+                jobs = await Claim(session, ct, repairDigest, sourceEventIds?.ToArray(), batchClaims ? budget - claimed : 1);
+                await session.CommitAsync(ct);
             }
-            if (job is null) break; claimed++;
-            try
+            timing?.Invoke(SemanticProcessingStep.Claim, System.Diagnostics.Stopwatch.GetElapsedTime(claimStarted));
+            if (jobs.Count == 0) break;
+            claimed += jobs.Count;
+
+            // Keep scoped repairs and exact replays on their single-job path.
+            // Ordinary batches isolate each job's writes with a savepoint and
+            // commit its facts and lease completion in the same transaction.
+            await using var shared = jobs.Count > 1 ? (SemanticSession)await open(ct) : null;
+            var successful = new List<JsonNode>(jobs.Count);
+            if (shared is not null)
             {
-                Mark(SemanticProcessingStep.RepairScope);
-                if (repairDigest is not null
-                    ? job.Text("job_kind") != "semantic_v2_quarantine_repair" || job["payload_json"].Text("repair_plan_digest") != repairDigest
-                    : job.Text("job_kind") == "semantic_v2_quarantine_repair")
-                    throw new InvalidDataException("semantic_repair_scope_mismatch");
-                Mark(SemanticProcessingStep.SourceLock);
-                await using var session = await open(ct);
-                if (job.Text("job_kind") is not ("normalize_event" or "semantic_replay" or "semantic_repair" or "investigation_context" or "semantic_v2_quarantine_repair"))
-                    throw new InvalidDataException("semantic_job_kind_unsupported");
-                long sourceId = job.Number("source_event_id"); await SemanticWorkerContract.LockSourcesAsync(session, [sourceId], ct);
-                if (!await HeartbeatJob(session, job, ct)) throw new InvalidOperationException("semantic lease was lost");
-                if (job.Text("job_kind") == "investigation_context")
+                await SemanticWorkerContract.LockSourcesAsync(shared, jobs.Select(job => job.Number("source_event_id")), ct);
+                var renewed = await Change(shared, """
+                    update semantic_processing_outbox set heartbeat_at=now(),lease_until=now()+interval '300 seconds',updated_at=now()
+                    where job_id=any($1) and status='leased' and lease_token=$2 returning job_id
+                    """, ct, jobs.Select(JobId).ToArray(), LeaseToken(jobs[0]));
+                if (renewed.Count != jobs.Count) throw new InvalidOperationException("semantic batch lease was lost");
+            }
+
+            foreach (var claimedJob in jobs)
+            {
+                var job = claimedJob!;
+                if (job.Text("job_kind") == "semantic_repair" && successful.Count > 0)
                 {
-                    Mark(SemanticProcessingStep.Context); bool complete = await ExpandContext(session, sourceId, job, ct);
-                    await session.CommitAsync(ct); if (complete) completed++; continue;
+                    // A repair can verify a normalize job earlier in this lease.
+                    await CompleteBatch(shared!, successful, ct);
+                    successful.Clear();
                 }
-                Mark(SemanticProcessingStep.Identity);
-                JsonObject identity = job["source_identity_json"]!.AsObject();
-                if (identity.Number("id") != sourceId) throw new InvalidDataException("semantic_source_identity_conflict");
-                Mark(SemanticProcessingStep.Repair);
-                if (job.Text("job_kind") == "semantic_v2_quarantine_repair")
-                    await ValidateQuarantineRepair(session, job, repairDigest, ct);
-                if (job.Text("job_kind") == "semantic_repair")
-                {
-                    var payload = job["payload_json"]!;
-                    foreach (string field in new[] { "repair_plan_digest", "history_plan_digest", "original_source_hash" })
-                        if (payload.Text(field) is not { Length: 64 } digest || digest.Any(c => c is not (>= 'a' and <= 'f' or >= '0' and <= '9'))) throw new InvalidDataException("semantic_repair_payload_invalid");
-                    var original = (await session.QueryAsync("select source_event_id,job_kind,status,processor_id,processor_version,source_identity_json->>'normalized_hash' as source_hash from semantic_processing_outbox where job_id=$1", ct, Guid.Parse(payload.Text("original_job_id")!))).Single()!;
-                    if (payload.Text("original_source_hash") != identity.Text("normalized_hash") || original.Number("source_event_id") != sourceId || original.Text("job_kind") != "normalize_event" || original.Text("status") != "completed" || original.Text("processor_id") != job.Text("processor_id") || original.Text("processor_version") != job.Text("processor_version") || original.Text("source_hash") != identity.Text("normalized_hash")) throw new InvalidDataException("semantic_repair_original_conflict");
+                var step = SemanticProcessingStep.RepairScope;
+                long stamp = System.Diagnostics.Stopwatch.GetTimestamp();
+                void Mark(SemanticProcessingStep next) {
+                    timing?.Invoke(step, System.Diagnostics.Stopwatch.GetElapsedTime(stamp));
+                    step = next; stamp = System.Diagnostics.Stopwatch.GetTimestamp();
                 }
-                SemanticEvent ev;
+                if (shared is not null) await shared.ExecuteAsync("savepoint semantic_job", ct);
                 try
                 {
-                    Mark(SemanticProcessingStep.SourceRead);
-                    var source = await LoadSource(session, sourceId, identity, ct);
-                    Mark(SemanticProcessingStep.BundleAdmission);
-                    await AdmitBundle(source, ct);
-                    Mark(SemanticProcessingStep.Normalize); ev = SemanticNormalization.Normalize(source);
+                    await using var single = shared is null ? await open(ct) : null;
+                    var (done, assembled) = await ProcessJob(shared ?? single!, job, shared is null, Mark, ct);
+                    if (single is not null) { Mark(SemanticProcessingStep.Commit); await single.CommitAsync(ct); }
+                    if (done) { completed++; if (shared is not null) successful.Add(job); }
+                    if (assembled is int count) { normalized++; actions += count; }
                 }
-                // .NET distinguishes an expired directory from an expired file;
-                // both correspond to Python's FileNotFoundError, never integrity errors.
-                catch (IOException error) when ((error is FileNotFoundException or DirectoryNotFoundException) && job.Text("job_kind") == "normalize_event")
+                catch (Exception error)
                 {
-                    Mark(SemanticProcessingStep.RetainedNormalization);
-                    ev = await ReadRetainedNormalization(session, sourceId, identity, ct);
+                    if (shared is null) await Fail(open, "semantic_processing_outbox", "status", job, ct, error, step);
+                    else {
+                        await shared.ExecuteAsync("rollback to savepoint semantic_job", ct);
+                        await Fail(shared, "semantic_processing_outbox", "status", job, ct, error, step);
+                    }
+                    failed++;
                 }
-                Mark(SemanticProcessingStep.IdentityOverrides); ev = await IdentityOverrides(session, ev, job, ct);
-                string version = job.Text("job_kind") == "semantic_replay" ? job.Text("processor_version")! : SemanticEvent.Version;
-                int assembled = await PersistProcessedEvent(session, ev, identity, job, version, ct, Mark);
-                Mark(SemanticProcessingStep.Commit); await session.CommitAsync(ct); normalized++; actions += assembled; completed++;
+                finally { timing?.Invoke(step, System.Diagnostics.Stopwatch.GetElapsedTime(stamp)); }
+                if (shared is not null) await shared.ExecuteAsync("release savepoint semantic_job", ct);
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-            catch (Exception error) { await Fail(open, "semantic_processing_outbox", "status", job, ct, error, step); failed++; }
-            finally { timing?.Invoke(step, System.Diagnostics.Stopwatch.GetElapsedTime(stamp)); }
+
+            if (shared is not null)
+            {
+                long stamp = System.Diagnostics.Stopwatch.GetTimestamp();
+                await CompleteBatch(shared, successful, ct);
+                timing?.Invoke(SemanticProcessingStep.Complete, System.Diagnostics.Stopwatch.GetElapsedTime(stamp));
+                stamp = System.Diagnostics.Stopwatch.GetTimestamp();
+                await shared.CommitAsync(ct);
+                timing?.Invoke(SemanticProcessingStep.Commit, System.Diagnostics.Stopwatch.GetElapsedTime(stamp));
+            }
         }
         return new JsonObject { ["claimed"] = claimed, ["completed"] = completed, ["failed"] = failed, ["normalized"] = normalized, ["actions"] = actions };
+    }
+
+    private async Task<(bool Completed, int? Actions)> ProcessJob(ISemanticSession session, JsonNode job, bool finish,
+        Action<SemanticProcessingStep> Mark, CancellationToken ct)
+    {
+        if (repairDigest is not null
+            ? job.Text("job_kind") != "semantic_v2_quarantine_repair" || job["payload_json"].Text("repair_plan_digest") != repairDigest
+            : job.Text("job_kind") == "semantic_v2_quarantine_repair")
+            throw new InvalidDataException("semantic_repair_scope_mismatch");
+        Mark(SemanticProcessingStep.SourceLock);
+        if (job.Text("job_kind") is not ("normalize_event" or "semantic_replay" or "semantic_repair" or "investigation_context" or "semantic_v2_quarantine_repair"))
+            throw new InvalidDataException("semantic_job_kind_unsupported");
+        long sourceId = job.Number("source_event_id");
+        if (finish) {
+            await SemanticWorkerContract.LockSourcesAsync(session, [sourceId], ct);
+            if (!await HeartbeatJob(session, job, ct)) throw new InvalidOperationException("semantic lease was lost");
+        }
+        if (job.Text("job_kind") == "investigation_context")
+        {
+            Mark(SemanticProcessingStep.Context);
+            return (await ExpandContext(session, sourceId, job, ct, finish), null);
+        }
+        Mark(SemanticProcessingStep.Identity);
+        JsonObject identity = job["source_identity_json"]!.AsObject();
+        if (identity.Number("id") != sourceId) throw new InvalidDataException("semantic_source_identity_conflict");
+        Mark(SemanticProcessingStep.Repair);
+        if (job.Text("job_kind") == "semantic_v2_quarantine_repair")
+            await ValidateQuarantineRepair(session, job, repairDigest, ct);
+        if (job.Text("job_kind") == "semantic_repair")
+        {
+            var payload = job["payload_json"]!;
+            foreach (string field in new[] { "repair_plan_digest", "history_plan_digest", "original_source_hash" })
+                if (payload.Text(field) is not { Length: 64 } digest || digest.Any(c => c is not (>= 'a' and <= 'f' or >= '0' and <= '9'))) throw new InvalidDataException("semantic_repair_payload_invalid");
+            var original = (await session.QueryAsync("select source_event_id,job_kind,status,processor_id,processor_version,source_identity_json->>'normalized_hash' as source_hash from semantic_processing_outbox where job_id=$1", ct, Guid.Parse(payload.Text("original_job_id")!))).Single()!;
+            if (payload.Text("original_source_hash") != identity.Text("normalized_hash") || original.Number("source_event_id") != sourceId || original.Text("job_kind") != "normalize_event" || original.Text("status") != "completed" || original.Text("processor_id") != job.Text("processor_id") || original.Text("processor_version") != job.Text("processor_version") || original.Text("source_hash") != identity.Text("normalized_hash")) throw new InvalidDataException("semantic_repair_original_conflict");
+        }
+        SemanticEvent ev;
+        try
+        {
+            Mark(SemanticProcessingStep.SourceRead);
+            var source = await LoadSource(session, sourceId, identity, ct);
+            Mark(SemanticProcessingStep.BundleAdmission);
+            await AdmitBundle(source, ct);
+            Mark(SemanticProcessingStep.Normalize); ev = SemanticNormalization.Normalize(source);
+        }
+        // .NET distinguishes an expired directory from an expired file;
+        // both correspond to Python's FileNotFoundError, never integrity errors.
+        catch (IOException error) when ((error is FileNotFoundException or DirectoryNotFoundException) && job.Text("job_kind") == "normalize_event")
+        {
+            Mark(SemanticProcessingStep.RetainedNormalization);
+            ev = await ReadRetainedNormalization(session, sourceId, identity, ct);
+        }
+        Mark(SemanticProcessingStep.IdentityOverrides); ev = await IdentityOverrides(session, ev, job, ct);
+        string version = job.Text("job_kind") == "semantic_replay" ? job.Text("processor_version")! : SemanticEvent.Version;
+        return (true, await PersistProcessedEvent(session, ev, identity, job, version, ct, Mark, finish));
     }
     private static async Task<SemanticEvent> ReadRetainedNormalization(ISemanticSession session, long sourceId, JsonObject identity, CancellationToken ct)
     {
@@ -181,7 +241,7 @@ internal sealed partial class SemanticProduction
         if (original is null || original.Number("source_event_id") != job.Number("source_event_id") || original.Text("job_kind") != "normalize_event" || original.Text("status") != "quarantined" || original.Number("semantic_contract_version") != job.Number("semantic_contract_version") || original.Text("processor_id") != job.Text("processor_id") || original.Text("processor_version") != job.Text("processor_version") || original.Text("source_hash") != identity.Text("normalized_hash") || original.Number("attempt_count") != attempts || original.Number("max_attempts") != maximum || original.Text("last_error_code") != "UniqueViolation" || SemanticProposal.HashText(detail) != payload.Text("original_error_detail_sha256") || !System.Text.RegularExpressions.Regex.IsMatch(detail, "['\"]canonical_actions_pkey['\"]")) throw new InvalidDataException("semantic_repair_original_terminal_conflict");
         if ((await session.QueryAsync("select 1 from normalized_events where source_event_id=$1 and semantic_contract_version=$2 and normalizer_id=$3 and normalizer_version=$4", ct, job.Number("source_event_id"), job.Number("semantic_contract_version"), SemanticEvent.Normalizer, SemanticEvent.Version)).Count > 0) throw new InvalidDataException("semantic_repair_source_already_normalized");
     }
-    internal async Task<int> PersistProcessedEvent(ISemanticSession session, SemanticEvent ev, JsonObject identity, JsonNode job, string version, CancellationToken ct, Action<SemanticProcessingStep>? mark = null)
+    internal async Task<int> PersistProcessedEvent(ISemanticSession session, SemanticEvent ev, JsonObject identity, JsonNode job, string version, CancellationToken ct, Action<SemanticProcessingStep>? mark = null, bool finish = true)
     {
         mark?.Invoke(SemanticProcessingStep.PersistNormalized); await PersistNormalized(session, ev, identity, version, ct);
         mark?.Invoke(SemanticProcessingStep.IdentityReplay);
@@ -191,7 +251,7 @@ internal sealed partial class SemanticProduction
         foreach (var action in assembled) await PersistAction(session, action, version, ct);
         mark?.Invoke(SemanticProcessingStep.EnqueueDispatch);
         if (settings.Correlation && repairDigest is null) await EnqueueDispatch(session, ev, version, ct);
-        mark?.Invoke(SemanticProcessingStep.Complete); await Complete(session, "semantic_processing_outbox", "status", job, ct);
+        if (finish) { mark?.Invoke(SemanticProcessingStep.Complete); await Complete(session, "semantic_processing_outbox", "status", job, ct); }
         return assembled.Count;
     }
     internal static string SourceBundleRoot(string? lockRoot, string workingDirectory)
@@ -213,7 +273,7 @@ internal sealed partial class SemanticProduction
             SigmaProjection.At(row, "expires_at").UtcDateTime, row["revoked_at"] is null ? null : SigmaProjection.At(row, "revoked_at").UtcDateTime, row.Text("authorization_digest")!);
         return DirectRuntimeAuthorization.Validate(record, now).ArchiveRoot;
     }
-    internal static async Task<JsonArray> Claim(ISemanticSession session, CancellationToken ct, string? repairDigest = null, long[]? sourceEventIds = null)
+    internal static async Task<JsonArray> Claim(ISemanticSession session, CancellationToken ct, string? repairDigest = null, long[]? sourceEventIds = null, int count = 1)
     {
         repairDigest = string.IsNullOrWhiteSpace(repairDigest) ? null : repairDigest.Trim();
         if (repairDigest is not null && !System.Text.RegularExpressions.Regex.IsMatch(repairDigest, @"\A[0-9a-f]{64}\z")) throw new InvalidDataException("semantic_repair_digest_invalid");
@@ -221,15 +281,31 @@ internal sealed partial class SemanticProduction
         string filter = "and job_kind<>'semantic_v2_quarantine_repair'";
         if (repairDigest is not null) { args.Add(repairDigest); filter = "and job_kind='semantic_v2_quarantine_repair' and payload_json->>'repair_plan_digest'=$4"; }
         if (sourceEventIds is not null) { if (repairDigest is null) filter += " and job_kind='normalize_event'"; args.Add(sourceEventIds.Distinct().Order().ToArray()); filter += " and source_event_id=any($" + args.Count + ")"; }
+        string take = "1";
+        if (count != 1) { args.Add(Math.Clamp(count, 1, 128)); take = "$" + args.Count; }
         return await session.QueryAsync($"""
             with candidates as(select job_id from semantic_processing_outbox where semantic_contract_version=1
               and status in('queued','failed','leased') and processor_id='semantic-shadow'
+              and (attempt_count<max_attempts or status='leased')
+              and (case when job_kind='semantic_replay' then split_part(processor_version,'+r7-',1) else processor_version end)=$2
               and ((job_kind='semantic_replay' and processor_version like $3) or(job_kind<>'semantic_replay' and processor_version=$2))
               and available_at<=now() and((status in('queued','failed') and attempt_count<max_attempts) or(status='leased' and lease_until<now()))
-              {filter} order by available_at,created_at,job_id for update skip locked limit 1),
+              {filter} order by available_at,created_at,job_id for update skip locked limit {take}),
             leased as(update semantic_processing_outbox job set status='leased',attempt_count=case when job.attempt_count<job.max_attempts then job.attempt_count+1 else job.attempt_count end,lease_token=$1,lease_until=now()+interval '300 seconds',heartbeat_at=now(),updated_at=now(),last_error_code=null,last_error_detail=null
-              from candidates where job.job_id=candidates.job_id returning job.*) select * from leased
+              from candidates where job.job_id=candidates.job_id returning job.*) select * from leased order by available_at,created_at,job_id
             """, ct, args.ToArray());
+    }
+    private static Guid JobId(JsonNode? job) => Guid.Parse(job.Text("job_id")!);
+    private static Guid LeaseToken(JsonNode? job) => Guid.Parse(job.Text("lease_token")!);
+    internal static async Task CompleteBatch(ISemanticSession session, IReadOnlyList<JsonNode> jobs, CancellationToken ct)
+    {
+        if (jobs.Count == 0) return;
+        var rows = await Change(session, """
+            update semantic_processing_outbox set status='completed',completed_at=statement_timestamp(),
+              lease_token=null,lease_until=null,heartbeat_at=statement_timestamp(),updated_at=statement_timestamp()
+            where job_id=any($1) and status='leased' and lease_token=$2 returning job_id
+            """, ct, jobs.Select(JobId).ToArray(), LeaseToken(jobs[0]));
+        if (rows.Count != jobs.Count) throw new InvalidOperationException("semantic batch lease was lost");
     }
     internal static async Task<bool> HeartbeatJob(ISemanticSession session, JsonNode job, CancellationToken ct) =>
         (await Change(session, "update semantic_processing_outbox set heartbeat_at=now(),lease_until=now()+interval '300 seconds',updated_at=now() where job_id=$1 and status='leased' and lease_token=$2 returning job_id", ct, Guid.Parse(job.Text("job_id")!), Guid.Parse(job.Text("lease_token")!))).Count == 1;
@@ -403,7 +479,7 @@ internal sealed partial class SemanticProduction
         }
         await Change(session, "update canonical_actions action set action_status='multi_source_confirmed',updated_at=now() where canonical_action_id=$1 and action_status in('observed','partially_confirmed') and(select count(distinct normalized.source_event_id) from canonical_action_evidence evidence join normalized_events normalized using(normalized_event_id) where evidence.canonical_action_id=$1 and evidence.evidence_role in('primary','supporting'))>1 returning canonical_action_id", ct, action.Id);
     }
-    private static async Task<bool> ExpandContext(ISemanticSession session, long id, JsonNode job, CancellationToken ct)
+    private static async Task<bool> ExpandContext(ISemanticSession session, long id, JsonNode job, CancellationToken ct, bool finish)
     {
         // Exact SID and domain context only; no source contact or broad temporal join.
         var anchors = await session.QueryAsync("select e.domain_id,e.target_user_sid,e.time_created_utc,e.event_id,e.channel,e.provider_name,e.keywords from public.semantic_event_source355 e where e.id=$1", ct, id);
@@ -413,7 +489,7 @@ internal sealed partial class SemanticProduction
         foreach (var row in rows.Take(100)) await EnqueueSource(session, row.Number("id"), "late_related_context", ct);
         if (rows.Count > 100)
             await Defer(session, job, ct);
-        else await Complete(session, "semantic_processing_outbox", "status", job, ct);
+        else if (finish) await Complete(session, "semantic_processing_outbox", "status", job, ct);
         return rows.Count <= 100;
     }
     internal static async Task Defer(ISemanticSession session, JsonNode job, CancellationToken ct)

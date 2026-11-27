@@ -107,7 +107,7 @@ public sealed class SemanticProducerPostgresTests(ITestOutputHelper output)
         var watch=Stopwatch.StartNew();
         var result=await production.ProcessOutbox(worker,ct,(step,time)=>stages[step]=stages.GetValueOrDefault(step)+time.TotalMilliseconds);
         watch.Stop(); output.WriteLine(result.ToJsonString());
-        output.WriteLine(FormattableString.Invariant($"CONSUMER: {result.Number("completed")/watch.Elapsed.TotalSeconds:F2} jobs/s; {watch.Elapsed.TotalMilliseconds/batchSize:F2} ms/job; {batchSize} jobs, two transactions/job (lease + processing)"));
+        output.WriteLine(FormattableString.Invariant($"CONSUMER: {result.Number("completed")/watch.Elapsed.TotalSeconds:F2} jobs/s; {watch.Elapsed.TotalMilliseconds/batchSize:F2} ms/job; {batchSize} jobs in one lease"));
         foreach(var pair in stages.OrderByDescending(p=>p.Value)) output.WriteLine(FormattableString.Invariant($"{pair.Key}: {pair.Value/batchSize:F3} ms/job"));
         Assert.Contains(SemanticProcessingStep.SourceRead, stages.Keys);
         Assert.Contains(SemanticProcessingStep.PersistNormalized, stages.Keys);
