@@ -52,7 +52,8 @@ internal static class AdUserCard
             string[] names = new[] { safe.Text("userPrincipalName"),
                 card.Text("domain_name") is {} dns && safe.Text("samAccountName") is {} sam ? dns + "\\" + sam : null }
                 .OfType<string>().Select(s => s.ToLowerInvariant()).Distinct().ToArray();
-            var rows = await AdJson.ReadAsync(db, AdAccountEvents.Source(configuration) + ActivitySql, ct,
+            var rows = await AdJson.ReadAsync(db, AdAccountEvents.Source(configuration, scope: " and h.domain_id=$4",
+                filter: " and h.event_kind in (4624,4625) and (upper(h.actor)=$5 or (h.event_kind=4625 and lower(h.actor)=any($6)))") + ActivitySql, ct,
                 new[] { 4624, 4625 }, now.AddDays(-30), now, domain, sid.ToUpperInvariant(), names, today);
             foreach (string key in new[] { "timeline", "computers", "logon_days", "logon_totals" })
                 card[key] = JsonNode.Parse(rows[0].Text(key) ?? "null");
