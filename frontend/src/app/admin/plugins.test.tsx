@@ -5,10 +5,13 @@ import { createMemoryHistory, createRootRoute, createRouter, RouterProvider } fr
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ApiResponseError, type PluginState } from "../../api/client";
 
-const mocks = vi.hoisted(() => ({ list: vi.fn(), change: vi.fn() }));
+const mocks = vi.hoisted(() => ({ list: vi.fn(), change: vi.fn(), reportData: vi.fn() }));
 vi.mock("../../api/client", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/client")>();
-  return { ...original, api: { ...original.api, plugins: () => mocks.list(), setPluginEnabled: (item: PluginState, enabled: boolean) => mocks.change(item, enabled) } };
+  return { ...original, api: { ...original.api, plugins: () => mocks.list(),
+    setPluginEnabled: (item: PluginState, enabled: boolean) => mocks.change(item, enabled),
+    reportV2Data: (...args: Parameters<typeof original.api.reportV2Data>) => mocks.reportData(...args),
+  } };
 });
 import { localeRuntime, setLocale, t } from "../../i18n";
 import { createAdminPlaceholderRoutes } from "./navigation-pages";
@@ -209,12 +212,17 @@ it.each([
   ["sli.remote-access", "disabled", null, 0, "Выключен"],
   ["sli.sigma", "no_sources", "connect_sigma_events", 0, "Включён · Нет подключённых источников · Подключите контроллер домена для сбора событий Windows"],
   ["sli.sigma", "error", "check_collection", 0, "Включён"],
-] as const)("shows the same server state for %s on all three screens", async (pluginId, state, action, sourceCount, expected) => {
+] as const)("shows the server state for %s on the administration screens", async (pluginId, state, action, sourceCount, expected) => {
   const status: PluginState["status"] = { ...item.status!, state, next_action: action };
   if (pluginId === "sli.file-audit" && state === "error") {
     status.reason = "outdated_agent";
     status.error_object = "FS01";
     status.check_agent_requirement = { agent_version: "26.0.136", minimum_version: "26.0.154" };
+  }
+  if (pluginId === "sli.file-audit") {
+    mocks.reportData.mockResolvedValue({ coverage: { audit_resources: {
+      servers: 1, audited: state === "working" ? 2 : 0, shares: 3,
+    } } });
   }
   if (pluginId === "sli.sigma" && state === "error") {
     status.reason = "collection_delayed";
@@ -228,7 +236,16 @@ it.each([
   list.unmount();
 
   const page = mount(<PluginPage pluginId={pluginId} title={pluginId}/>);
-  expect(await screen.findByText(expected, { selector: "header p" })).toBeTruthy();
+  if (pluginId === "sli.file-audit") {
+    const summary = t("file-audit.resources.summary", {
+      status: t("plugins.enabled"), servers: 1, audited: state === "working" ? 2 : 0, shares: 3,
+    });
+    expect(await screen.findByText(summary, { exact: false, selector: "header p" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: t("file-audit.screen.overview") }).getAttribute("href"))
+      .toBe("/app/report/file-audit.overview?tab=overview");
+  } else {
+    expect(await screen.findByText(expected, { selector: "header p" })).toBeTruthy();
+  }
   page.unmount();
 
   const root = createRootRoute();

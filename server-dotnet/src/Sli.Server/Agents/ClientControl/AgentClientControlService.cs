@@ -35,7 +35,8 @@ public sealed class AgentClientControlService(IAgentControlAudit audit,TimeProvi
         var result=AgentClientPolicy.CheckIn(agent,fileHook);
         if (agent["rights_probe"]?["windows_product_type"] is null) result["windows_product_type_required"] = true;
         // The management command runs while the server verifies coverage. Until then the agent cannot capture events.
-        if(agent["file_audit"]?["permissions_scope"] is not null
+        if((agent["file_audit"]?["permissions_scope"] is not null || agent["file_audit"]?["permissions_scopes"] is not null
+            || agent["file_audit"]?["permissions_restore_scopes"] is not null)
             && AgentPolicyAssignments.FindCurrent(result["assigned_modules"]!.AsArray(),"sli.file-audit") is { } fileAssignment
             && (!await AgentPolicyAssignments.FilePermissionsAvailableAsync(db,tx,ct)
                 || !await AgentPolicyAssignments.FilePermissionsAllowedAsync(db,tx,identity.Id,null,true,ct)))

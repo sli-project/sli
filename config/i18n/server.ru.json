@@ -1,4 +1,6 @@
 {
+  "plugins.sli.file-audit.settings.excluded_accounts.label": "Не учитывать учётные записи",
+  "plugins.sli.file-audit.settings.excluded_accounts.help": "Исключает этих пользователей и участников групп из подсчёта изменений прав.",
   "reports.v2.security.events.chains.actions.1102": "Очистка журнала безопасности",
   "reports.v2.security.events.chains.actions.4624": "Успешный вход",
   "reports.v2.security.events.chains.actions.4625": "Неудачный вход",

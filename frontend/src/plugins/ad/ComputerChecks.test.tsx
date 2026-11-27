@@ -212,11 +212,11 @@ it("keeps checks selected after URL persistence and restores tabs through browse
 
 it("shows an empty comparison without source warnings or a note", async () => {
   window.history.replaceState(null, "", "/app/report/ad.computers.v6?tab=changes&domain_id=8");
-  respond = () => page({ items: [], collections: { changes: [] }, coverage: { comparison_missing_domains: ["example.test"],
+  respond = () => page({ items: [], filtered_count: 0, collections: { changes: [] }, coverage: { comparison_missing_domains: ["example.test"],
     domains: [{ domain_name: "example.test", state: "complete", observed_at_utc: new Date().toISOString() }] } });
   const { container } = show();
   const comparison = within(await screen.findByRole("tabpanel", { name: "Изменения" }));
-  await comparison.findByRole("status");
+  await waitFor(() => expect(comparison.getByRole("status").textContent).toBe("За выбранный период изменений компьютеров нет."));
   expect(container.querySelectorAll('.sli-ds-callout[data-tone="warning"]')).toHaveLength(0);
   expect(container.textContent).not.toContain("Synthetic computer changes note");
   expect(comparison.getAllByRole("status")).toHaveLength(1);

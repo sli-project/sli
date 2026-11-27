@@ -89,7 +89,7 @@ export function computerInventoryColumns(columns: ReportColumnDto[], timeZone: s
         last_logon_utc: { label: t("reports.computers.last_logon"), render: (row) => <ComputerLastLogon row={row}/>, sortable: false },
         ip_addresses: { label: t("reports.computers.dns"), render: (row) => addressText(row) ?? dash() },
         laps_state: { label: t("reports.computers.laps"), kind: "datetime", value: (row) => record(row.laps).expiration_utc, render: undefined },
-        sli_agent: { label: t("reports.computers.agent"), render: (row) => <AgentSignal row={row}/> },
+        sli_agent: { label: t("reports.computers.agent"), render: (row) => agentSignal(row, timeZone) },
       };
       return { ...column, ...overrides[column.key], hiddenByDefault: column.key === "display_name" ? undefined : false };
     });
@@ -114,11 +114,16 @@ function addressText(row: Row) {
   return Array.isArray(values) ? values.filter((value): value is string => typeof value === "string").join(", ") || undefined : undefined;
 }
 
-function AgentSignal({ row }: { row: Row }) {
-  const { formatDateTime } = useDateFormatters();
+function agentSignal(row: Row, timeZone: string) {
   const agent = record(row.sli_agent);
-  return agent.state === "absent" ? t("reports.computers.no_registration")
-    : text(agent.last_seen_utc) ? formatDateTime(String(agent.last_seen_utc)) : dash();
+  if (agent.state === "absent") return dash();
+  if (agent.state !== "installed" && agent.state !== "silent") return t("reports.computers.agent_unknown");
+  const stamp = text(agent.last_seen_utc);
+  const signal = stamp
+    ? t(agent.state === "silent" ? "reports.computers.agent_silent" : "reports.computers.agent_connected", {
+      time: formatZonedDateTime(stamp, timeZone, { withYear: false }),
+    }) : t("agents.notConnected");
+  return [text(agent.version), signal].filter(Boolean).join(" · ");
 }
 
 function ComputerFacts({ row }: { row: Row }) {

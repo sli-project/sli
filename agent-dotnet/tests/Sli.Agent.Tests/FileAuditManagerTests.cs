@@ -357,6 +357,49 @@ public sealed class FileAuditManagerTests : IDisposable
     }
 
     [Fact]
+    public void AddingAndRestoringSecondSharePreservesFirstShareOwnership()
+    {
+        var api = new FakeFileApi(_dir);
+        var secondPath = @"C:\projects";
+        var second = new FakeFileApi.FakeObject(api, secondPath);
+        api.AdditionalRoots.Add(secondPath, second);
+        var manager = new FileAuditManager(_dir, _files, api);
+        var audit = new FakeAudit();
+        var first = manager.Reconcile(Policy(Request()), audit, Helpers.Now).Report!;
+        manager.Acknowledge(first);
+
+        var config = Config();
+        var addedRoot = config["roots"]![0]!.DeepClone().AsObject();
+        addedRoot["collection_scope_id"] = "scope:two";
+        addedRoot["path"] = secondPath;
+        addedRoot["share_name"] = "Projects";
+        config["roots"]!.AsArray().Add(addedRoot);
+        var applyBoth = Request("apply", "both", config);
+        applyBoth["command"]!["collection_scope_ids"] = new JsonArray("scope:one", "scope:two");
+        for (int i = 0; i < 2; i++)
+        {
+            var applied = manager.Reconcile(Policy(applyBoth), audit, Helpers.Now.AddSeconds(i + 1)).Report!;
+            Assert.Equal("verified", applied["scopes"]![0]!["state"]!.ToString());
+            manager.Acknowledge(applied);
+        }
+        Assert.Equal("S:exact-inheritance", api.Object.Row["sacl"]!.ToString());
+        Assert.Equal("S:exact-inheritance", second.Row["sacl"]!.ToString());
+
+        var restoreSecond = Request("restore", "second-only", config.DeepClone().AsObject());
+        restoreSecond["command"]!["collection_scope_ids"] = new JsonArray("scope:two");
+        var restored = manager.Reconcile(Policy(restoreSecond), audit, Helpers.Now.AddSeconds(3)).Report!;
+        Assert.Equal("verified", restored["scopes"]![0]!["state"]!.ToString());
+        Assert.False(restored["ownership_remaining"]!.GetValue<bool>());
+        Assert.Equal("S:old", second.Row["sacl"]!.ToString());
+        Assert.Equal("S:exact-inheritance", api.Object.Row["sacl"]!.ToString());
+        manager.Acknowledge(restored);
+
+        var restoreFirst = manager.Reconcile(Policy(Request("restore", "first-only")), audit, Helpers.Now.AddSeconds(4)).Report!;
+        Assert.Equal("verified", restoreFirst["scopes"]![0]!["state"]!.ToString());
+        Assert.Equal("S:old", api.Object.Row["sacl"]!.ToString());
+    }
+
+    [Fact]
     public void ForeignReadbackNeverBecomesOwnedAndRestoreDoesNotOverwriteIt()
     {
         var api = new FakeFileApi(_dir) { ForeignReadback = true };
@@ -465,6 +508,7 @@ public sealed class FileAuditManagerTests : IDisposable
         private readonly string _dir;
         public FakeFileApi(string dir) { _dir=dir; Object = new FakeObject(this); }
         public FakeObject Object { get; }
+        public Dictionary<string, FakeObject> AdditionalRoots { get; } = new(StringComparer.OrdinalIgnoreCase);
         public int Writes { get; set; }
         public bool ForeignReadback { get; set; }
         public bool FailAfterWrite { get; set; }
@@ -505,7 +549,7 @@ public sealed class FileAuditManagerTests : IDisposable
         public IFileAuditObject Open(string path,string root)
         {
             FailRead("directory");
-            if (path == root) return Object;
+            if (path == root) return AdditionalRoots.GetValueOrDefault(path, Object);
             if (RejectChildren) throw new AgentException("file_audit_reparse_point");
             var child=new FakeObject(this); child.Row["object_type"]="file"; child.Row["sacl"]=ChildSacl; child.Row["dacl"]=Object.Row["dacl"]!.DeepClone();
             return child;
@@ -523,7 +567,7 @@ public sealed class FileAuditManagerTests : IDisposable
             if (UnresolvedGroupSid && !allowUnresolvedSid) throw new AgentException("file_audit_group_sid_unresolved");
             return new() { ["complete"] = !UnresolvedGroupSid && !IncompleteGroupPage, ["groups"] = new JsonArray() };
         }
-        public sealed class FakeObject(FakeFileApi api) : IFileAuditObject
+        public sealed class FakeObject(FakeFileApi api, string auditPath = @"C:\synthetic") : IFileAuditObject
         {
             public JsonObject Row { get; } = new() { ["object_id"]="1:2:3",["object_type"]="directory",["owner_sid"]="S-1-5-18",["dacl"]="D:(A;;FA;;;SY)",["sacl"]="S:old",["sacl_protected"]=false };
             public JsonObject Describe()
@@ -536,7 +580,7 @@ public sealed class FileAuditManagerTests : IDisposable
             public void SetSacl(string value)
             {
                 var state = JsonNode.Parse(File.ReadAllBytes(Path.Combine(api._dir,"state.json")))!;
-                Assert.Contains(state["objects"]![@"C:\synthetic"]!["phase"]!.ToString(),new[] {"pending","restoring"});
+                Assert.Contains(state["objects"]![auditPath]!["phase"]!.ToString(),new[] {"pending","restoring"});
                 api.Writes++; Row["sacl"]=api.ForeignReadback ? "S:foreign" : value;
                 if (api.ChangeDacl) Row["dacl"]="D:foreign";
                 if (api.FailAfterWrite) { api.FailAfterWrite=false; throw new IOException("private-native-error"); }

@@ -8,12 +8,10 @@ import { ApiResponseError, type AgentItem } from "../../api/client";
 import { localeRuntime, setLocale, t } from "../../i18n";
 import { formatDateTime } from "../../shared/date-time";
 
-const state = vi.hoisted(() => ({ list: vi.fn(), action: vi.fn(), token: vi.fn(), auditStatus: vi.fn(), auditCatalog: vi.fn(), accessRevision: "first", owner: false, capabilities: [] as string[], deploymentDirectory: vi.fn(), deploymentTemplates: vi.fn(), deploymentTokens: vi.fn(), deploymentIssue: vi.fn(), deploymentWaves: vi.fn(),
+const state = vi.hoisted(() => ({ list: vi.fn(), action: vi.fn(), token: vi.fn(), accessRevision: "first", owner: false, capabilities: [] as string[], deploymentDirectory: vi.fn(), deploymentTemplates: vi.fn(), deploymentTokens: vi.fn(), deploymentIssue: vi.fn(), deploymentWaves: vi.fn(),
   configurePackage: vi.fn(), consoleSettings: vi.fn(), consoleTokens: vi.fn(), revokeConsoleToken: vi.fn(), setupStatus: vi.fn() }));
 vi.mock("../App", () => ({ useEffectiveAccess: () => ({ platform_owner: state.owner, capabilities: state.capabilities, subject: { type: "session", id: 1, username: "fixture-owner" }, evaluated_at_utc: state.accessRevision }), useTimeZone: () => ({ timeZone: "UTC" }) }));
 vi.mock("../../api/client", async (original) => ({ ...await original<typeof import("../../api/client")>(), api: {
-  agentFileAuditStatus: (agentId: string) => state.auditStatus(agentId),
-  agentFileAuditCatalog: (agentId: string) => state.auditCatalog(agentId),
   agentDeploymentDirectory: (body: { domain_id?: number }) => state.deploymentDirectory(body),
   agentTemplates: () => state.deploymentTemplates(), agentGroupTokens: () => state.deploymentTokens(),
   createAgentGroupToken: (body: unknown) => state.deploymentIssue(body), agentUpdateWaves: () => state.deploymentWaves(),
@@ -47,7 +45,6 @@ beforeEach(() => {
   state.owner = true; state.capabilities = []; state.accessRevision = "first";
   setLocale("ru"); window.history.replaceState(null, "", "/app/agents");
   state.list.mockResolvedValue({ items: [agent] }); state.action.mockResolvedValue({});
-  state.auditStatus.mockRejectedValue(new ApiResponseError(404));
   state.setupStatus.mockResolvedValue({});
   state.deploymentDirectory.mockResolvedValue({ domains: [] }); state.deploymentTemplates.mockResolvedValue({ items: [] });
   state.deploymentTokens.mockResolvedValue({ items: [] }); state.deploymentWaves.mockResolvedValue({ items: [] });
@@ -70,50 +67,12 @@ async function manual() {
   fireEvent.change(screen.getByLabelText(t("agents.fingerprint")), { target: { value: "a".repeat(64) } });
 }
 
-it("applies the reported share to the agent opened in the card", async () => {
-  const share = { share_name: "Finance", path: "C:\\Finance", collection_scope_id: "scope:finance" };
-  state.list.mockResolvedValue({ items: [{ ...agent, collection_policy: { manage_windows_audit: true } }] });
-  state.auditCatalog.mockResolvedValue({ state: "ready", items: [share], saved_selection: null, saved_command: null });
-  state.action.mockImplementation(async (_kind, body) => ({ state: "pending", command_id: body.command.command_id, policy_revision: 3 }));
-
-  const user = userEvent.setup();
+it("links file-server agents to Resources for audit management", async () => {
+  state.list.mockResolvedValue({ items: [{ ...agent, machine_role: "file_server" }] });
   mount();
   const card = within(await openCard());
-  await user.click(card.getByRole("checkbox", { name: t("agents.fileServer.role") }));
-  await user.click(card.getByLabelText(t("agents.fileServer.folder"), { selector: "button" }));
-  await user.click(await screen.findByRole("option", { name: `${share.share_name} · ${share.path}` }));
-  await user.click(card.getByRole("button", { name: t("agents.saveAudit") }));
-  await waitFor(() => expect(state.action).toHaveBeenCalledWith("file-audit", expect.objectContaining({
-    agent_id: agent.id, expected_revision: 2, enabled: true, activate_collection: true,
-    command: expect.objectContaining({ action: "apply", collection_scope_ids: ["scope:finance"] }),
-    config: expect.objectContaining({ source_kind: "server", roots: [expect.objectContaining(share)] }),
-  })));
-});
-
-it("removes the file-server role and displays the agent's restoration receipt after reopening the card", async () => {
-  const root = { share_name: "Finance", path: "C:\\Finance", collection_scope_id: "scope:finance", important: false,
-    sacl: { trustee_sids: ["S-1-1-0"], inherit_files: true, inherit_directories: true } };
-  state.list.mockResolvedValue({ items: [{ ...agent,
-    assigned_modules: [{ module_id: "sli.file-audit", enabled: true, config: { source_kind: "server", roots: [root] } }] }] });
-  vi.spyOn(window, "confirm").mockReturnValue(true);
-  state.action.mockImplementation(async (_kind, body) => {
-    state.list.mockResolvedValue({ items: [{ ...agent, policy_revision: 3 }] });
-    state.auditStatus.mockResolvedValue({ command: body.command, state: "verified", reported_at: "2026-11-26T12:05:00Z",
-      may_own_audit: false, folders: { "scope:finance": root.path }, scopes: { "scope:finance": { state: "verified", reason_code: "ok" } } });
-    return { state: "pending", command_id: body.command.command_id, policy_revision: 3 };
-  });
-  const user = userEvent.setup();
-  mount();
-  const card = within(await openCard());
-  await user.click(card.getByRole("checkbox", { name: t("agents.fileServer.role") }));
-  await waitFor(() => expect(state.action).toHaveBeenCalledWith("file-audit", expect.objectContaining({
-    agent_id: agent.id, remove_assignment: true, command: expect.objectContaining({ action: "restore", collection_scope_ids: ["scope:finance"] }),
-  })));
-  await card.findByText(new RegExp(t("agents.fileServer.restored")));
-  await user.click(card.getByRole("button", { name: t("drawer.close") }));
-  const reopened = within(await openCard());
-  expect((reopened.getByRole("checkbox", { name: t("agents.fileServer.role") }) as HTMLInputElement).checked).toBe(false);
-  await reopened.findByText(new RegExp(t("agents.fileServer.restored")));
+  expect(card.getByRole("link", { name: t("file-audit.screen.overview") }).getAttribute("href")).toContain("file-audit.overview");
+  expect(state.action).not.toHaveBeenCalled();
 });
 
 it("denies before loading inventory without owner or access.manage", () => {
@@ -381,7 +340,6 @@ it("opens the domain form for the linked domain controller", async () => {
 it("offers registration in the add panel and hides file audit", async () => {
   mount(); await screen.findByText(agent.host_name!);
   expect(state.deploymentDirectory).not.toHaveBeenCalled();
-  expect(screen.queryByText(t("agents.fileAudit.title"))).toBeNull();
   alternativeRegistration();
   const drawer = screen.getByRole("dialog", { name: t("agents.addComputer") });
   expect(within(drawer).getByRole("tab", { name: t("agents.deployment.title") }).getAttribute("aria-selected")).toBe("true");

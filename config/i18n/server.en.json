@@ -1,4 +1,6 @@
 {
+  "plugins.sli.file-audit.settings.excluded_accounts.label": "Exclude accounts",
+  "plugins.sli.file-audit.settings.excluded_accounts.help": "Omit these users and group members from permission-change counts.",
   "reports.v2.security.events.chains.actions.1102": "Security log cleared",
   "reports.v2.security.events.chains.actions.4624": "Successful sign-in",
   "reports.v2.security.events.chains.actions.4625": "Failed sign-in",

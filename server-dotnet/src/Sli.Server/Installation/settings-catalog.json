@@ -82,6 +82,13 @@
     "environment": ""
   },
   {
+    "key": "file_audit.excluded_accounts",
+    "label": "plugins.sli.file-audit.settings.excluded_accounts.label",
+    "description": "plugins.sli.file-audit.settings.excluded_accounts.help",
+    "environment": "",
+    "default": "[]"
+  },
+  {
     "key": "workstations.logon_policy",
     "label": "workstations.logon_policy.title",
     "description": "workstations.logon_policy.description",

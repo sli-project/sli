@@ -219,6 +219,8 @@ describe("AppShell", () => {
       for (const name of ["Настройки", "Правила", "Отчёты"]) {
         expect(await main.findByRole("tab", { name })).toBeTruthy();
       }
+    }
+    if (id === "sli.workstations" || id === "sli.file-audit") {
       expect(main.queryByRole("tab", { name: "Подключение" })).toBeNull();
     } else {
       await userEvent.click(main.getByRole("tab", { name: "Подключение" }));
