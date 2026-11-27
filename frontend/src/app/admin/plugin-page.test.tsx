@@ -70,7 +70,7 @@ beforeEach(() => {
     if (path === "/api/v2/reports") return json({ contract_id: "sli.report-catalog.v2", items: [
       { key: "ad.infrastructure", title: "Состояние домена", description: "Каталог", section: "active-directory", section_title: "AD", owner_id: "sli.ad" },
       { key: "ad.gpo.v2", title: "Политики", description: "GPO", section: "active-directory", section_title: "AD", owner_id: "sli.gpo" },
-      { key: "workstations.protection", title: "Защита", description: "Время снимка показывает его свежесть; неизвестные флаги не подтверждают защиту.", section: "workstations", section_title: "Workstations", owner_id: "sli.workstations" },
+      { key: "workstations.protection", title: "Защита", description: "Последний снимок Defender независимо от периода и события изменений за период.", section: "workstations", section_title: "Workstations", owner_id: "sli.workstations" },
     ] });
     if (path === "/api/v1/semantic/sigma-live-rules") {
       if (sigmaReadFailed) return json({ error: "unexpected_error" }, 503);
@@ -172,11 +172,12 @@ it("keeps VPN setup and declared rules available while hiding empty Settings and
   expect(await screen.findByText(t("pluginPage.radius.missing"))).toBeTruthy();
 });
 
-it("keeps the workstation protection report link without the technical paragraph", async () => {
+it("keeps the workstation protection report link without a description paragraph", async () => {
   mount("sli.workstations");
   fireEvent.click(await screen.findByRole("tab", { name: t("pluginPage.tab.reports") }));
   const panel = screen.getByRole("tabpanel");
   expect(within(panel).getByRole("link", { name: "Защита" }).getAttribute("href")).toBe("/app/report/workstations.protection");
+  expect(within(panel).queryByText(/Последний снимок Defender/)).toBeNull();
   expect(panel.textContent).not.toMatch(/Время снимка|неизвестные флаги/);
 });
 

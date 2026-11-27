@@ -386,6 +386,32 @@ public sealed partial class HomeSummaryEndpointTests
         Assert.DoesNotContain(rows.Calls, c => c.Sql.Contains("investigation") || c.Sql.Contains("finding_status_history"));
     }
 
+    [Theory]
+    [InlineData("v4", true)]
+    [InlineData("v5", true)]
+    [InlineData("v5", false)]
+    public async Task HomeWithoutDomainsMeasuresAnEmptyQueueWithGlobalAccess(string contract, bool globalAccess)
+    {
+        var queue = Report("security.problems");
+        if (globalAccess)
+        {
+            var grant = queue.Decision.Grants[0] with { Scope = JsonSerializer.SerializeToElement(new { kind = "all" }) };
+            queue = queue with { Decision = queue.Decision with { Grants = [grant] } };
+        }
+        var rows = new Rows(populated: false);
+        var (status, body) = await Request("?contract=" + contract, rows, false, queue);
+        Assert.Equal(200, status);
+        Assert.Null(body["domain_id"]);
+        Assert.Empty(body["domains"]!.AsArray());
+        var problems = Assert.IsType<JsonObject>(body["problems"]);
+        int? expectedCount = globalAccess ? 0 : null;
+        Assert.Equal(expectedCount, (int?)problems["open_count"]);
+        Assert.Equal(expectedCount, (int?)problems["hygiene"]);
+        Assert.Equal(expectedCount, (int?)problems["other"]);
+        Assert.Empty(problems["items"]!.AsArray());
+        Assert.Empty(rows.Calls);
+    }
+
     private static async Task<(int Status, JsonObject Body)> Request(string query, Rows rows, bool populated = true, params HomeReport[] reports) =>
         await RequestWithArchive(query, rows, populated, false, reports);
 
