@@ -24,33 +24,47 @@ public static class AgentFileAuditValidator
             && eventId==4670 && action["operation"]?.ToString()=="permissions");
     }
 
-    public static JsonArray Validate(Envelope e,JsonObject packet,FileAuditPolicy policy,Guid host)
+    public static JsonArray Validate(Envelope e,JsonObject packet,FileAuditPolicy policy,Guid host,
+        bool serverFileEventsOnly=false,bool transportGap=false)
     {
-        try { return ValidateCore(e,packet,policy,host); }
+        try { return ValidateCore(e,packet,policy,host,serverFileEventsOnly,transportGap); }
+        catch(ProtocolException error) when (error.Code==Receipt.FileAuditInvalid) { throw; }
         catch(Exception error) when (error is AgentException or ProtocolException or JsonException or ArgumentException or InvalidOperationException or NullReferenceException or FormatException or OverflowException)
-        { throw new ProtocolException("agent_file_audit_packet_invalid"); }
+        { throw new ProtocolException(Receipt.FileAuditInvalid,Receipt.FileAuditInvalidPayload); }
     }
-    private static JsonArray ValidateCore(Envelope e,JsonObject packet,FileAuditPolicy p,Guid host)
+    private static JsonArray ValidateCore(Envelope e,JsonObject packet,FileAuditPolicy p,Guid host,bool serverFileEventsOnly,bool transportGap)
     {
         static void Require(bool value) { if (!value) throw new ArgumentException(); }
         CollectionPacket.Validate(packet);
-        bool actions=packet["records"]!.AsArray().Any(r=>r?["format"]?.GetValue<string>()=="file_action");
-        var rows=actions ? ExtractActions(packet) : AgentCollectionRows.ExtractEvents(packet); string hostId=host.ToString("D");
+        var records=packet["records"]!.AsArray();
+        bool actions=records.Any(r=>r?["format"]?.GetValue<string>()=="file_action");
+        string hostId=host.ToString("D");
         string source=p.Value["source_name"]?.GetValue<string>() ?? hostId; var header=packet["header"]!.AsObject();
-        Require(e.ModuleId==FileAuditPolicy.ModuleId && e.SourceInstanceId==hostId && ValidGeneration(e.Generation,hostId)
-            && e.Channel=="Security" && e.ModuleVersion=="1.0.0" && e.PayloadContract==CollectionPacket.Contract && e.PolicyRevision==p.Revision
-            && header["source"]!.GetValue<string>()==source && header["generation"]!.GetValue<string>()==e.Generation && header["channel"]!.GetValue<string>()=="Security"
+        if (!MatchesHost(e,host) || header["source"]!.GetValue<string>()!=source || header["generation"]!.GetValue<string>()!=e.Generation)
+            throw new ProtocolException(Receipt.FileAuditInvalid,Receipt.FileAuditHostMismatch);
+        var context=packet["context"]!.AsObject();
+        if (e.PolicyRevision!=p.Revision || context["policy_revision"]?.GetValue<string>()!=p.Revision)
+            throw new ProtocolException(Receipt.FileAuditInvalid,Receipt.FileAuditRevisionMismatch);
+        if (serverFileEventsOnly && !actions && records.Any(record => JsonRead.TryInteger(record?["payload"]?["event_id"],out var id)
+            && (id<0 || id>int.MaxValue || !p.IsServerFileEvent((int)id))))
+            throw new ProtocolException(Receipt.FileAuditInvalid,Receipt.FileAuditWrongEvent);
+        if (!actions && records.Any(record => record?["format"]?.GetValue<string>()=="event_xml"
+            && !JsonNode.DeepEquals(record["payload"]?["computer_name"],header["source"])))
+            throw new ProtocolException(Receipt.FileAuditInvalid,Receipt.FileAuditHostMismatch);
+        var rows=actions ? ExtractActions(packet) : AgentCollectionRows.ExtractEvents(packet);
+        Require(e.ModuleId==FileAuditPolicy.ModuleId && e.Channel=="Security" && e.ModuleVersion=="1.0.0" && e.PayloadContract==CollectionPacket.Contract
+            && header["channel"]!.GetValue<string>()=="Security"
             && AgentAdDcUtc.Parse(header["observed_at_utc"]!.GetValue<string>())==AgentAdDcUtc.Parse(e.ObservedAtUtc)
             && CanonicalJson.Length(packet)<=Math.Min(p.Number("max_bytes"),44*1024));
         var before=State(e.CursorBefore,hostId); var after=State(e.CursorAfter,hostId);
-        var start=Id(before["record_id"]); var last=Id(after["record_id"]); var context=packet["context"]!.AsObject();
+        var start=Id(before["record_id"]); var last=Id(after["record_id"]);
         var objectKinds = context["object_kinds"] as JsonObject;
         string[] contextFields = ["policy_revision","filtered_count","lost_count","read_error"];
         Require(objectKinds is null ? JsonRead.HasExactly(context,contextFields)
             : !actions && !p.Workstation && objectKinds.Count > 0
                 && JsonRead.HasExactly(context,[..contextFields,"object_kinds"]));
         Require(
-            context["policy_revision"]!.GetValue<string>()==p.Revision && JsonRead.TryInteger(context["filtered_count"],out var filteredValue) && filteredValue>=0 && filteredValue<=long.MaxValue);
+            JsonRead.TryInteger(context["filtered_count"],out var filteredValue) && filteredValue>=0 && filteredValue<=long.MaxValue);
         long filtered=(long)Integer(context["filtered_count"]); long? lost=context["lost_count"] is null ? null : (long)Integer(context["lost_count"]);
         string? error=context["read_error"]?.GetValue<string>(); bool gap=error=="file_audit_journal_gap";
         Require(lost is null || lost>=0);
@@ -65,7 +79,7 @@ public static class AgentFileAuditValidator
         var comparableAfter=(JsonObject)after.DeepClone(); comparableAfter.Remove("since_utc");
         Require(error is null or "file_audit_read_failed" or "file_audit_journal_gap"
             && (lost is null)==(error is not null) && rows.Count+filtered+(lost ?? 0)<=Math.Min(p.Number("max_events"),256)
-            && e.FilteredCount==filtered && e.LostCount==lost && e.ContinuityState==(error is not null || lost>0 ? "gap" : filtered>0 ? "filtered" : "not_proven")
+            && e.FilteredCount==filtered && e.LostCount==lost && e.ContinuityState==(transportGap || error is not null || lost>0 ? "gap" : filtered>0 ? "filtered" : "not_proven")
             && JsonNode.DeepEquals(packet["continuity"],new JsonObject { ["status"]="not_proven" })
             && PythonMetadataEquality.Equal(header["cursor"],new JsonObject { ["after_record_id"]=start is null ? null : JsonRead.Integer(start.Value), ["last_record_id"]=last is null ? null : JsonRead.Integer(last.Value) }));
         Require(after["generation"]!.GetValue<string>()==e.Generation
@@ -94,7 +108,7 @@ public static class AgentFileAuditValidator
                     objectKind = kind;
                     matchedKinds++;
                 }
-                AgentFileAuditEvents.Validate(row,p,source,objectKind);
+                AgentFileAuditEvents.Validate(row,p,source,objectKind,serverFileEventsOnly);
             }
         }
         Require(matchedKinds == (objectKinds?.Count ?? 0));
@@ -120,6 +134,27 @@ public static class AgentFileAuditValidator
     private static BigInteger? Id(JsonNode? n) => n is null ? null : Integer(n)>0 ? Integer(n) : throw new ArgumentException();
     private static bool ValidGeneration(string value,string host) => value==host || value.StartsWith(host+":",StringComparison.Ordinal)
         && Guid.TryParseExact(value[(host.Length+1)..],"D",out var guid) && guid.ToString("D")==value[(host.Length+1)..];
+    internal static bool MatchesHost(Envelope envelope,Guid host) =>
+        envelope.SourceInstanceId==host.ToString("D") && ValidGeneration(envelope.Generation,host.ToString("D"));
+
+    internal static bool CanAdvanceRejected(Envelope envelope,Guid host)
+    {
+        if (!MatchesHost(envelope,host) || envelope.Channel!="Security" || envelope.ModuleVersion!="1.0.0"
+            || envelope.PayloadContract!=CollectionPacket.Contract) return false;
+        try
+        {
+            string hostId=host.ToString("D");
+            var before=State(envelope.CursorBefore,hostId);
+            var after=State(envelope.CursorAfter,hostId);
+            var start=Id(before["record_id"]); var last=Id(after["record_id"]);
+            return after["generation"]!.GetValue<string>()==envelope.Generation
+                && (before["generation"]!.GetValue<string>()==envelope.Generation || envelope.CursorBefore.Token=="")
+                && (start is null || last is not null && last>=start);
+        }
+        catch (Exception error) when (error is JsonException or ArgumentException or InvalidOperationException or NullReferenceException or FormatException)
+        { return false; }
+    }
+
     private static JsonObject State(Cursor cursor,string host)
     {
         if (cursor.Strategy!="bookmark") throw new ArgumentException();

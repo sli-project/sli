@@ -1,9 +1,10 @@
 namespace Sli.Agent.Protocol;
 
 /// <summary>A protocol violation. <see cref="Code"/> is a fixed code: it never carries input values.</summary>
-public sealed class ProtocolException(string code) : Exception(code)
+public sealed class ProtocolException(string code, string? reason = null) : Exception(code)
 {
     public string Code { get; } = code;
+    public string? Reason { get; } = reason;
 }
 
 /// <summary>Fixed error codes shared with the Python agent and the server.</summary>

@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Globalization;
 using Sli.Agent.Protocol;
 
 namespace Sli.Agent.Core;
@@ -17,7 +18,7 @@ public interface IPacketQueue
 
     SignedPacket PrepareDelivery(SignedPacket packet, IPacketSigner? signer);
 
-    /// <summary>Closes the oldest packet on exact proof or expiration; a module-disable receipt closes that module's queue.</summary>
+    /// <summary>Closes the oldest packet on exact proof or a final refusal; module disable closes that module's queue.</summary>
     bool Acknowledge(SignedPacket packet, JsonNode? receipt);
 
     long MaxBytes { get; set; }
@@ -31,6 +32,7 @@ public interface IPacketQueue
 public sealed class FilePacketQueue : IPacketQueue, IDisposable
 {
     public const string HistoryModuleId = "sli.windows.ad-dc-history";
+    private const int QuarantineRetention = 64;
     private readonly string _root;
     private readonly IDurableFiles _files;
     private readonly FileStream _lock;
@@ -77,9 +79,12 @@ public sealed class FilePacketQueue : IPacketQueue, IDisposable
         public bool GapPending { get; set; }
         public string? ExpiredFromUtc { get; set; }
         public string? ExpiredToUtc { get; set; }
+        public long Quarantined { get; set; }
+        public string? LastRejectionReason { get; set; }
 
         public ModuleState Clone() => new() { Committed = Committed, Captured = Captured,
-            GapPending = GapPending, ExpiredFromUtc = ExpiredFromUtc, ExpiredToUtc = ExpiredToUtc };
+            GapPending = GapPending, ExpiredFromUtc = ExpiredFromUtc, ExpiredToUtc = ExpiredToUtc,
+            Quarantined = Quarantined, LastRejectionReason = LastRejectionReason };
     }
 
     private string StatePath => Path.Combine(_root, "checkpoints.json");
@@ -148,6 +153,8 @@ public sealed class FilePacketQueue : IPacketQueue, IDisposable
                     GapPending = item["gap_pending"]?.GetValue<bool>() ?? false,
                     ExpiredFromUtc = item["expired_from_utc"]?.GetValue<string>(),
                     ExpiredToUtc = item["expired_to_utc"]?.GetValue<string>(),
+                    Quarantined = item["quarantined"]?.GetValue<long>() ?? 0,
+                    LastRejectionReason = item["last_rejection_reason"]?.GetValue<string>(),
                 };
             }
             return state;
@@ -170,6 +177,8 @@ public sealed class FilePacketQueue : IPacketQueue, IDisposable
                 ["gap_pending"] = module.GapPending,
                 ["expired_from_utc"] = module.ExpiredFromUtc,
                 ["expired_to_utc"] = module.ExpiredToUtc,
+                ["quarantined"] = module.Quarantined,
+                ["last_rejection_reason"] = module.LastRejectionReason,
             };
         }
         _files.WriteAtomic(StatePath, CanonicalJson.ToBytes(root));
@@ -192,6 +201,15 @@ public sealed class FilePacketQueue : IPacketQueue, IDisposable
             // Disk usage, not packet age, limits capture.
             Recover();
             return Entries().Select(item => item.Packet).ToList();
+        }
+    }
+
+    public (long Count, string? Reason) FileAuditQuarantine()
+    {
+        lock (_gate)
+        {
+            var state = _state.GetValueOrDefault(FileAuditPolicy.ModuleId);
+            return state is null ? (0,null) : (state.Quarantined,state.LastRejectionReason);
         }
     }
 
@@ -243,7 +261,8 @@ public sealed class FilePacketQueue : IPacketQueue, IDisposable
         var envelope = packet.Envelope;
         var expired = Receipt.IsExpired(envelope, receipt);
         var disabled = Receipt.IsModuleDisabled(envelope, receipt);
-        if (!expired && !disabled && !Receipt.IsDeliveryProof(envelope, receipt)) return false;
+        var rejected = Receipt.IsFinalFileAuditRejection(envelope, receipt);
+        if (!expired && !disabled && !rejected && !Receipt.IsDeliveryProof(envelope, receipt)) return false;
         lock (_gate)
         {
             Recover();
@@ -253,16 +272,25 @@ public sealed class FilePacketQueue : IPacketQueue, IDisposable
             var module = state[envelope.ModuleId];
             if (envelope.Sequence != module.Committed + 1) return false;
             module.Committed = disabled ? entries[^1].Packet.Envelope.Sequence : envelope.Sequence;
-            if (expired || disabled)
+            if (expired || disabled || rejected)
             {
                 if (!module.GapPending) module.ExpiredFromUtc = envelope.ObservedAtUtc;
                 module.ExpiredToUtc = disabled ? entries[^1].Packet.Envelope.ObservedAtUtc : envelope.ObservedAtUtc;
                 module.GapPending = true;
             }
             else if (envelope.ContinuityState == "gap") module.GapPending = false;
+            if (rejected)
+            {
+                var name = envelope.Sequence.ToString("D19",CultureInfo.InvariantCulture) + "-" + envelope.PacketId + ".rejected";
+                _files.WriteAtomic(Path.Combine(_root,name),Encoding.ASCII.GetBytes(packet.ToCanonical()));
+                module.Quarantined++;
+                module.LastRejectionReason = Receipt.FileAuditRejectionReason(receipt);
+            }
             SaveState(state); // the delivery checkpoint before the evidence is deleted
             _state = state;
             foreach(var entry in disabled ? entries : entries.Take(1)) _files.Delete(entry.Path);
+            if (rejected)
+                foreach (var path in _files.List(_root,"*.rejected").Reverse().Skip(QuarantineRetention)) _files.Delete(path);
             return true;
         }
     }

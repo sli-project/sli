@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using Npgsql;
 using Sli.Server.Compatibility;
 using Sli.Agent.Core;
+using Sli.Agent.Protocol;
 
 namespace Sli.Server.InstallationSetup;
 
@@ -21,11 +22,21 @@ public static class SetupCollectionHealth
     internal static JsonArray DataGaps(JsonNode? expiry) => new((expiry as JsonObject ?? new())
         .Where(m => m.Value?["data_gap"] is JsonObject gap
             && Time(gap["from_utc"]) is {} from && Time(gap["to_utc"]) is {} to && from <= to)
-        .Select(m => (JsonNode?)new JsonObject
+        .Select(m =>
         {
-            ["module_id"] = m.Key,
-            ["from_utc"] = m.Value!["data_gap"]!["from_utc"]?.DeepClone(),
-            ["to_utc"] = m.Value!["data_gap"]!["to_utc"]?.DeepClone(),
+            var gap = new JsonObject
+            {
+                ["module_id"] = m.Key,
+                ["from_utc"] = m.Value!["data_gap"]!["from_utc"]?.DeepClone(),
+                ["to_utc"] = m.Value!["data_gap"]!["to_utc"]?.DeepClone(),
+            };
+            if (m.Key == FileAuditPolicy.ModuleId && JsonRead.TryString(m.Value["last_rejection_reason"],out var reason)
+                && Receipt.IsFileAuditRejectionReason(reason) && N(m.Value["rejected_count"]) is > 0 and var count)
+            {
+                gap["last_rejection_reason"] = reason;
+                gap["rejected_count"] = count;
+            }
+            return (JsonNode?)gap;
         }).ToArray());
     internal static long ContactBudgetSeconds(long interval) => Math.Max(300, interval * 3);
     internal static string FreshStreamState(long? pendingAge, bool missingReadEvidence, bool hasImport)

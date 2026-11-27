@@ -1,4 +1,7 @@
 using System.Text.Json.Nodes;
+using System.Runtime.Versioning;
+using System.Xml.Linq;
+using System.Xml.XPath;
 using Sli.Agent.Core;
 using Sli.Agent.Protocol;
 using Sli.Agent.Windows;
@@ -26,9 +29,54 @@ public sealed class FileAuditTests
                 <EventRecordID>{{id}}</EventRecordID><TimeCreated SystemTime="2026-10-01T01:02:{{second:D2}}.1234567Z" /><Channel>Security</Channel></System>
               <EventData><Data Name="ObjectServer">Security</Data><Data Name="ObjectType">File</Data>
                 <Data Name="ObjectName">{{path}}</Data><Data Name="SubjectUserSid">S-1-5-21-1-2-3-1001</Data>
+                <Data Name="SubjectLogonId">0x12</Data><Data Name="ProcessId">0x10</Data><Data Name="HandleId">0x44</Data>
                 <Data Name="OldSd">D:(A;;FA;;;WD)</Data><Data Name="NewSd">{{newDescriptor}}</Data></EventData>
             </Event>
             """,$"instant-{id}");
+    }
+
+    [Fact]
+    [SupportedOSPlatform("windows")]
+    public void Server_activity_query_selects_only_file_events_and_the_clear_marker()
+    {
+        var config = FileAuditManagerTests.Config();
+        foreach (bool optional in new[] { false, true })
+        {
+            config["optional_events"] = optional;
+            var selector = FileAuditEventSource.Filter(FileAuditPolicy.Parse(config));
+            var selected = new List<int>();
+            foreach (int id in new[] { 1102,4624,4625,4656,4658,4659,4660,4663,4664,4670,5140,5145 })
+            {
+                var system = XElement.Parse($"<System><Provider Name='{(id == 1102 ? "Microsoft-Windows-Eventlog" : FileAuditPolicy.Provider)}'/><EventID>{id}</EventID></System>");
+                if ((bool)system.XPathEvaluate(selector)) selected.Add(id);
+            }
+            Assert.Equal(optional ? [1102,4656,4658,4660,4663,4670,5145] : new[] { 1102,4656,4660,4663,4670,5145 }, selected);
+        }
+    }
+
+    [Fact]
+    public void Server_activity_excludes_logons_and_paths_outside_the_scope()
+    {
+        const string root = @"C:\synthetic\share";
+        const string file = root + @"\notes.txt";
+        var config = FileAuditManagerTests.Config();
+        config["roots"]![0]!["path"] = root;
+        var rows = new[]
+        {
+            NativeRow(1,4625,file,10),
+            NativeRow(2,4663,root + @"-other\notes.txt",11),
+            NativeRow(3,4660,"",12),
+            NativeRow(4,4663,file,13),
+            NativeRow(5,1102,"",14)
+        };
+        var checkedPaths = new List<string>();
+        var module = new FileAuditModule(Helpers.HostId,FileAuditPolicy.Parse(config),new RowsSource(rows),
+            (path,_) => checkedPaths.Add(path));
+        var sample = module.Collect(null,Helpers.Now);
+        Assert.Equal([4663,1102],sample.Payload["records"]!.AsArray().Select(r => r!["payload"]!["event_id"]!.GetValue<int>()));
+        Assert.Equal([file],checkedPaths);
+        Assert.Equal(3,sample.FilteredCount);
+        Assert.Equal("gap",sample.ContinuityState);
     }
 
     [Fact]
@@ -43,7 +91,7 @@ public sealed class FileAuditTests
         share = new EventRow(share.Xml.Replace("ObjectName", "ShareLocalPath", StringComparison.Ordinal)
             .Replace("</EventData>", """<Data Name="RelativeTargetName">notes.txt</Data></EventData>""", StringComparison.Ordinal), share.Bookmark);
         var module = new FileAuditModule(Helpers.HostId,FileAuditPolicy.Parse(config),
-            new RowsSource([NativeRow(1,4663,file,10),NativeRow(2,4660,file,11),share,NativeRow(4,4670,file,13)]),
+            new RowsSource([NativeRow(1,4663,file,10),NativeRow(2,4660,"",11),share,NativeRow(4,4670,file,13)]),
             (path,scope) => { Assert.Equal(root,scope); Assert.Equal(file,path); },
             pathKind: (path,scope) => { Assert.Equal(root,scope); Assert.Equal(file,path); return "file"; });
         var sample = module.Collect(null, Helpers.Now);
@@ -221,11 +269,27 @@ public sealed class FileAuditTests
                 (path, root) => { if (name == "path-unavailable") throw new IOException("private-path"); }, _ => true,
                 newId:() => Guid.Parse("00000000-0000-4000-8000-000000000001"));
             var sample = module.Collect(position, Iso8601.ParseUtc(step["now"]!.GetValue<string>()));
-            Assert.Equal(step["payload_canonical"]!.GetValue<string>(), CanonicalJson.Serialize(sample.Payload));
+            var expected = JsonNode.Parse(step["payload_canonical"]!.GetValue<string>())!.AsObject();
+            var oldRows = expected["records"]!.AsArray();
+            // These historical capture fixtures contain rows excluded by the scoped server collector.
+            var excluded = name switch
+            {
+                "events-restart-filter" => oldRows.Where(r => r!["payload"]!["event_id"]!.GetValue<int>() is 4660 or 4624).ToArray(),
+                "handle-negative-evidence" => oldRows.ToArray(),
+                "important-optional" => oldRows.Where(r => r!["payload"]!["event_id"]!.GetValue<int>() == 4664).ToArray(),
+                _ => []
+            };
+            foreach (var row in excluded) oldRows.Remove(row);
+            long filtered = step["filtered_count"]!.GetValue<long>() + excluded.Length;
+            var range = expected["header"]!["record_id_range"]!;
+            range["first"] = oldRows.FirstOrDefault()?["record_id"]?.DeepClone();
+            range["last"] = oldRows.LastOrDefault()?["record_id"]?.DeepClone();
+            expected["context"]!["filtered_count"] = filtered;
+            Assert.Equal(CanonicalJson.Serialize(expected), CanonicalJson.Serialize(sample.Payload));
             Assert.Equal(CanonicalJson.Serialize(step["cursor_before"]), CanonicalJson.Serialize(sample.CursorBefore.ToJson()));
             Assert.Equal(CanonicalJson.Serialize(step["cursor_after"]), CanonicalJson.Serialize(sample.CursorAfter.ToJson()));
-            Assert.Equal(step["continuity_state"]!.GetValue<string>(), sample.ContinuityState);
-            Assert.Equal(step["filtered_count"]!.GetValue<long>(), sample.FilteredCount);
+            Assert.Equal(excluded.Length > 0 ? "filtered" : step["continuity_state"]!.GetValue<string>(), sample.ContinuityState);
+            Assert.Equal(filtered, sample.FilteredCount);
             Assert.Equal(step["lost_count"]?.GetValue<long>(), sample.LostCount);
             Assert.DoesNotContain("private-secret", CanonicalJson.Serialize(sample.Payload));
             Assert.DoesNotContain("private-account", CanonicalJson.Serialize(sample.Payload));
