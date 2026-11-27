@@ -193,6 +193,7 @@ def test_archive_outside_mapped_root_is_rejected_before_clickhouse_query(tmp_pat
         backup.clickhouse_targets()[0].backup_disk_path(tmp_path / "history.zip")
 
 
+@pytest.mark.legacy
 def test_checkpoint_mapping_matches_canonical_compose_bind(tmp_path, monkeypatch):
     import yaml
 

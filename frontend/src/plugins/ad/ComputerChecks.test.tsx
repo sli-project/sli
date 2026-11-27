@@ -283,8 +283,7 @@ it("uses exact computer scope for card changes, problems, and source event links
   expect(rows).toHaveLength(2);
   expect(within(rows[0]).getByRole("cell", { name: formatDateTime("2026-11-22T07:13:00Z", DEFAULT_TIME_ZONE) })).toBeTruthy();
   expect(within(rows[1]).getByRole("cell", { name: formatDateTime("2026-11-22T07:12:00Z", DEFAULT_TIME_ZONE) })).toBeTruthy();
-  expect(within(rows[0]).getByRole("link", { name: "#15" }).getAttribute("href")).toContain("/app/events/15?");
-  expect(within(rows[1]).getByRole("link", { name: "#14" }).getAttribute("href")).toContain("/app/events/14?");
+  expect(within(table).queryByRole("columnheader", { name: "Исходное событие" })).toBeNull();
   expect(within(card).getByRole("link", { name: "Открыть событие" }).getAttribute("href")).toContain("/app/events/15?");
   fireEvent.click(rows[1]);
   expect(within(card).getByRole("link", { name: "Открыть событие" }).getAttribute("href")).toContain("/app/events/14?");
@@ -342,14 +341,18 @@ const logons: ReportDefinitionDto = { ...definition, key: "ad.computer-logons", 
 it("keeps the logon window and filters when paging and opening the next computer", async () => {
   const key = logons.key;
   const detail: URLSearchParams[] = [];
+  const interactiveAt = "2026-11-21T12:00:00Z";
+  const serviceAt = "2026-11-21T11:59:00Z";
+  const interactiveTime = formatDateTime(interactiveAt, DEFAULT_TIME_ZONE, { seconds: true });
+  const serviceTime = formatDateTime(serviceAt, DEFAULT_TIME_ZONE, { seconds: true });
   respondTo = (url) => {
     if (url.pathname.endsWith(key)) return logons;
     const includesService = url.searchParams.get("service_logons") === "yes";
     if (url.pathname.endsWith("/detail")) {
       detail.push(url.searchParams);
       return page({ report_key: key, state: "ok", items: [
-        { row_id: "20", source_event_id: 20, observed_at_utc: "2026-11-21T12:00:00Z", user_name: "synthetic-user", logon_type: "10", repeat_count: 1 },
-        ...(includesService ? [{ row_id: "21", source_event_id: 21, user_name: "SYSTEM", logon_type: "5", repeat_count: 2 }] : []),
+        { row_id: "20", source_event_id: 20, observed_at_utc: interactiveAt, user_name: "synthetic-user", logon_type: "10", repeat_count: 1 },
+        ...(includesService ? [{ row_id: "21", source_event_id: 21, observed_at_utc: serviceAt, user_name: "SYSTEM", logon_type: "5", repeat_count: 2 }] : []),
       ] });
     }
     if (url.pathname.endsWith("/data")) {
@@ -361,16 +364,24 @@ it("keeps the logon window and filters when paging and opening the next computer
   };
   window.history.replaceState(null, "", "/app/report/ad.computers.v6?nav_view=logons&domain_id=8&user=synthetic-user");
   show({ reportKey: key });
-  await screen.findByRole("link", { name: "#20" });
+  const interactiveEvent = await screen.findByRole("link", { name: `Открыть событие · ${interactiveTime}` });
+  expect(interactiveEvent.textContent).toBe(interactiveTime);
+  expect(interactiveEvent.getAttribute("href")).toContain("/app/events/20?");
+  const observations = () => within(screen.getByRole("table", { name: "Входы на компьютер" }));
+  expect(observations().getByRole("cell", { name: "Удалённый интерактивный" })).toBeTruthy();
+  expect(observations().queryByRole("columnheader", { name: "Исходное событие" })).toBeNull();
   const serviceLogons = screen.getByRole<HTMLInputElement>("checkbox", { name: "Сетевые и служебные входы" });
   const computers = () => within(screen.getByRole("table", { name: "Входы на компьютеры" }));
   expect(computers().getByRole("img", { name: "Контроллер домена" })).toBeTruthy();
   expect(computers().getByRole("cell", { name: "1" })).toBeTruthy();
-  expect(screen.queryByRole("link", { name: "#21" })).toBeNull();
+  expect(observations().queryByRole("cell", { name: "Служба" })).toBeNull();
   expect(serviceLogons.checked).toBe(false);
   expect(requests[0].get("service_logons")).not.toBe("yes");
   fireEvent.click(serviceLogons);
-  await screen.findByRole("link", { name: "#21" });
+  const serviceEvent = await screen.findByRole("link", { name: `Открыть событие · ${serviceTime}` });
+  expect(serviceEvent.textContent).toBe(serviceTime);
+  expect(serviceEvent.getAttribute("href")).toContain("/app/events/21?");
+  expect(observations().getByRole("cell", { name: "Служба" })).toBeTruthy();
   expect(computers().getByRole("cell", { name: "3" })).toBeTruthy();
   expect(detail.at(-1)?.get("service_logons")).toBe("yes");
   const detailCountBeforePaging = detail.length;
@@ -391,7 +402,7 @@ it("keeps the logon window and filters when paging and opening the next computer
   }
   fireEvent.click(serviceLogons);
   await waitFor(() => expect(computers().getByRole("cell", { name: "1" })).toBeTruthy());
-  expect(screen.queryByRole("link", { name: "#21" })).toBeNull();
+  await waitFor(() => expect(observations().queryByRole("cell", { name: "Служба" })).toBeNull());
 });
 
 it("shows an empty logon table without requesting computer details", async () => {

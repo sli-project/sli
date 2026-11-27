@@ -83,7 +83,7 @@ def ledger_matches(installed, observed):
     try:
         return native_ledger_matches(installed, observed)
     except PackageError as exc:
-        from server.sli.release_package import PackageError as UpdateError
+        from deploy.linux.sli_update import UpdateError
 
         raise UpdateError(str(exc)) from exc
 
@@ -154,14 +154,14 @@ def pointers_match(runtime, installed):
     try:
         _pointers_match(runtime, installed, parse_json, validate_payload)
     except PackageError as exc:
-        from server.sli.release_package import PackageError as UpdateError
+        from deploy.linux.sli_update import UpdateError
 
         raise UpdateError(str(exc)) from exc
 
 
 def require(condition, code):
     if not condition:
-        from server.sli.release_package import PackageError as UpdateError
+        from deploy.linux.sli_update import UpdateError
 
         raise UpdateError(code)
 

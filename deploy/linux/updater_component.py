@@ -23,6 +23,20 @@ from scripts.maintenance.release_package import (
 APPROVED_LAUNCHER_SHA256 = "cc6fde057650506169fa0480d7b9d590e3de43fee48cd28efe58793f85a97b20"
 
 
+def legacy_secret_dependencies():
+    # This adapter is in the fixed signed updater inventory; the Debian kit omits it.
+    from server.sli.agents.ca import IssuingCA
+    from server.sli.core.ad_credential_secrets import (
+        MASTER_KEY_REF, MASTER_KEY_SETTING, MASTER_KEY_SPEC, decode_master_key,
+    )
+    from server.sli.core.notification_secrets import (
+        NOTIFICATION_DELIVERY_SERVICE, NOTIFICATION_SECRET_SETTINGS, validate_notification_secret,
+    )
+
+    return (IssuingCA, MASTER_KEY_REF, MASTER_KEY_SETTING, MASTER_KEY_SPEC, decode_master_key,
+            NOTIFICATION_DELIVERY_SERVICE, NOTIFICATION_SECRET_SETTINGS, validate_notification_secret, PackageError)
+
+
 def check(condition, code="update_invalid_updater_state"):
     if not condition:
         raise PackageError(code)

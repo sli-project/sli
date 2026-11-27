@@ -55,13 +55,15 @@ def signed_package(tmp_path):
 
 
 def verify(archive, trust, **kwargs):
-    from scripts.maintenance.release_package import verify_package
+    from deploy.linux.release_package import verify_package
 
     return verify_package(archive, trust, **kwargs)
 
 
 @pytest.mark.parametrize("module_name", [
-    "deploy.linux.release_package", "scripts.maintenance.release_package", "server.sli.release_package",
+    "deploy.linux.release_package",
+    pytest.param("scripts.maintenance.release_package", marks=pytest.mark.legacy),
+    pytest.param("server.sli.release_package", marks=pytest.mark.legacy),
 ])
 def test_verifies_real_signature_without_executing_payload(signed_package, tmp_path, module_name):
     from importlib import import_module
@@ -75,7 +77,9 @@ def test_verifies_real_signature_without_executing_payload(signed_package, tmp_p
 
 
 @pytest.mark.parametrize("module_name", [
-    "deploy.linux.release_package", "scripts.maintenance.release_package", "server.sli.release_package",
+    "deploy.linux.release_package",
+    pytest.param("scripts.maintenance.release_package", marks=pytest.mark.legacy),
+    pytest.param("server.sli.release_package", marks=pytest.mark.legacy),
 ])
 @pytest.mark.parametrize("component,kind,owner,restart", [
     ("server", "core-install", "sli.core", "docker-compose"),
@@ -122,7 +126,9 @@ def test_v2_component_contracts_coexist(component, kind, owner, restart, module_
 
 
 @pytest.mark.parametrize("module_name", [
-    "deploy.linux.release_package", "scripts.maintenance.release_package", "server.sli.release_package",
+    "deploy.linux.release_package",
+    pytest.param("scripts.maintenance.release_package", marks=pytest.mark.legacy),
+    pytest.param("server.sli.release_package", marks=pytest.mark.legacy),
 ])
 @pytest.mark.parametrize("installed_edits,error", [
     ({}, None),
@@ -266,7 +272,7 @@ def test_rejects_symlink_archive_entry(signed_package):
 
 
 def test_limits_archive_before_payload_read(signed_package):
-    from scripts.maintenance.release_package import PackageLimits
+    from deploy.linux.release_package import PackageLimits
 
     archive, trust = signed_package()
     with pytest.raises(ValueError):
@@ -282,7 +288,7 @@ def test_unsigned_zip_fails_closed(tmp_path):
 
 
 def test_builder_creates_package_accepted_by_public_verifier(signed_package, tmp_path):
-    from scripts.maintenance.release_package import build_package
+    from deploy.linux.release_package import build_package
 
     old_archive, trust = signed_package()
     with zipfile.ZipFile(old_archive) as z:
@@ -303,6 +309,7 @@ def test_builder_creates_package_accepted_by_public_verifier(signed_package, tmp
         assert "external.key" not in z.namelist()
 
 
+@pytest.mark.legacy
 def test_unsigned_updater_never_reaches_candidate_code(tmp_path, monkeypatch):
     from scripts.maintenance import apply_update
 
@@ -315,6 +322,7 @@ def test_unsigned_updater_never_reaches_candidate_code(tmp_path, monkeypatch):
     assert result["executed"] is False
 
 
+@pytest.mark.legacy
 def test_signed_updater_verifies_but_does_not_claim_installation(signed_package):
     from scripts.maintenance import apply_update
 
@@ -327,6 +335,7 @@ def test_signed_updater_verifies_but_does_not_claim_installation(signed_package)
     assert result["reason_code"] == "runtime_schema_unsupported"
 
 
+@pytest.mark.legacy
 def test_legacy_environment_variable_does_not_bypass_trust(tmp_path, monkeypatch):
     from scripts import apply_project_zip
 
@@ -341,6 +350,7 @@ def test_legacy_environment_variable_does_not_bypass_trust(tmp_path, monkeypatch
     assert not (root / "package.json").exists()
 
 
+@pytest.mark.legacy
 def test_backup_cli_cannot_be_used_as_unsigned_update(tmp_path, monkeypatch):
     from scripts.maintenance import rollback_update
 
@@ -369,7 +379,7 @@ def test_invalid_signature_does_not_read_payload(signed_package, monkeypatch):
 
 
 def test_count_limit_precedes_zipfile_allocation(signed_package, monkeypatch):
-    from scripts.maintenance.release_package import PackageLimits
+    from deploy.linux.release_package import PackageLimits
 
     archive, trust = signed_package()
     monkeypatch.setattr(zipfile, "ZipFile", lambda *a, **k: pytest.fail("directory allocated before count bound"))
@@ -405,13 +415,15 @@ def test_malformed_external_trust_fails_closed(signed_package, policy):
         verify(archive, trust)
 
 
-@pytest.mark.parametrize("path", ["config/LOCAL/settings.py", "config/Secrets/key.py", "scripts/MANUAL_DC_AUDIT/change.ps1"])
+@pytest.mark.parametrize("path", ["config/LOCAL/settings.py", "config/Secrets/key.py",
+                                  "scripts/MANUAL_DC_AUDIT/change.ps1", "scripts/DC_CLIENT/change.ps1"])
 def test_signed_core_cannot_use_case_alias_to_mutable_or_admin_root(signed_package, path):
     archive, trust = signed_package(files={path: b"x"})
     with pytest.raises(ValueError, match="owned|immutable"):
         verify(archive, trust)
 
 
+@pytest.mark.legacy
 def test_public_cli_reports_verified_and_refuses_activation(signed_package, tmp_path):
     from pathlib import Path
 
@@ -428,7 +440,7 @@ def test_public_cli_reports_verified_and_refuses_activation(signed_package, tmp_
 
 
 def test_builder_does_not_overwrite_existing_artifact(signed_package, tmp_path):
-    from scripts.maintenance.release_package import build_package
+    from deploy.linux.release_package import build_package
 
     archive, _trust = signed_package()
     with zipfile.ZipFile(archive) as z:
@@ -446,7 +458,7 @@ def test_builder_does_not_overwrite_existing_artifact(signed_package, tmp_path):
 
 
 def test_builder_rejects_hard_link_to_external_signing_key(signed_package, tmp_path):
-    from scripts.maintenance.release_package import build_package
+    from deploy.linux.release_package import build_package
 
     archive, _trust = signed_package()
     with zipfile.ZipFile(archive) as z:
@@ -462,6 +474,7 @@ def test_builder_rejects_hard_link_to_external_signing_key(signed_package, tmp_p
     assert not output.exists()
 
 
+@pytest.mark.legacy
 def test_nonfinite_json_is_structured_rejection_before_trust(tmp_path):
     from scripts.maintenance import apply_update
 
@@ -476,6 +489,7 @@ def test_nonfinite_json_is_structured_rejection_before_trust(tmp_path):
     assert result["executed"] is False
 
 
+@pytest.mark.legacy
 def test_maintenance_entrypoints_share_the_journaled_updater(monkeypatch):
     from deploy.linux import sli_update
     from scripts.maintenance import apply_update, rollback_update

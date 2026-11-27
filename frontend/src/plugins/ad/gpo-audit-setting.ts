@@ -1,4 +1,5 @@
 import { t, type MessageKey } from "../../i18n";
+import { en } from "../../i18n/en";
 
 const subcategories = {
   "9210": "security_state_change",
@@ -63,11 +64,12 @@ const subcategories = {
   "924b": "access_rights",
 } as const satisfies Record<string, string>;
 
-type AuditLeaf = "subcategoryguid" | "settingvalue" | "auditsetting" | "policytarget";
+type AuditLeaf = "subcategoryguid" | "subcategoryname" | "settingvalue" | "auditsetting" | "policytarget";
+const namedSubcategories = new Map(Object.values(subcategories).map((name) => [en[`agents.auditSubcategory.${name}`].toLowerCase(), name]));
 
 export function auditLeaf(name?: string, path?: string, category?: string, extension?: string): AuditLeaf | undefined {
   const leaf = name?.toLowerCase();
-  if (leaf === "subcategoryguid" || leaf === "auditsetting" || leaf === "policytarget") return leaf;
+  if (leaf === "subcategoryguid" || leaf === "subcategoryname" || leaf === "auditsetting" || leaf === "policytarget") return leaf;
   if (leaf === "settingvalue" && [path, category, extension].some((part) => /audit/i.test(part ?? ""))) return leaf;
   return undefined;
 }
@@ -75,8 +77,9 @@ export function auditLeaf(name?: string, path?: string, category?: string, exten
 export function auditSubcategory(value?: string): string {
   const guid = value?.trim().replace(/^\{|\}$/g, "").toLowerCase();
   const id = guid?.match(/^0cce([0-9a-f]{4})-69ae-11d9-bed3-505054503030$/)?.[1];
-  const name = id && Object.hasOwn(subcategories, id) ? subcategories[id as keyof typeof subcategories] : undefined;
-  return name ? t(`agents.auditSubcategory.${name}`) : t("reports.gpo.audit.unknown_subcategory");
+  const name = id && Object.hasOwn(subcategories, id) ? subcategories[id as keyof typeof subcategories]
+    : namedSubcategories.get(guid?.replace(/^audit /, "") ?? "");
+  return name === "logon" ? t("reports.gpo.audit.logon") : name ? t(`agents.auditSubcategory.${name}`) : t("reports.gpo.audit.unknown_subcategory");
 }
 
 export function auditMode(value?: string): string {
@@ -95,13 +98,13 @@ export function auditMode(value?: string): string {
 
 export function auditLeafValue(leaf: AuditLeaf | undefined, value: unknown, side?: "computer" | "user") {
   if (!leaf || typeof value !== "string") return value;
-  if (leaf === "subcategoryguid") return auditSubcategory(value);
+  if (leaf === "subcategoryguid" || leaf === "subcategoryname") return auditSubcategory(value);
   if (leaf === "policytarget") return side ? auditPath(side) : t("reports.gpo.audit.category");
   return auditMode(value);
 }
 
 export function auditLeafLabel(leaf: AuditLeaf, value?: string) {
-  if (leaf === "subcategoryguid") return auditSubcategory(value);
+  if (leaf === "subcategoryguid" || leaf === "subcategoryname") return auditSubcategory(value);
   return t(leaf === "policytarget" ? "reports.gpo.path" : "reports.gpo.audit.mode");
 }
 

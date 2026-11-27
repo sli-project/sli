@@ -14,6 +14,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
+import pytest
+
 from deploy.linux import native_runtime
 from server.sli.core import report_schedule_producer as producer
 
@@ -26,6 +28,7 @@ class DeploymentTests(unittest.TestCase):
         self.assertTrue(OVERLAY.exists(), 'optional isolated producer service declaration is missing')
         return json.loads(OVERLAY.read_text('utf-8'))
 
+    @pytest.mark.legacy
     def test_service_invokes_producer_with_only_its_own_secret_and_environment(self):
         config = self.configuration()
         self.assertEqual(set(config['services']), {'postgres', 'report-producer'})
@@ -44,6 +47,7 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(set(config['secrets']), {'report_producer_password'})
         self.assertIn('SLI_REPORT_PRODUCER_PASSWORD_SOURCE', config['secrets']['report_producer_password']['file'])
 
+    @pytest.mark.legacy
     def test_private_network_keeps_postgres_on_existing_default_network(self):
         config = self.configuration()
         self.assertEqual(config['networks'], {'default': {}, 'report-db': {'internal': True}})
@@ -65,10 +69,13 @@ class DeploymentTests(unittest.TestCase):
         rules = (ROOT / 'deploy/linux/Dockerfile.dockerignore').read_text('utf-8')
         self.assertIn('!server/**', rules)
 
-    def test_compose_stays_inactive_and_native_secret_is_exclusive_to_producer(self):
+    @pytest.mark.legacy
+    def test_base_compose_stays_inactive(self):
         base = (ROOT / 'deploy/linux/docker-compose.yml').read_text('utf-8')
         self.assertNotIn('report-producer', base)
         self.assertNotIn('report_producer_password', base)
+
+    def test_native_secret_is_not_delivered_to_services(self):
         manifest = json.loads((ROOT / 'deploy/linux/secrets-manifest.json').read_text('utf-8'))
         self.assertEqual(manifest['secrets']['report_producer_password'],
                          {'kind': 'password', 'group': 'core'})
@@ -90,6 +97,7 @@ class DeploymentTests(unittest.TestCase):
                         'producer must load only its explicitly mounted password file')
         return producer.connection_options(env)
 
+    @pytest.mark.legacy
     def test_only_explicit_producer_password_file_is_used(self):
         with TemporaryDirectory() as directory:
             path = Path(directory) / 'synthetic-password'
@@ -100,6 +108,7 @@ class DeploymentTests(unittest.TestCase):
             self.assertEqual(options, {'conninfo': 'host=synthetic.invalid user=producer',
                                       'password': 'synthetic-producer-only'})
 
+    @pytest.mark.legacy
     def test_missing_and_invalid_secret_fail_with_value_free_error(self):
         with TemporaryDirectory() as directory:
             path = Path(directory) / 'synthetic-password'
@@ -115,6 +124,7 @@ class DeploymentTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, '^invalid_report_producer_connection$'):
                     self.options(env)
 
+    @pytest.mark.legacy
     def test_health_never_reads_a_secret_or_connects(self):
         with TemporaryDirectory() as directory:
             status = Path(directory) / 'status.json'
@@ -123,6 +133,7 @@ class DeploymentTests(unittest.TestCase):
                  patch.object(producer, 'connection_options', side_effect=AssertionError('health read a secret')):
                 self.assertEqual(producer.main(), 0)
 
+    @pytest.mark.legacy
     def test_entrypoint_passes_only_explicit_mounted_password_to_driver(self):
         with TemporaryDirectory() as directory:
             password = Path(directory) / 'synthetic-password'

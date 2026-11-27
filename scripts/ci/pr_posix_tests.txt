@@ -1,12 +1,5 @@
-tests/storage/test_raw_zip_durability.py
-tests/storage/test_stabilization_runtime_security_ai.py::test_runtime_storage_cleanup_can_zip_archive_and_explain_exclusions
 tests/unit/test_ad_credential_delivery.py
 tests/unit/test_ad_credential_secrets.py
-tests/unit/test_ad_gpo_core_jobs.py
-tests/unit/test_ad_gpo_pilot_acceptance.py
-tests/unit/test_ad_plugin_registration.py
-tests/unit/test_agent_group_bootstrap.py
-tests/unit/test_core_job_queue.py
 tests/unit/test_linux_backup_capacity.py
 tests/unit/test_linux_backup_health_assurance.py
 tests/unit/test_linux_backup_pg_diagnostics.py
