@@ -174,13 +174,13 @@ public sealed class ReportLocaleCodesTests
         var reasons = new Dictionary<string, JsonObject>();
         foreach (var row in new[] { old, missing })
         {
-            AdInventoryRows.ComputerReasons(row, JsonNode.Parse("""{"sources":{"os":{"status":"observed"}}}""")!.AsObject(), 90, DateTimeOffset.Parse("2026-10-17T03:00:00Z"));
+            AdInventoryRows.ComputerReasons(row, 90, DateTimeOffset.Parse("2026-10-17T03:00:00Z"));
             foreach (var reason in row["reasons"]!.AsArray().OfType<JsonObject>()) reasons[reason["code"]!.ToString()] = reason;
         }
         Assert.Equal(expected.Keys.Order(), reasons.Keys.Order());
         foreach (var (code, reason) in reasons) Equal(expected[code], reason, code);
         var noDate = new JsonObject { ["enabled"] = true, ["activity"] = new JsonObject { ["age_days"] = 91 }, ["quality_issues"] = new JsonArray() };
-        AdInventoryRows.ComputerReasons(noDate, new(), 90, DateTimeOffset.Parse("2026-10-17T03:00:00Z"));
+        AdInventoryRows.ComputerReasons(noDate, 90, DateTimeOffset.Parse("2026-10-17T03:00:00Z"));
         var stale = noDate["reasons"]!.AsArray().Single(r => r!["code"]!.ToString() == "stale_activity");
         Equal(Vector("inventory-missing-date")["input"]!["items"]![0]!["reasons"]![0], stale);
     }

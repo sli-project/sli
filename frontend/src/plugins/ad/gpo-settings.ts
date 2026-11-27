@@ -56,13 +56,13 @@ export function displaySettings(settings: Setting[]): Setting[] {
     const audits = records.filter(audit);
     const guids = audits.filter((row) => leaf(row) === "subcategoryguid");
     const names = audits.filter((row) => leaf(row) === "subcategoryname");
-    const modes = audits.filter((row) => leaf(row) === "settingvalue");
+    const modes = audits.filter((row) => ["settingvalue", "inclusionsetting"].includes(leaf(row) ?? ""));
     const named = new Set(guids.map((row) => auditSubcategory(row.value_display)));
     const subcategories = [...guids, ...names.filter((row) => !named.has(auditSubcategory(row.value_display)))];
     for (const row of subcategories) {
       const value = row.audit_mode ?? (subcategories.length === 1 && modes.length === 1 ? modes[0].value_display : undefined);
       result.push({ ...row, category: t("reports.gpo.audit.category"), path: auditPath(side),
-        setting_name: auditSubcategory(row.value_display), value_display: value == null ? undefined : auditMode(value) });
+        setting_name: auditSubcategory(row.value_display), value_display: auditMode(value) });
     }
 
     const oldRegistry = records.filter(legacyRegistry);

@@ -88,6 +88,29 @@ public sealed class AdComputersViewsTests(AdComputersViewsTests.Data data) : ICl
     }
 
     [Fact]
+    public async Task Inventory_uses_directory_facts_observed_by_the_selected_manifest()
+    {
+        var computer = Computer();
+        computer["deviceType"] = "unknown";
+        computer["osName"] = null;
+        computer["enabled"] = null;
+        await data.Seed(2, computer, count: 2);
+        var logon = data.Stamp.AddDays(-2);
+        await data.SeedDirectoryFacts(logon);
+
+        var result = await data.Read(Request("computers"));
+        var rows = result["items"]!.AsArray();
+        var observed = Assert.Single(rows, item => item!["object_guid"]!.ToString() == "synthetic-guid-0")!;
+        Assert.Equal("Windows 11 Pro", observed["operating_system"]!.ToString());
+        Assert.Equal("workstation", observed["computer_type"]!.ToString());
+        Assert.True(observed["enabled"]!.GetValue<bool>());
+        Assert.Equal(AdInventoryRows.PythonIso(logon), observed["last_logon_utc"]!.ToString());
+        var missing = Assert.Single(rows, item => item!["object_guid"]!.ToString() == "synthetic-guid-1")!;
+        Assert.Null(missing["operating_system"]);
+        Assert.Null(missing["last_logon_utc"]);
+    }
+
+    [Fact]
     public async Task Agent_pair_query_sorts_filters_pages_and_does_not_confirm_missing_comparisons()
     {
         await data.Seed(2, Computer(), publishChanges: true);
@@ -209,6 +232,10 @@ public sealed class AdComputersViewsTests(AdComputersViewsTests.Data data) : ICl
                     create table ad_snapshot_manifest_sources(manifest_id uuid,family text,source_id text,payload_sha256 bytea,source_state text,observed_at_utc timestamptz);
                     create table computers_v6_source_snapshots(snapshot_uuid uuid primary key,domain_id bigint,payload_json jsonb,payload_sha256 bytea,source_options_json jsonb);
                     create table ad_context_entity_aliases(domain_id bigint,normalized_value text,alias_type text,entity_id bigint);
+                    create table ad_context_runs(run_id uuid,domain_id bigint,bundle_sha256 bytea,observed_at_utc timestamptz,status text);
+                    create table ad_context_entity_versions(id bigint,entity_id bigint,source_section text,valid_from_utc timestamptz,
+                        valid_to_utc timestamptz,last_observed_at_utc timestamptz,source_run_id uuid,attributes_json jsonb);
+                    create table ad_context_evidence(source_run_id uuid,evidence_key text);
                     -- Empty supplemental findings source; these tests exercise AD snapshots.
                     create table findings(id bigint,title text,status text,summary text,why_it_matters text,recommended_action text,last_seen_utc timestamptz);
                     create table finding_entities(finding_id bigint,entity_id bigint);
@@ -223,6 +250,35 @@ public sealed class AdComputersViewsTests(AdComputersViewsTests.Data data) : ICl
             catch { if (db is not null) await db.DisposeAsync(); await pg.DisposeAsync(); throw; }
         }
         internal Task<JsonObject> Read(AdV2Request request) => Store.ReadAsync(request, _ => true, Ct);
+        internal async Task SeedDirectoryFacts(DateTimeOffset logon)
+        {
+            var run = Guid.NewGuid();
+            var firstRun = Guid.NewGuid();
+            await using var seed = new NpgsqlCommand("""
+                insert into ad_context_runs values(@run,2,decode(repeat('1',64),'hex'),@at,'completed');
+                insert into ad_snapshot_manifest_sources
+                    select manifest_id,'ad_context_base',@run::text,decode(repeat('1',64),'hex'),'complete',@at
+                    from ad_snapshot_manifests where domain_id=2 and slot_start_utc=@at;
+                insert into ad_context_entity_versions values
+                    (1,1,'directory_accounts',@before,null,@at,@first,@observed),
+                    (2,2,'directory_accounts',@before,null,@at,@first,@unbound);
+                insert into ad_context_evidence values(@run,'adctx:' || @run::text || ':fixture-observed');
+                """, db);
+            string Record(string key, string guid) => new JsonObject
+            {
+                ["record_key"] = key, ["identity"] = new JsonObject { ["kind"] = "ad_computer", ["object_guid"] = guid },
+                ["attributes"] = new JsonObject { ["operating_system"] = "Windows 11 Pro", ["user_account_control"] = 4096,
+                    ["last_logon_timestamp_utc"] = AdInventoryRows.PythonIso(logon) }
+            }.ToJsonString();
+            seed.Parameters.AddWithValue("run", run);
+            seed.Parameters.AddWithValue("first", firstRun);
+            seed.Parameters.AddWithValue("at", Stamp);
+            seed.Parameters.AddWithValue("before", Stamp.AddDays(-1));
+            seed.Parameters.AddWithValue("observed", NpgsqlTypes.NpgsqlDbType.Jsonb, Record("fixture-observed", "synthetic-guid-0"));
+            seed.Parameters.AddWithValue("unbound", NpgsqlTypes.NpgsqlDbType.Jsonb, Record("fixture-unbound", "synthetic-guid-1"));
+            await seed.ExecuteNonQueryAsync(Ct);
+        }
+
         internal async Task Seed(long domain, JsonObject obj, DateTimeOffset? at = null, int count = 1, bool publishChanges = false)
         {
             var stamp = at ?? Stamp;

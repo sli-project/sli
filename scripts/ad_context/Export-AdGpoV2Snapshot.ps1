@@ -355,6 +355,10 @@ function Convert-GpoReportSettings {
     $sideNode = $sideNode.CloneNode($true)
     Protect-SLIGpoXmlValues -Node $sideNode
 
+    $auditCounts = @{}
+    foreach ($subcategory in $sideNode.SelectNodes(".//*[local-name()='SubcategoryGuid']")) {
+        $auditCounts[$subcategory.InnerText.Trim()]++
+    }
     $extensionNodes = $sideNode.SelectNodes("./*[local-name()='ExtensionData']/*[local-name()='Extension']")
     foreach ($extensionNode in $extensionNodes) {
         $extensionName = $null
@@ -388,7 +392,7 @@ function Convert-GpoReportSettings {
             $seed = "{0}|{1}|{2}|{3}|{4}|{5}" -f $GpoId, $Side, $extensionName, $path, $leaf.LocalName, $value
             $fingerprint = Get-Sha256Hex -Text $seed
             if (-not $seenSettingFingerprints.Add($fingerprint)) { continue }
-            [void]$rows.Add([pscustomobject][ordered]@{
+            $setting = [ordered]@{
                 id              = New-StableId -Prefix "setting" -Seed $seed
                 gpo_id          = $GpoId
                 gpo_name        = $GpoName
@@ -402,7 +406,10 @@ function Convert-GpoReportSettings {
                 source_xml_path = "/GPO/$sideNodeName/ExtensionData/Extension/$path"
                 source_state    = New-SourceState -Status "observed" -Source "Get-GPOReport XML normalizer" -Detail $null -Error $null -Coverage $null -Value $null
                 fingerprint     = $fingerprint
-            })
+            }
+            $mode = Get-SLIGpoAuditMode -Leaf $leaf -GuidCounts $auditCounts
+            if ($null -ne $mode) { $setting['audit_mode'] = $mode }
+            [void]$rows.Add([pscustomobject]$setting)
         }
     }
 

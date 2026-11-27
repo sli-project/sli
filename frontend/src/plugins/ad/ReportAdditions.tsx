@@ -14,7 +14,7 @@ export function dnsColumnLabel(rows: Row[], timeZone?: string) {
 export function AgentStatus({ row, compact = false }: { row: Row; compact?: boolean }) {
   const agent = object(row.sli_agent);
   const state = agent.state;
-  const missing = t("reports.metrics.no_data");
+  const missing = t("table.noValue");
   if (compact) return state === "absent" || state === "silent"
     ? <span role="img" aria-label={t(`reports.ad.additions.agent.${state}`)} title={t(`reports.ad.additions.agent.${state}`)}> ⚠</span> : null;
   if (state === "absent") return <>{t("reports.ad.additions.agent.absent")}</>;
@@ -32,7 +32,7 @@ export function DnsIp({ row }: { row: Row }) {
   const dns = object(row.dns_ip);
   const at = text(dns.observed_at_utc);
   const addresses = Array.isArray(dns.addresses) ? dns.addresses.filter((value): value is string => typeof value === "string") : [];
-  return <span>{addresses.length && at ? addresses.join(", ") : t("reports.metrics.no_data")}
+  return <span>{addresses.length && at ? addresses.join(", ") : t("table.noValue")}
     {at ? <small className="sli-ds-muted" style={{ display: "block" }}>{t("reports.ad.additions.dns_at", { date: formatDateTime(at) })}</small> : null}</span>;
 }
 

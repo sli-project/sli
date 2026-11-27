@@ -6,7 +6,9 @@ import { api } from "../../api/client";
 import type { ReportResultDto } from "../../api/report-v2-types";
 import { formatDateTime } from "../../design-system/format";
 import { t } from "../../i18n";
-import { ComputerPanel } from "./ComputersPanel";
+import { DataTable } from "../../design-system";
+import type { ReportColumnDto } from "../../api/report-v2-types";
+import { ComputerPanel, computerInventoryColumns } from "./ComputersPanel";
 
 vi.mock("../App", () => ({ useEffectiveAccess: () => null }));
 vi.mock("../../shared/time-zone", () => ({ useTimeZone: () => ({ timeZone: "UTC" }) }));
@@ -17,6 +19,22 @@ afterEach(() => {
 });
 
 const workstation = { entity_id: 7, display_name: "PC-TEST", computer_type: "workstation" };
+
+it("shows observed computer facts and uses dashes for missing inventory cells", () => {
+  const logon = "2026-01-12T10:49:00Z";
+  const keys = ["display_name", "computer_type", "operating_system", "last_logon_utc"];
+  const columns = keys.map((key): ReportColumnDto => ({ key, path: key, label: key, kind: "text" }));
+  render(<DataTable caption="Computers" columns={computerInventoryColumns(columns, "UTC", vi.fn())}
+    rows={[{ ...workstation, operating_system: "Windows 11 Pro", last_logon_utc: logon },
+      { entity_id: 8, display_name: "PC-EMPTY", computer_type: "unknown" }]}
+    rowKey={(row) => String(row.entity_id)}/>);
+  const filled = within(screen.getByRole("row", { name: /PC-TEST/ }));
+  expect(filled.getByText(t("reports.v2.ad.computers.v6.columns.computer_type.labels.workstation"))).toBeTruthy();
+  expect(filled.getByText("Windows 11 Pro")).toBeTruthy();
+  expect(filled.getByText(formatDateTime(logon, true, "UTC"))).toBeTruthy();
+  const empty = within(screen.getByRole("row", { name: /PC-EMPTY/ }));
+  expect(empty.getAllByRole("cell").slice(1).map((cell) => cell.textContent)).toEqual(["—", "—", "—"]);
+});
 const observation = (rowId: string, minute: string, event: number | null = 81) => ({
   row_id: rowId, observed_at_utc: `2026-01-12T10:${minute}:00Z`, user_name: "EXAMPLE\\test", source_event_id: event,
 });

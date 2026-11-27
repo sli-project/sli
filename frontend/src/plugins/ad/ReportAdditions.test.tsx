@@ -16,7 +16,7 @@ it("shows installed version and minutes, silent days and unknown without a zero"
   rerender(<AgentStatus row={{ sli_agent: { state: "silent", version: "1.2.3", age_seconds: 259200 } }}/>);
   expect(screen.getByText("Молчит 3 дн. · 1.2.3")).toBeTruthy();
   rerender(<AgentStatus row={{}}/>);
-  expect(screen.getByText("Нет данных")).toBeTruthy();
+  expect(screen.getByText("—")).toBeTruthy();
 });
 
 it("keeps a visible accessible missing-agent icon by the mobile computer name", () => {
@@ -29,14 +29,15 @@ it("keeps a visible accessible missing-agent icon by the mobile computer name", 
   expect(select).toHaveBeenCalledWith(row);
 });
 
-it("labels DNS with its snapshot date and keeps missing addresses unknown", () => {
+it("labels DNS with its observation date and uses a dash for missing addresses", () => {
   setLocale("ru");
   const { rerender } = render(<DnsIp row={{ dns_ip: { addresses: ["192.0.2.1"], observed_at_utc: "2026-10-17T03:00:00Z" } }}/>);
   expect(screen.getByText("192.0.2.1")).toBeTruthy();
   expect(screen.getByText(/DNS на/)).toBeTruthy();
   expect(dnsColumnLabel([{ dns_ip: { observed_at_utc: "2026-10-17T03:00:00Z" } }])).toContain("17.10.2026");
   rerender(<DnsIp row={{}}/>);
-  expect(screen.getByText("Нет данных")).toBeTruthy();
+  expect(dnsColumnLabel([])).toBe("IP по DNS");
+  expect(screen.getByText("—")).toBeTruthy();
 });
 
 it("shows the workplace and URL-encodes the exact account and domain filter", () => {

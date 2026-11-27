@@ -84,9 +84,8 @@ export function computerInventoryColumns(columns: ReportColumnDto[], timeZone: s
           event.stopPropagation(); select(row);
         }}>{typeof row.enabled === "boolean" ? <span role="img"
           aria-label={t(row.enabled ? "reports.computers.enabled" : "reports.computers.disabled")}>{row.enabled ? "✓" : "−"} </span> : null}{text(row.display_name) ?? dash()}</button> },
-        computer_type: { label: t("reports.ad.computers.role"), render: (row) => row.computer_type && row.computer_type !== "unknown" ? computerRole(row.computer_type)
-          : t("reports.v2.ad.computers.v6.columns.computer_type.labels.unknown") },
-        operating_system: { render: (row) => computerOs(row) ?? t("reports.v2.ad.computers.v6.quality.not_collected") },
+        computer_type: { label: t("reports.ad.computers.role"), render: (row) => computerRole(row.computer_type) },
+        operating_system: { render: (row) => computerOs(row) ?? dash() },
         last_logon_utc: { label: t("reports.computers.last_logon"), render: (row) => <ComputerLastLogon row={row}/>, sortable: false },
         ip_addresses: { label: t("reports.computers.dns"), render: (row) => addressText(row) ?? dash() },
         laps_state: { label: t("reports.computers.laps"), kind: "datetime", value: (row) => record(row.laps).expiration_utc, render: undefined },
@@ -107,8 +106,7 @@ function ComputerLastLogon({ row, withSource = false }: { row: Row; withSource?:
     return withSource && (source === "windows_event" || source === "domain_controllers" || source === "active_directory")
       ? `${date} · ${t(`reports.computers.last_logon_source.${source}`)}` : date;
   }
-  return t(row.last_logon_state === "never" ? "reports.v2.ad.computers.v6.params.activity.options.never"
-    : "reports.computers.last_logon_missing");
+  return row.last_logon_state === "never" ? t("reports.v2.ad.computers.v6.params.activity.options.never") : dash();
 }
 
 function addressText(row: Row) {

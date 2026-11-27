@@ -70,7 +70,7 @@ const namedSubcategories = new Map(Object.values(subcategories).map((name) => [e
 export function auditLeaf(name?: string, path?: string, category?: string, extension?: string): AuditLeaf | undefined {
   const leaf = name?.toLowerCase();
   if (leaf === "subcategoryguid" || leaf === "subcategoryname" || leaf === "auditsetting" || leaf === "policytarget") return leaf;
-  if (leaf === "settingvalue" && [path, category, extension].some((part) => /audit/i.test(part ?? ""))) return leaf;
+  if ((leaf === "settingvalue" || leaf === "inclusionsetting") && [path, category, extension].some((part) => /audit/i.test(part ?? ""))) return "settingvalue";
   return undefined;
 }
 
@@ -82,18 +82,19 @@ export function auditSubcategory(value?: string): string {
   return name === "logon" ? t("reports.gpo.audit.logon") : name ? t(`agents.auditSubcategory.${name}`) : t("reports.gpo.audit.unknown_subcategory");
 }
 
-export function auditMode(value?: string): string {
+export function auditMode(value?: string): string | undefined {
   const mode = value?.trim().toLowerCase();
-  if (!mode) return t("reports.gpo.setting_unavailable");
+  if (!mode) return undefined;
   const modes: Record<string, MessageKey> = {
-    "0": "reports.gpo.audit.none", "no auditing": "reports.gpo.audit.none", none: "reports.gpo.audit.none",
+    "0": "reports.gpo.audit.not_configured", "not configured": "reports.gpo.audit.not_configured",
+    "no auditing": "reports.gpo.audit.none", none: "reports.gpo.audit.none",
     "1": "reports.gpo.audit.success", success: "reports.gpo.audit.success",
     "2": "reports.gpo.audit.failure", failure: "reports.gpo.audit.failure",
     "3": "reports.gpo.audit.both", "success and failure": "reports.gpo.audit.both",
     "success, failure": "reports.gpo.audit.both", successandfailure: "reports.gpo.audit.both",
     "4": "reports.gpo.audit.none",
   };
-  return t(Object.hasOwn(modes, mode) ? modes[mode] : "reports.gpo.audit.unknown_mode");
+  return Object.hasOwn(modes, mode) ? t(modes[mode]) : undefined;
 }
 
 export function auditLeafValue(leaf: AuditLeaf | undefined, value: unknown, side?: "computer" | "user") {
