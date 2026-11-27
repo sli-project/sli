@@ -14,11 +14,50 @@ import json
 import re
 from pathlib import Path
 
-from scripts.maintenance.existing_postgres_bootstrap import (
-    BootstrapError,
-    base_schema_markers,
-    forward_migration_inventory,
+from deploy.linux.installed_state import migration_checksum_variants
+
+FORWARD_NAME = re.compile(r"(\d{3})_[a-z0-9_]+\.sql")
+MARKER_START = (r"insert\s+into\s+(?:public\.)?schema_migrations\s*"
+                r"\(\s*version\s*,\s*name\s*\)\s*values")
+MARKER_TUPLE = r"\(\s*(\d+)\s*,\s*'([^']+)'"
+FORWARD_MARKER = re.compile(MARKER_START + r"\s*" + MARKER_TUPLE, re.IGNORECASE | re.DOTALL)
+BASE_MARKER_BLOCK = re.compile(
+    MARKER_START + r"(.*?)on\s+conflict\s*\(\s*version\s*\)", re.IGNORECASE | re.DOTALL,
 )
+BASE_MARKER = re.compile(MARKER_TUPLE + r"\s*\)")
+
+
+class BootstrapError(RuntimeError):
+    """Invalid canonical migration markers."""
+
+
+def ledger_sources(root: Path) -> dict:
+    schema = root / "config/postgres_schema_v8.sql"
+    blocks = BASE_MARKER_BLOCK.findall(schema.read_text(encoding="utf-8"))
+    if not blocks:
+        raise BootstrapError("base_schema_markers_missing")
+    markers = BASE_MARKER.findall(blocks[-1])
+    sources = {int(version): (name, schema) for version, name in markers}
+    if not markers or len(sources) != len(markers):
+        raise BootstrapError("base_schema_markers_invalid")
+
+    forward_versions = set()
+    for path in sorted((root / "config/postgres_migrations").glob("*.sql")):
+        filename = FORWARD_NAME.fullmatch(path.name)
+        if filename is None or path.name.endswith(("_rollback.sql", ".rollback.sql")):
+            continue
+        matches = FORWARD_MARKER.findall(path.read_text(encoding="utf-8"))
+        if not matches:
+            raise BootstrapError("migration_marker_missing")
+        version = int(filename[1])
+        marker, name = matches[-1]
+        if int(marker) != version:
+            raise BootstrapError("migration_marker_mismatch")
+        if version in forward_versions:
+            raise BootstrapError("migration_version_duplicate")
+        forward_versions.add(version)
+        sources[version] = (name, path)
+    return sources
 
 
 def _checksum(path: Path) -> str:
@@ -47,17 +86,9 @@ def verify_manifest(root: Path, manifest: dict) -> None:
 
 
 def expected_ledger(root: Path) -> list[dict]:
-    """Use the Docker bootstrap's marker parser and forward admission rules."""
-    schema = root / "config/postgres_schema_v8.sql"
-    rows = {
-        version: {"version": version, "name": name, "sha256": _checksum(schema)}
-        for version, name in base_schema_markers(schema)
-    }
-    for item in forward_migration_inventory(root / "config/postgres_migrations"):
-        rows[item.version] = {
-            "version": item.version, "name": item.name, "sha256": _checksum(item.path),
-        }
-    return [rows[version] for version in sorted(rows)]
+    """Read the baseline and canonical forward markers from the release SQL."""
+    return [{"version": version, "name": name, "sha256": _checksum(path)}
+            for version, (name, path) in sorted(ledger_sources(root).items())]
 
 
 def read_ledger(connection) -> list[dict]:
@@ -75,8 +106,6 @@ def verify_ledger(actual: list[dict], expected: list[dict], *, root: Path | None
     digests must be proven against the SAME file and marker in that release;
     no historical digest, NULL attestation or schema guess is trusted.
     """
-    from deploy.linux.installed_state import migration_checksum_variants
-
     for rows in (expected, actual):
         if not isinstance(rows, list) or any(
             not isinstance(row, dict) or set(row) != {"version", "name", "sha256"}
@@ -94,20 +123,20 @@ def verify_ledger(actual: list[dict], expected: list[dict], *, root: Path | None
     if differences:
         if root is None:
             raise ValueError("native_pg_ledger_mismatch")
-        schema = root / "config/postgres_schema_v8.sql"
         try:
-            sources = {version: (name, schema) for version, name in base_schema_markers(schema)}
-            sources.update((item.version, (item.name, item.path)) for item in
-                           forward_migration_inventory(root / "config/postgres_migrations"))
-            for row, pinned in differences:
+            sources = ledger_sources(root)
+        except (OSError, BootstrapError):
+            raise ValueError("native_pg_ledger_mismatch_source") from None
+        for row, pinned in differences:
+            try:
                 source = sources.get(row["version"])
                 if source is None or source[0] != pinned["name"]:
                     raise ValueError("native_pg_ledger_mismatch_source")
                 variants = migration_checksum_variants(source[1].read_bytes())
-                if pinned["sha256"] not in variants or row["sha256"] not in variants:
-                    raise ValueError("native_pg_ledger_mismatch_checksum")
-        except (OSError, BootstrapError):
-            raise ValueError("native_pg_ledger_mismatch_source") from None
+            except OSError:
+                raise ValueError("native_pg_ledger_mismatch_source") from None
+            if pinned["sha256"] not in variants or row["sha256"] not in variants:
+                raise ValueError("native_pg_ledger_mismatch_checksum")
     return {"policy": "release-sql-lf-crlf-v1", "newline_versions": [a["version"] for a, _ in differences],
             "ledger_sha256": hashlib.sha256(json.dumps(actual, sort_keys=True).encode()).hexdigest()}
 

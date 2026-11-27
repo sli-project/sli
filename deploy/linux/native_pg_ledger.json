@@ -637,8 +637,10 @@
     "config/postgres_migrations/425_journal_finding_event_lookup.sql": "9d4e3e42a56638c03df8380fc934bb0f13c30e76ccae35fbb1ca6f1a01f6f952",
     "config/postgres_migrations/426_semantic_outbox_retention.rollback.sql": "eb5351d089373eba7e3fb43fab4840ee1347dadc6f0bbe87a28ad3b3cd7a84f8",
     "config/postgres_migrations/426_semantic_outbox_retention.sql": "415ad119bc2052ac95b95d4027286dfa04f1a1b1c7301017cebb5b78ba379111",
-    "config/postgres_migrations/432_workstation_ad_inventory.rollback.sql": "a0a4a6911a409e120ef428fd9e23de9aa4941135cd61f1ca4bd3eb5b96ed41ca",
-    "config/postgres_migrations/432_workstation_ad_inventory.sql": "c44ece318569ccab8cdc9370b77fd5c81064230297503e0a7edc1fa54d8a7dcd",
+    "config/postgres_migrations/435_user_activity_indexes.rollback.sql": "925e35526b524c98cc55496eff1109c65f0c17bfe5ba8694f053ed679195280b",
+    "config/postgres_migrations/435_user_activity_indexes.sql": "952ea66b5e559a1f457c171e13740958ac2653a40f2cec331836441dd07a5416",
+    "config/postgres_migrations/436_workstation_ad_inventory.rollback.sql": "27b17df0bcd8230a7368fb4a543fb52f0fa3903821ed455af066b5ef259568e5",
+    "config/postgres_migrations/436_workstation_ad_inventory.sql": "029ea2ddacedec206c850442b6e8e87d31896222e101a119c05b2b7b37989e22",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },

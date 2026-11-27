@@ -58,10 +58,10 @@ public sealed class SnapshotCycleConsumer
         }
         if (cycles.Count == 0) { after = null; Cursor = null; }
         // Snapshot processing also runs against the predecessor during rollback.
-        await using var inventory = new NpgsqlCommand("select to_regprocedure('public.advance_workstation_ad_inventory432()') is not null", db);
+        await using var inventory = new NpgsqlCommand("select to_regprocedure('public.advance_workstation_ad_inventory436()') is not null", db);
         if (await inventory.ExecuteScalarAsync(ct) is true)
         {
-            inventory.CommandText = "select public.advance_workstation_ad_inventory432()";
+            inventory.CommandText = "select public.advance_workstation_ad_inventory436()";
             if (await inventory.ExecuteScalarAsync(ct) is long domain)
             {
                 Cursor ??= new();

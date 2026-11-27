@@ -27,9 +27,9 @@ public sealed class NativeWorkstationsReportPostgresTests
     {
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new SqlPostgresFixture();
-        int predecessor = MigrationDirectory.Read().Where(item => item.Version < 432).Max(item => item.Version);
+        int predecessor = MigrationDirectory.Read().Where(item => item.Version < 436).Max(item => item.Version);
         await fixture.StartAsync(ct, throughVersion: predecessor);
-        string migration = MigrationDirectory.Read(432).Single(item => item.Version == 432).Path;
+        string migration = MigrationDirectory.Read(436).Single(item => item.Version == 436).Path;
         await fixture.Pg.ApplyFileAsync(migration, null, ct);
         var slot = DateTimeOffset.Parse("2026-11-25T11:00:00Z");
         var observed = slot.AddMinutes(5);
@@ -62,7 +62,7 @@ public sealed class NativeWorkstationsReportPostgresTests
         async Task<string> InventoryVersions() => (string)(await Ws.Scalar(owner, """
             select jsonb_build_array(
                 (select jsonb_agg(jsonb_build_array(i.xmin::text,to_jsonb(i)) order by station_id) from sli_plugin_workstations.station_inventory i),
-                (select jsonb_agg(jsonb_build_array(c.xmin::text,to_jsonb(c)) order by domain_id) from sli_plugin_workstations.ad_inventory_checkpoints432 c),
+                (select jsonb_agg(jsonb_build_array(c.xmin::text,to_jsonb(c)) order by domain_id) from sli_plugin_workstations.ad_inventory_checkpoints436 c),
                 (select count(*) from sli_plugin_workstations.projection_work))::text
             """, ct))!;
         string first = await InventoryVersions();

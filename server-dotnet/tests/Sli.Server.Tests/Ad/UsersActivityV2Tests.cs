@@ -104,6 +104,10 @@ public sealed class UsersActivityV2Tests
             insert into servers values(7,1,'domain_controller'),(8,2,'domain_controller');
             create table event_hot(event_id bigint,time_created_utc timestamptz,event_kind int,domain_id bigint,actor text,target text,source text,computer text,method jsonb,outcome jsonb,fields jsonb);
             create table event_cold_facts (like event_hot);
+            alter table event_hot add column ad_user_logon_recorder435 bigint generated always as (
+                case when event_kind=4624 and method->>'$channel'='Security'
+                    and method->>'$provider'='Microsoft-Windows-Security-Auditing'
+                then (method->>'$server_id')::bigint end) stored;
             create table event_cold_daily(day date,event_kind int,domain_id bigint,actor text,target text,source text,computer text,method jsonb,outcome jsonb,grouping_key bytea,event_count bigint,first_seen_utc timestamptz,last_seen_utc timestamptz);
             create table normalized_events(normalized_event_id uuid,source_event_id bigint,semantic_contract_version int,normalized_at timestamptz,processing_status text,semantic_type text,facts_json jsonb);
             create table semantic_correlation_candidates(candidate_id uuid,rule_id text,rule_version int,candidate_status text,window_start_utc timestamptz,last_matched_at timestamptz,evidence_count int,confidence text);
@@ -144,6 +148,32 @@ public sealed class UsersActivityV2Tests
             Assert.Equal(expected,rows.Select(r=>r.Int("id")));
             Assert.All(rows,r=>Assert.Null(r["processing_status"]));
             if(rows.Any(r=>r.Int("id")==1))Assert.Equal(Sid,rows.Single(r=>r.Int("id")==1).Text("target_user_sid"));
+        }
+    }
+
+    [Fact]
+    public async Task Account_scoped_activity_matches_the_unfiltered_reader()
+    {
+        await using var pg = new PostCollectionPostgres(canonicalSchema: true);
+        await pg.StartAsync(Ct);
+        await using var db = await pg.OpenAsync(Ct);
+        await Schema(db);
+        var unresolved = Event(6, 4624, 6);
+        unresolved["target_user_sid"] = Sid.ToLowerInvariant(); // Activity requires the exact alias.
+        var wrongRecorder = Event(7, 4624, 7);
+        wrongRecorder["server_id"] = 8;
+        await Seed(db, Event(1, 4725, 1), Event(2, 4728, 2), Event(3, 4624, 3),
+            Event(4, 4729, 4), Event(5, 4624, 5), unresolved, wrongRecorder);
+        var period = new AdPeriod(At, At.AddDays(1));
+        await using var tx = await db.BeginTransactionAsync(Ct);
+        foreach (bool disabled in new[] { false, true })
+        {
+            int[] codes = disabled ? [4722, 4725, 4624, 6272] : [4728, 4729, 4732, 4733, 4756, 4757, 4624, 6272];
+            var events = await AdAccountEvents.ReadAsync(db, [1], codes, period, Ct, Legacy);
+            var expected = Shape(events);
+            var actual = await AdUsersActivity.LoadAsync(db, Current(), [1], Parameters(), disabled, Ct, Legacy);
+            Assert.Equal(1, actual.Int("unknown_identity_events"));
+            Assert.All(expected, field => Assert.True(JsonNode.DeepEquals(field.Value, actual[field.Key]), field.Key));
         }
     }
     [Fact]

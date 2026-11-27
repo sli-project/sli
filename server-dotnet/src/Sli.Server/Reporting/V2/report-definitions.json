@@ -1224,18 +1224,6 @@
         "kind": "choice",
         "options": [
           {
-            "value": "within_threshold",
-            "label": "В пределах порога"
-          },
-          {
-            "value": "over_threshold",
-            "label": "Старше порога"
-          },
-          {
-            "value": "missing",
-            "label": "Нет данных"
-          },
-          {
             "value": "within_30_days",
             "label": "До 30 дней"
           },
@@ -1244,8 +1232,12 @@
             "label": "31–90 дней"
           },
           {
-            "value": "over_60_days",
-            "label": "Более 60 дней"
+            "value": "over_90_days",
+            "label": "Более 90 дней"
+          },
+          {
+            "value": "never",
+            "label": "Никогда"
           }
         ],
         "field_categories": [],

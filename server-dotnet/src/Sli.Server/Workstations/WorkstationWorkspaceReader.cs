@@ -91,7 +91,7 @@ public sealed class WorkstationWorkspaceReader(IPostgresConnectionFactory connec
                    a.agent_status,a.last_seen,a.policy_revision,a.applied_policy_revision,a.collection_state,
                    a.display_name,a.host_name,a.operating_system,a.operating_system_version,a.metadata_observed_at,null,null
             from agents a
-            where a.module is not null and not exists(select 1 from sli_plugin_workstations.ad_inventory_checkpoints432 c
+            where a.module is not null and not exists(select 1 from sli_plugin_workstations.ad_inventory_checkpoints436 c
                              where a.domain_id is null or c.domain_id=a.domain_id)
         ), resources as (
             select a.station_id,a.agent_key,'sli.workstations'::text as plugin_id,a.source_instance_id,a.entity_id,

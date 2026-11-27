@@ -11,6 +11,27 @@ const modules: Record<string, MessageKey> = {
   "sli.gpo-snapshot": "systemStatus.collect.gpo",
 };
 
+const gapMessages: Record<string, MessageKey> = {
+  "sli.heartbeat": "systemStatus.dataGap.heartbeat",
+  "sli.windows.ad-dc": "systemStatus.dataGap.events",
+  "sli.windows.ad-dc-history": "systemStatus.dataGap.events",
+  "sli.ad-snapshot": "systemStatus.dataGap.ad",
+  "sli.gpo-snapshot": "systemStatus.dataGap.gpo",
+};
+
+export function statusSourceGaps(health: AgentCollectionHealth | null | undefined, timeZone: string) {
+  return [...new Map((health?.items ?? []).flatMap((agent) => (agent.data_gaps ?? []).map((gap) => {
+    const message = gap.module_id && Object.hasOwn(gapMessages, gap.module_id) ? gapMessages[gap.module_id] : "systemStatus.dataGap";
+    const id = [agent.id, message, gap.from_utc, gap.to_utc].join(":");
+    const text = t(message, {
+      computer: agent.name.trim().slice(0, 200) || EMPTY_VALUE,
+      from: formatDateTime(gap.from_utc, timeZone),
+      to: formatDateTime(gap.to_utc, timeZone),
+    });
+    return [id, text] as const;
+  }))).entries()];
+}
+
 const services: Record<string, MessageKey> = {
   ad_snapshot_manifest_coordinator: "systemStatus.service.ad",
   storage_lifecycle: "systemStatus.service.storage",
@@ -149,14 +170,13 @@ export function statusPasswordRules(status: PasswordDetectionStatus | undefined,
     }));
 }
 
-export function statusServices(workers: RuntimeWorker[], timeZone: string, showRuleStatus = false) {
+export function statusServices(workers: RuntimeWorker[], timeZone: string) {
   return workers.filter((worker) => Object.hasOwn(services, worker.worker_name)).map((worker) => {
     const stopped = worker.feature_enabled === false || worker.state === "disabled";
     const running = !stopped && worker.state === "active" && !["failed", "error", "blocked", "partial", "warning", "stopped"].includes(worker.status ?? "");
     const unobserved = worker.state === "unknown" || worker.state === "not_registered";
-    const runningLabel = showRuleStatus && worker.worker_name === "semantic" ? "systemStatus.service.processRunning" : "systemStatus.service.running";
     return { id: worker.worker_name, name: t(services[worker.worker_name]),
-      state: t(running ? runningLabel : stopped ? "systemStatus.service.disabled" : unobserved ? "systemStatus.service.check" : "systemStatus.service.failed"),
+      state: t(running ? "systemStatus.service.running" : stopped ? "systemStatus.service.disabled" : unobserved ? "systemStatus.service.check" : "systemStatus.service.failed"),
       tone: running ? "current" : stopped || unobserved ? "neutral" : "error",
       started: formatDateTime(worker.started_at, timeZone, { withYear: false }),
     };

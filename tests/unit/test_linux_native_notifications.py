@@ -10,7 +10,7 @@ import pytest
 
 from deploy.linux import healthcheck, native_host, native_install, native_runtime as runtime
 from deploy.linux import native_clickhouse_endpoint as site, notification_delivery
-from deploy.linux import native_backup, telegram_setup
+from deploy.linux import native_backup, notification_health, telegram_setup
 from server.sli.core import notification_smtp, notification_telegram, smtp_setup
 
 
@@ -78,8 +78,9 @@ def test_delivery_health_binds_pid_and_start(tmp_path, age, pid, valid):
     now = datetime.now(timezone.utc)
     path = tmp_path / "heartbeat.json"
     path.write_text(json.dumps({"pid": pid, "at": (now - timedelta(seconds=age)).timestamp()}))
-    assert healthcheck.healthy("notification-delivery", process_pid=42,
-                              started_at=now - timedelta(seconds=10), status_path=path) is valid
+    probe = dict(process_pid=42, started_at=now - timedelta(seconds=10), status_path=path)
+    assert notification_delivery.healthy(**probe) is valid
+    assert healthcheck.native_healthy("notification-delivery", **probe) is valid
 
 
 def test_delivery_docker_health_still_requires_pid_one(tmp_path, monkeypatch):
@@ -89,6 +90,23 @@ def test_delivery_docker_health_still_requires_pid_one(tmp_path, monkeypatch):
     assert notification_delivery.healthy()
     path.write_text(json.dumps({"pid": 42, "at": datetime.now(timezone.utc).timestamp()}))
     assert not notification_delivery.healthy()
+
+
+@pytest.mark.parametrize("socket_available", [True, False])
+def test_native_notification_setup_health_checks_selected_socket(tmp_path, monkeypatch, socket_available):
+    from contextlib import nullcontext
+
+    socket_path = tmp_path / "control.sock"
+    client = Mock()
+    if not socket_available:
+        client.connect.side_effect = OSError("synthetic socket unavailable")
+    connect = Mock(return_value=nullcontext(client))
+    socket_api = SimpleNamespace(AF_UNIX=object(), SOCK_STREAM=object(), socket=connect)
+    monkeypatch.setattr(notification_health, "socket", socket_api)
+    assert healthcheck.native_healthy("notification-setup", process_pid=42, started_at=datetime.now(timezone.utc),
+                                     status_path=socket_path) is socket_available
+    connect.assert_called_once_with(socket_api.AF_UNIX, socket_api.SOCK_STREAM)
+    client.connect.assert_called_once_with(str(socket_path))
 
 
 def test_native_smtp_reads_coherent_credential_snapshot(tmp_path, monkeypatch, caplog, capsys):

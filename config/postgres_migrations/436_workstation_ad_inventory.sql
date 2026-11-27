@@ -1,12 +1,15 @@
 begin;
-select pg_advisory_xact_lock(hashtext('sli_workstation_ad_inventory432'));
+select pg_advisory_xact_lock(hashtext('sli_workstation_ad_inventory436'));
 do $$ begin
     if not pg_has_role(session_user,'adlog_storage_owner','MEMBER')
-       or not exists(select 1 from public.schema_migrations where version=424 and name='home_read_indexes')
-       or exists(select 1 from public.schema_migrations where version>=432) then
-        raise exception 'workstation_ad_inventory432_preflight';
+       or not exists(select 1 from public.schema_migrations where version=435 and name='user_activity_indexes')
+       or exists(select 1 from public.schema_migrations where version>=436) then
+        raise exception 'workstation_ad_inventory436_preflight';
     end if;
 end $$;
+-- The package runner enters as the storage owner. The AD source
+-- tables belong to the bootstrap roles, so grant as the session user.
+reset role;
 grant select(manifest_id,domain_id,slot_start_utc) on public.ad_snapshot_manifests to adlog_storage_owner;
 grant select(manifest_id,family,contract_id,source_id,source_state,payload_sha256)
     on public.ad_snapshot_manifest_sources to adlog_storage_owner;
@@ -16,17 +19,17 @@ set local role adlog_storage_owner;
 
 alter table sli_plugin_workstations.station_inventory add column ad_snapshot_metadata jsonb;
 
-create table sli_plugin_workstations.ad_inventory_checkpoints432 (
+create table sli_plugin_workstations.ad_inventory_checkpoints436 (
     domain_id bigint primary key references public.domains(id) on delete cascade,
     slot_start_utc timestamptz not null,
     manifest_id uuid not null
 );
-revoke all on sli_plugin_workstations.ad_inventory_checkpoints432 from public;
-grant select on sli_plugin_workstations.ad_inventory_checkpoints432 to adlog_user;
+revoke all on sli_plugin_workstations.ad_inventory_checkpoints436 from public;
+grant select on sli_plugin_workstations.ad_inventory_checkpoints436 to adlog_user;
 
 -- The worker can only advance the published AD population. It supplies no
 -- payload, identities, assignments or journal permissions.
-create function public.advance_workstation_ad_inventory432() returns bigint
+create function public.advance_workstation_ad_inventory436() returns bigint
 language plpgsql volatile security definer set search_path=pg_catalog,pg_temp as $$
 declare
     source record;
@@ -55,7 +58,7 @@ begin
       on snap.domain_id=d.id and snap.snapshot_uuid=
          case when pg_input_is_valid(member.source_id,'uuid') then member.source_id::uuid end
      and snap.payload_sha256=member.payload_sha256 and snap.base_inventory_status='observed'
-    left join sli_plugin_workstations.ad_inventory_checkpoints432 checkpoint on checkpoint.domain_id=d.id
+    left join sli_plugin_workstations.ad_inventory_checkpoints436 checkpoint on checkpoint.domain_id=d.id
     where checkpoint.domain_id is null
        or (checkpoint.slot_start_utc,checkpoint.manifest_id)<(m.slot_start_utc,m.manifest_id)
     order by m.slot_start_utc,d.id limit 1;
@@ -110,13 +113,13 @@ begin
     where i.domain_id=source.domain_id and i.ad_snapshot_metadata is not null
       and not exists(select 1 from jsonb_array_elements(computer_rows) row where (row->>'id')::bigint=i.ad_computer_id);
 
-    insert into sli_plugin_workstations.ad_inventory_checkpoints432 as checkpoint(domain_id,slot_start_utc,manifest_id)
+    insert into sli_plugin_workstations.ad_inventory_checkpoints436 as checkpoint(domain_id,slot_start_utc,manifest_id)
     values(source.domain_id,source.slot_start_utc,source.manifest_id)
     on conflict(domain_id) do update set slot_start_utc=excluded.slot_start_utc,manifest_id=excluded.manifest_id;
     return source.domain_id;
 end $$;
-revoke all on function public.advance_workstation_ad_inventory432() from public;
-grant execute on function public.advance_workstation_ad_inventory432() to adlog_context_worker;
+revoke all on function public.advance_workstation_ad_inventory436() from public;
+grant execute on function public.advance_workstation_ad_inventory436() to adlog_context_worker;
 
-insert into public.schema_migrations(version,name) values(432,'workstation_ad_inventory');
+insert into public.schema_migrations(version,name) values(436,'workstation_ad_inventory');
 commit;
