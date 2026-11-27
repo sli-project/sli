@@ -18,9 +18,10 @@ jobs:
     if: github.repository == 'sli-project/sli'
     runs-on: ubuntu-24.04
     timeout-minutes: 65
-    env:
-      BETA_RESULTS: ${{ runner.temp }}/sli-beta-acceptance
     steps:
+      - name: Set the acceptance results directory
+        shell: bash
+        run: printf 'BETA_RESULTS=%s/sli-beta-acceptance\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
