@@ -10,6 +10,7 @@
     <EmbeddedResource Include="Agents/Control/InstallAgent.ps1" LogicalName="Sli.Server.Agents.InstallAgent.ps1" />
     <None Include="../../../config/sigma/NOTICE" Link="notices/sigma/NOTICE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="../../../config/sigma/licenses/*.txt" Link="notices/sigma/licenses/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="../../../config/sigma/starter/*.yml" Link="notices/sigma/starter/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <EmbeddedResource Include="../../../config/stage9_radius_evidence_root_v*.json" LogicalName="Sli.Server.Storage.%(Filename)%(Extension)" />
     <EmbeddedResource Include="../../../config/event_storage_meanings.json" LogicalName="Sli.Server.Storage.event_storage_meanings.json" />
     <EmbeddedResource Include="../../../config/stage10_plugin_isolation_fixture_v1.json" LogicalName="Sli.Server.Sources.isolation-fixture.json" />

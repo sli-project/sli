@@ -6,7 +6,7 @@ import pytest
 from psycopg.conninfo import conninfo_to_dict
 
 from server.sli.core.app_config import load_config
-from server.sli.core.secret_files import postgres_secret_parts, secret_value
+from deploy.linux.sli_core.secret_files import postgres_secret_parts, secret_value
 
 
 def test_file_preserves_password_spaces_and_does_not_export(tmp_path, monkeypatch):

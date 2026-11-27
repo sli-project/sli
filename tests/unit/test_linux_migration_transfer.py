@@ -9,6 +9,7 @@ import pytest
 
 from deploy.linux import backup, native_install as install, native_runtime as runtime, native_upgrade as upgrade
 from deploy.linux import restore_existing as subject
+from deploy.linux.sli_core.auth import PASSWORD_HASHER
 
 
 @pytest.mark.parametrize('missing', [False, True])
@@ -59,15 +60,14 @@ def test_missing_roles_stop_import_before_database_access(tmp_path, monkeypatch)
 @pytest.mark.parametrize('sync,valid,active', [(False, True, True), (False, False, True),
                                            (True, False, True), (True, False, False)])
 def test_owner_reconciliation_requires_opt_in_and_revokes_sessions(monkeypatch, sync, valid, active):
-    from server.sli.access import auth
-    monkeypatch.setattr(subject, 'secret_value', lambda _: 'synthetic-owner-password')
-    monkeypatch.setattr(auth, 'PASSWORD_HASHER', SimpleNamespace(verify=lambda *a: valid,
-                                                              hash=lambda _: 'synthetic-hash'))
+    password = 'synthetic-owner-password'
+    restored_hash = PASSWORD_HASHER.hash(password if valid else 'synthetic-previous-password')
+    monkeypatch.setattr(subject, 'secret_value', lambda _: password)
     calls = []
 
     def execute(query, params):
         calls.append((query, params))
-        return SimpleNamespace(fetchone=lambda: (42, 'synthetic-old-hash', active))
+        return SimpleNamespace(fetchone=lambda: (42, restored_hash, active))
 
     connection = SimpleNamespace(execute=execute, transaction=nullcontext)
     if not active or (not sync and not valid):
@@ -78,7 +78,9 @@ def test_owner_reconciliation_requires_opt_in_and_revokes_sessions(monkeypatch, 
         subject.reconcile_owner(connection, sync=sync)
         assert len(calls) == (1 if valid else 4)
         if not valid:
-            assert calls[1][1] == ('synthetic-hash', 42)
+            query, (updated_hash, owner_id) = calls[1]
+            assert 'UPDATE public.auth_users SET password_hash=' in query and owner_id == 42
+            assert PASSWORD_HASHER.verify(updated_hash, password)
             assert 'auth_sessions' in calls[2][0] and calls[2][1] == (42,)
             assert 'auth_audit' in calls[3][0] and calls[3][1] == (42,)
 

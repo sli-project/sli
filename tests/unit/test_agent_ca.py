@@ -6,7 +6,8 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, ed25519, rsa
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
-from server.sli.agents import ca, provision
+from deploy.linux.sli_core import ca
+from server.sli.agents import ca as legacy_ca, provision
 
 HOST = "00000000-0000-4000-8000-000000000001"
 AGENT = "00000000-0000-4000-8000-000000000002"
@@ -171,5 +172,5 @@ def test_offline_signing_rejects_unapproved_subject():
     root_key, root = provision.create_root()
     key = ec.generate_private_key(ec.SECP384R1())
     csr = x509.load_pem_x509_csr(csr_pem(key).encode())
-    with pytest.raises(ca.AgentError, match="invalid_issuer_request"):
+    with pytest.raises(legacy_ca.AgentError, match="invalid_issuer_request"):
         provision.sign_issuer(root, root_key, csr)

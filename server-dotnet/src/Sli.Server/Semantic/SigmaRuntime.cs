@@ -2,7 +2,6 @@ using System.Globalization;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
-using Npgsql;
 using Sli.Agent.Core;
 
 namespace Sli.Server.Semantic;
@@ -80,53 +79,9 @@ internal sealed record SigmaEvent(int Id, string Channel, string Computer, DateT
             else { Alias("UserSid", prefix + "UserSid"); if (Present(prefix + "UserName") && Present(prefix + "DomainName")) fields["User"] = fields.Text(prefix + "DomainName") + "\\" + fields.Text(prefix + "UserName"); else unavailable.Add("User"); if (Hex(fields.Text(prefix + "LogonId"), 64) is { } number) { Alias("LogonId", prefix + "LogonId"); fields["LogonIdNumeric"] = number; } else unavailable.UnionWith(["LogonId", "LogonIdNumeric"]); }
         }
         fields["EventID"] = id; fields["Version"] = version; fields["Provider_Name"] = provider; fields["Channel"] = channel; fields["Computer"] = computer; fields["EventRecordID"] = record; fields["TimeCreated"] = stamp; if (guid is not null) fields["Provider_Guid"] = guid;
+        if (id == 4104 && One(system, "Security", false)?.Attribute("UserID")?.Value is { } userId)
+            fields["UserID"] = userId;
         var execution = One(system, "Execution", false); if (execution is not null) foreach (var (native, name) in new[] { ("ProcessID", id == 4688 ? "NativeProcessId" : "ProcessId"), ("ThreadID", "ThreadId") }) if (execution.Attribute(native) is { } value) fields[name] = uint.Parse(value.Value, CultureInfo.InvariantCulture);
         return new(id, channel, computer, SemanticQuery.Time(stamp, "UTC", "sigma_event_header_invalid"), fields, unavailable);
-    }
-}
-
-internal sealed partial class SemanticProduction
-{
-    private static async Task<JsonObject> ProcessSigma(NpgsqlConnection db, CancellationToken ct)
-    {
-        JsonArray policies;
-        await using (var tx = await db.BeginTransactionAsync(ct)) { policies = await new SemanticSession(db, tx).QueryAsync("select p.policy_id,p.policy_version from semantic_risk_policies p join semantic_policy_admission a using(policy_id,policy_version) where p.source_kind='detection_match' and a.enabled and semantic_policy_mode_v160(p.policy_id,p.policy_version,p.lifecycle_status)='enabled' order by p.policy_id,p.policy_version limit 25", ct); await tx.CommitAsync(ct); }
-        int jobs = 0, failed = 0;
-        DateTimeOffset? lastDataAt = null, failureAt = null;
-        foreach (var policy in policies)
-        {
-            ct.ThrowIfCancellationRequested();
-            try
-            {
-                await using var tx = await db.BeginTransactionAsync(ct); var session = new SemanticSession(db, tx); string policyId = policy.Text("policy_id")!; int version = (int)policy.Number("policy_version");
-                var revision = (await session.QueryAsync("select public.read_admitted_sigma_revision($1,$2) as revision", ct, policyId, version))[0]?["revision"];
-                if (revision is null) { await tx.CommitAsync(ct); continue; }
-                var pin = revision["execution"]!.AsObject(); var rule = SigmaRule.Compile(revision.Text("raw_yaml")!, revision.Text("license"));
-                if (!SigmaProjection.ValidPin(pin, rule.Id) || pin.Text("rule_sha256") != rule.Sha || pin.Text("compiler_version") != SigmaRule.CompilerVersion || pin.Text("mapping_version") != SigmaRule.MappingVersion || pin.Text("overlay_sha256") != Password.PasswordJson.Hash(new JsonObject())) throw new InvalidDataException("sigma_live_revision_mismatch");
-                await session.QueryAsync("insert into semantic_sigma_live_cursors(policy_id,policy_version,last_event_id) values($1,$2,0) on conflict do nothing", ct, policyId, version);
-                var cursor = (await session.QueryAsync("select last_event_id from semantic_sigma_live_cursors where policy_id=$1 and policy_version=$2 for update", ct, policyId, version))[0]!;
-                if (!(await session.QueryAsync("select to_regprocedure('public.read_admitted_sigma_events(jsonb,bigint)') is not null as ready", ct))[0]!["ready"]!.GetValue<bool>()) { await tx.CommitAsync(ct); continue; }
-                var rows = await session.QueryAsync("select * from public.read_admitted_sigma_events($1::jsonb,$2)", ct, pin["scope"], cursor.Number("last_event_id")); int added = 0;
-                foreach (var row in rows)
-                {
-                    SigmaEvent ev; try { ev = SigmaEvent.Map(row.Text("source_xml")!); } catch (InvalidDataException) { continue; }
-                    if (rule.Match(ev.Fields, ev.Unavailable) != "matched") continue;
-                    var reference = new JsonObject { ["storage_kind"] = "core_event", ["native_id"] = row.Number("source_event_id").ToString(CultureInfo.InvariantCulture), ["sha256"] = row!["sha256"].Copy(), ["scope"] = pin["scope"].Copy() };
-                    await VerifyNative(session, new JsonArray(reference.Copy()), ct);
-                    var document = new JsonObject { ["rule_id"] = rule.Id, ["rule_sha256"] = rule.Sha, ["manifest_sha256"] = pin["manifest_sha256"].Copy(), ["compiler_version"] = SigmaRule.CompilerVersion, ["mapping_version"] = SigmaRule.MappingVersion, ["overlay_sha256"] = pin["overlay_sha256"].Copy(), ["evidence"] = reference.Copy(), ["entity_key"] = Password.PasswordJson.Hash(new JsonArray(pin["scope"].Text("source_instance_id"), ev.Computer)), ["occurred_at_utc"] = SemanticJson.Stamp(ev.At), ["evaluation_mode"] = "enabled", ["conclusion_state"] = "observed", ["quality"] = "good", ["suppressed"] = false };
-                    string id = Password.PasswordJson.Hash(document); var scope = pin["scope"]!; string evidenceKey = Password.PasswordJson.Hash(new JsonArray(scope["installation_id"].Copy(), scope["plugin_id"].Copy(), scope["source_instance_id"].Copy(), scope["source_generation"].Copy(), scope["collection_scope_id"].Copy(), reference["storage_kind"].Copy(), reference["native_id"].Copy(), reference["sha256"].Copy()));
-                    await session.QueryAsync("insert into semantic_detection_matches(match_id,rule_id,evaluation_mode,occurred_at_utc,evidence_key,document_json) values($1,$2,'enabled',$3,$4,$5) on conflict(match_id) do nothing", ct, id, rule.Id, ev.At, evidenceKey, document);
-                    var stored = (await session.QueryAsync("select document_json from semantic_detection_matches where match_id=$1", ct, id)).Single()!; if (!JsonNode.DeepEquals(stored["document_json"], document)) throw new InvalidDataException("sigma_input_replay_conflict"); added += await EnqueueRiskSource(session, "detection_match", id, ct);
-                }
-                if (rows.Count > 0) await session.QueryAsync("update semantic_sigma_live_cursors set last_event_id=$1 where policy_id=$2 and policy_version=$3", ct, rows[^1].Number("source_event_id"), policyId, version);
-                await tx.CommitAsync(ct); jobs += added;
-                if (rows.Count > 0) lastDataAt = DateTimeOffset.UtcNow;
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-            catch { failed++; failureAt = DateTimeOffset.UtcNow; }
-        }
-        return new JsonObject { ["policies"] = policies.Count, ["jobs"] = jobs, ["failed"] = failed,
-            ["last_data_at"] = lastDataAt?.ToString("O", CultureInfo.InvariantCulture),
-            ["failure_at"] = failureAt?.ToString("O", CultureInfo.InvariantCulture) };
     }
 }

@@ -94,3 +94,16 @@ export type SigmaRuleListResponse = {
   until: string | null;
   rules: SigmaRuleListRow[];
 };
+export type SigmaLiveRule = {
+  rule_id: string;
+  title: string;
+  level: string;
+  author: string;
+  license: string;
+  source_uri: string;
+  enabled: boolean;
+  matches_24h: number;
+};
+
+export type SigmaLiveRulesResponse = { rules: SigmaLiveRule[] };
+
