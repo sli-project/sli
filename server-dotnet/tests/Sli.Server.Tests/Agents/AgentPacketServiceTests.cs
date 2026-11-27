@@ -16,6 +16,21 @@ public sealed class AgentPacketServiceTests
     private sealed class Clock(DateTimeOffset now) : TimeProvider { public override DateTimeOffset GetUtcNow() => now; }
 
     [Fact]
+    public void Published_gaps_keep_the_missing_source_and_valid_interval()
+    {
+        var expiry = JsonNode.Parse("""
+            {
+              "sli.windows.ad-dc": {"data_gap": {"from_utc": "2026-11-21T10:21:00Z", "to_utc": "2026-11-21T10:22:00Z"}},
+              "sli.ad-snapshot": {"data_gap": {"from_utc": "2026-11-21T11:00:00Z", "to_utc": "2026-11-21T10:00:00Z"}}
+            }
+            """);
+        var gap = Assert.Single(SetupCollectionHealth.DataGaps(expiry))!;
+        Assert.Equal("sli.windows.ad-dc", gap["module_id"]!.GetValue<string>());
+        Assert.Equal("2026-11-21T10:21:00Z", gap["from_utc"]!.GetValue<string>());
+        Assert.Equal("2026-11-21T10:22:00Z", gap["to_utc"]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task ExpiryAdvancesOnlyTheSignedNextPositionWithoutAcceptingOldData()
     {
         var ct=TestContext.Current.CancellationToken;
@@ -77,6 +92,7 @@ public sealed class AgentPacketServiceTests
         var state=await ledger.SummaryAsync(next.Envelope,ct);
         Assert.False(state!["expiry_pending"]!.GetValue<bool>());
         var gaps=SetupCollectionHealth.DataGaps(new JsonObject { ["sli.heartbeat"]=state.DeepClone() });
+        Assert.Equal("sli.heartbeat",gaps[0]!["module_id"]!.GetValue<string>());
         Assert.Equal(Iso8601.Format(now.AddDays(-10)),gaps[0]!["from_utc"]!.GetValue<string>());
         Assert.Equal(Iso8601.Format(now),gaps[0]!["to_utc"]!.GetValue<string>());
         await using(var count=new NpgsqlCommand("select (select count(*) from sli_agent_receipts where agent_id=@agent),(select count(*) from sli_agent_packet_inbox where envelope->>'agent_id'=@agent::text)",db,tx))

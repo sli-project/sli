@@ -12,7 +12,8 @@ public interface IPacketTransport
 public sealed class TransportException(string code = "agent_transport_failed", int? httpStatus = null) : AgentException(code)
 {
     public int? HttpStatus { get; } = httpStatus;
-    public string Detail => TransportErrors.Detail(Code, HttpStatus);
+    internal string? EnrollmentRejectionReason { get; init; }
+    public string Detail => EnrollmentRejectionReason ?? TransportErrors.Detail(Code, HttpStatus);
 }
 
 public sealed record DeliveryResult(bool Success, int Attempted, int Acknowledged)

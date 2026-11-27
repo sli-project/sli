@@ -21,6 +21,14 @@ from deploy.linux.existing_postgres_bootstrap import (
 )
 
 
+def ledger_sources(root: Path) -> dict[int, tuple[str, Path]]:
+    schema = root / "config/postgres_schema_v8.sql"
+    sources = {version: (name, schema) for version, name in base_schema_markers(schema)}
+    for migration in forward_migration_inventory(root / "config/postgres_migrations"):
+        sources[migration.version] = (migration.name, migration.path)
+    return sources
+
+
 def migration_checksum_variants(body: bytes) -> set[str]:
     """Accept only LF and CRLF bytes; preserve all other bytes, including lone CR."""
     lf = body.replace(b"\r\n", b"\n")
@@ -53,17 +61,9 @@ def verify_manifest(root: Path, manifest: dict) -> None:
 
 
 def expected_ledger(root: Path) -> list[dict]:
-    """Use the bootstrap marker parser and forward admission rules."""
-    schema = root / "config/postgres_schema_v8.sql"
-    rows = {
-        version: {"version": version, "name": name, "sha256": _checksum(schema)}
-        for version, name in base_schema_markers(schema)
-    }
-    for item in forward_migration_inventory(root / "config/postgres_migrations"):
-        rows[item.version] = {
-            "version": item.version, "name": item.name, "sha256": _checksum(item.path),
-        }
-    return [rows[version] for version in sorted(rows)]
+    """Read the baseline and canonical forward markers from the release SQL."""
+    return [{"version": version, "name": name, "sha256": _checksum(path)}
+            for version, (name, path) in sorted(ledger_sources(root).items())]
 
 
 def read_ledger(connection) -> list[dict]:
@@ -98,20 +98,20 @@ def verify_ledger(actual: list[dict], expected: list[dict], *, root: Path | None
     if differences:
         if root is None:
             raise ValueError("native_pg_ledger_mismatch")
-        schema = root / "config/postgres_schema_v8.sql"
         try:
-            sources = {version: (name, schema) for version, name in base_schema_markers(schema)}
-            sources.update((item.version, (item.name, item.path)) for item in
-                           forward_migration_inventory(root / "config/postgres_migrations"))
-            for row, pinned in differences:
+            sources = ledger_sources(root)
+        except (OSError, BootstrapError):
+            raise ValueError("native_pg_ledger_mismatch_source") from None
+        for row, pinned in differences:
+            try:
                 source = sources.get(row["version"])
                 if source is None or source[0] != pinned["name"]:
                     raise ValueError("native_pg_ledger_mismatch_source")
                 variants = migration_checksum_variants(source[1].read_bytes())
-                if pinned["sha256"] not in variants or row["sha256"] not in variants:
-                    raise ValueError("native_pg_ledger_mismatch_checksum")
-        except (OSError, BootstrapError):
-            raise ValueError("native_pg_ledger_mismatch_source") from None
+            except OSError:
+                raise ValueError("native_pg_ledger_mismatch_source") from None
+            if pinned["sha256"] not in variants or row["sha256"] not in variants:
+                raise ValueError("native_pg_ledger_mismatch_checksum")
     return {"policy": "release-sql-lf-crlf-v1", "newline_versions": [a["version"] for a, _ in differences],
             "ledger_sha256": hashlib.sha256(json.dumps(actual, sort_keys=True).encode()).hexdigest()}
 

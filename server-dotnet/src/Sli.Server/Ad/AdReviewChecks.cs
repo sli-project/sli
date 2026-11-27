@@ -90,7 +90,7 @@ internal static class AdReviewChecks
             var login=await AdJson.ReadAsync(db,"select previous_login_at from auth_users where id=$1",ct,principal.Id);
             if(login.Count>0)since=AdInventoryRows.Date(login[0]["previous_login_at"]);
         }
-        var eventRead=await EventsAsync(db,request.Domains,users,ct,config,accountRows);var events=eventRead.Rows;
+        var eventRead=await EventsAsync(db,request.Domains,users,ct,config,accountRows ? sources : null);var events=eventRead.Rows;
         var eventIndex=new EventIndex(events);
         var exceptions=new JsonObject();if(users)
         {
@@ -246,16 +246,29 @@ internal static class AdReviewChecks
         string? sid=raw.Text(users?"sid":"sid"),guid=raw.Text("objectGuid");
         return events.Related(raw,domain);
     }
-    internal static async Task<(List<JsonObject>? Rows,bool Truncated)> EventsAsync(NpgsqlConnection db,long[] domains,bool users,CancellationToken ct,IConfiguration? config=null,bool accountRows=false)
+    internal static async Task<(List<JsonObject>? Rows,bool Truncated)> EventsAsync(NpgsqlConnection db,long[] domains,bool users,CancellationToken ct,IConfiguration? config=null,List<JsonObject>? accountSources=null)
     {
         await using(var save=new NpgsqlCommand("savepoint ad_review_events",db))await save.ExecuteNonQueryAsync(ct);
         try
         {
-            int[] codes = accountRows ? [4722, 4725, 4624]
+            int[] codes = accountSources is not null ? [4722, 4725]
                 : users ? [4720,4722,4723,4724,4725,4728,4732,4738,4741,4742,4756,5136,4624]
                 : [4720,4722,4723,4724,4725,4728,4732,4738,4741,4742,4756,5136];
-            return (await AdAccountEvents.ReadAsync(db,domains,codes,
-                new(DateTimeOffset.UtcNow.AddDays(-365),DateTimeOffset.UtcNow),ct,config),false);
+            var now = DateTimeOffset.UtcNow;
+            var period = new AdPeriod(now.AddDays(-365), now);
+            var events = await AdAccountEvents.ReadAsync(db, domains, codes, period, ct, config);
+            if (accountSources is not null)
+            {
+                var lifecycle = events.Where(e => e.Int("event_id") == 4725 && e.Text("target_user_sid") is not null)
+                    .Select(e => (e.Int("domain_id"), e.Text("target_user_sid")!.ToLowerInvariant())).ToHashSet();
+                var sids = accountSources.SelectMany(source => (source["snapshot"]?["users"] as JsonArray ?? [])
+                    .Where(user => user.Text("sid") is {} sid && (user.Text("serviceAccountType") is not null
+                        || AdInventoryRows.Bool(user!["enabled"]) == false && lifecycle.Contains((source.Int("domain_id"), sid.ToLowerInvariant()))))
+                    .Select(user => user.Text("sid")!)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+                if (sids.Length > 0)
+                    events.AddRange(await AdAccountEvents.ReadUserLogonsAsync(db, domains, sids, period, ct, config, ignoreCase: true));
+            }
+            return (events, false);
         }
         catch(PostgresException error) when(error.SqlState==PostgresErrorCodes.InsufficientPrivilege){throw;}
         catch(NpgsqlException){await using var rollback=new NpgsqlCommand("rollback to savepoint ad_review_events",db);await rollback.ExecuteNonQueryAsync(ct);return (null,false);}

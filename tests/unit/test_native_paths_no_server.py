@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DEPLOY = "deploy.linux."
 ENTRY_POINTS = {
     "native_install": ("main",),
-    "native_setup": ("main",),
+    "native_setup": ("main", "configure"),
     "migrate": ("migrate",),
     "native_backup": ("main",),
     "native_restore": ("restore", "rollback"),

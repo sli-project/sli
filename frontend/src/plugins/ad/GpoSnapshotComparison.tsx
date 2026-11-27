@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import { DataTable, type TableColumn } from "../../design-system";
 import { t } from "../../i18n";
+import { auditLeaf, auditLeafLabel, auditLeafValue, auditPath } from "./gpo-audit-setting";
 import { formatDateTime } from "../../shared/date-time";
 import { useTimeZone } from "../../shared/time-zone";
 
@@ -51,7 +52,13 @@ export function GpoSnapshotComparison({ reportKey, domain, policyId, revision }:
   </div>;
   if (snapshots.length < 2) return <div role="status">{t("reports.gpo.snapshots_required")}</div>;
 
-  const differences = comparison.data?.collections?.snapshot_comparison as Difference[] | undefined;
+  const differences = (comparison.data?.collections?.snapshot_comparison as Difference[] | undefined)?.map((row) => {
+    const leaf = auditLeaf(row.setting_name, row.path);
+    if (!leaf) return row;
+    const value = row.after_value ?? row.before_value;
+    return { ...row, setting_name: auditLeafLabel(leaf, typeof value === "string" ? value : undefined), path: auditPath(row.side),
+      before_value: auditLeafValue(leaf, row.before_value, row.side), after_value: auditLeafValue(leaf, row.after_value, row.side) };
+  });
   const columns: TableColumn<Difference>[] = [
     { key: "setting_name", label: t("reports.gpo.parameter"), width: "27%", render: (row) => <>
       {row.setting_name || "—"}{row.path ? <div className="sli-ds-text-muted">{row.path}</div> : null}
