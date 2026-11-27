@@ -26,6 +26,9 @@ internal sealed class AgentModuleAssignmentService(IAgentControlAudit audit)
         if (module=="sli.file-audit") throw new AgentControlException("module_disabled",503);
         Guid id=AgentControlJson.Id(AgentControlJson.Get(body,"agent_id"));
         bool workstation=module==WorkstationsModule.ModuleId && await WorkstationJournalAdmission.AvailableAsync(db,tx,ct);
+        bool installerApprovalAvailable = workstation && await WorkstationJournalAdmission.ExpandedAsync(db, tx, ct);
+        var workstationEvents = workstation && !installerApprovalAvailable
+            ? WorkstationJournalAdmission.PreviousEventIds : WorkstationJournalAdmission.EventIds;
         if (flag.GetBoolean() && !(workstation ? await WorkstationJournalAdmission.PluginEnabledAsync(db,tx,ct)
             : await AgentPolicyAssignments.ModuleEnabledAsync(db,tx,module,ct)))
             throw new AgentControlException("module_disabled",503);
@@ -74,7 +77,7 @@ internal sealed class AgentModuleAssignmentService(IAgentControlAudit audit)
             config=module switch {
                 SnapshotPolicy.Ad or SnapshotPolicy.Gpo => SnapshotIngressPolicy.Parse(module,input).Config,
                 "sli.workstations" => AgentModuleAssignmentRules.NormalizeWorkstation(input,
-                    useCollectionBaseline: useWorkstationBaseline),
+                    useCollectionBaseline: useWorkstationBaseline, baselineEvents: workstationEvents),
                 "sli.windows.ad-dc" or "sli.windows.ad-dc-history" => AgentModuleAssignmentRules.NormalizeAd(input,module=="sli.windows.ad-dc-history"),
                 "sli.file-audit" => AgentFileAuditPolicy.Parse(input).Value,
                 NpsPolicy.Nps or NpsPolicy.Accounting => AgentModuleAssignmentRules.NormalizeNps(module,input).Value,
@@ -83,10 +86,10 @@ internal sealed class AgentModuleAssignmentService(IAgentControlAudit audit)
         }
         catch (Exception ex) when (ex is AgentException or ProtocolException or InvalidOperationException or ArgumentException or FormatException or OverflowException)
         { throw new AgentControlException("invalid_agent_module_config"); }
-        if (workstation && flag.GetBoolean() && !WorkstationJournalAdmission.SupportsConfig(config))
+        if (workstation && flag.GetBoolean() && !WorkstationJournalAdmission.SupportsConfig(config, workstationEvents))
             throw new AgentControlException("workstation_journal_profile_unsupported")
-                { AllowedEventIds = WorkstationJournalAdmission.EventIds };
-        if (workstation && flag.GetBoolean() && !await WorkstationGroupSource.PrepareAsync(db, tx, id, ct))
+                { AllowedEventIds = workstationEvents };
+        if (workstation && flag.GetBoolean() && !await WorkstationGroupSource.PrepareAsync(db, tx, id, installerApprovalAvailable, ct))
             throw new AgentControlException("agent_source_not_bound", 409);
         if (module == NpsPolicy.Accounting && flag.GetBoolean())
         {

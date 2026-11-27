@@ -6,8 +6,10 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
+using Sli.Agent.Core;
 using Sli.Server.Agents.Certificates;
 using Sli.Server.Agents.Control;
+using Sli.Server.Agents.Ingress;
 using Sli.Server.Agents.Registry;
 using Sli.Server.Infrastructure;
 using Xunit;
@@ -141,6 +143,25 @@ public sealed class AgentInstallPackageTests
             Assert.Equal("enrollment_token_revoked", Assert.Single(inventory.GetProperty("rejected_enrollments").EnumerateArray()).GetProperty("reason").GetString());
             request["token"] = after["ENROLL_TOKEN"];
             Assert.NotNull((await enrollment.EnrollAsync(db, tx, request, ct))["agent_id"]);
+            await tx.CommitAsync(ct);
+        }
+
+        await using (var tx = await db.BeginTransactionAsync(ct))
+        {
+            using var workstationKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            var host = Guid.NewGuid();
+            var workstation = await enrollment.EnrollAsync(db, tx, new JsonObject
+            {
+                ["token"] = after["ENROLL_TOKEN"], ["reported_hostname"] = "msi-workstation.example.test",
+                ["machine_role"] = "workstation", ["windows_product_type"] = "WinNT",
+                ["csr_pem"] = new CertificateRequest($"CN={host}", workstationKey, HashAlgorithmName.SHA256).CreateSigningRequestPem(),
+            }, ct);
+            var agent = Guid.Parse(workstation["agent_id"]!.GetValue<string>());
+            var scope = Assert.IsType<WorkstationJournalScope>(await WorkstationJournalAdmission.ReadAsync(db, tx, agent, host.ToString("D"), "2", ct));
+            Assert.True(scope.InstallerScope);
+            var policy = WorkstationPolicy.Parse(scope.Config);
+            Assert.True(policy.FamilyEnabled("processes"));
+            Assert.True(policy.FamilyEnabled("usb"));
             await tx.CommitAsync(ct);
         }
     }

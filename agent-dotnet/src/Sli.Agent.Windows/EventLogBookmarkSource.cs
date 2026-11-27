@@ -12,7 +12,8 @@ namespace Sli.Agent.Windows;
 /// saying so (<see cref="SourceBatch.BookmarkRecovered"/>). Failures become allowlisted diagnostics, never event content.
 /// </summary>
 [SupportedOSPlatform("windows")]
-public sealed class EventLogBookmarkSource(EventCatalog catalog, bool filterSecurity = true) : IEventLogSource
+public sealed class EventLogBookmarkSource(EventCatalog catalog, bool filterSecurity = true,
+    WorkstationPolicy? workstation = null) : IEventLogSource
 {
     /// <summary>The Python agent waits 1 s at the tail and 5 s while scanning a time-bounded first read.</summary>
     private static readonly TimeSpan TailWait = TimeSpan.FromSeconds(1);
@@ -45,7 +46,8 @@ public sealed class EventLogBookmarkSource(EventCatalog catalog, bool filterSecu
     /// <summary>Returns null when the saved anchor cannot be confirmed.</summary>
     private List<EventRow>? ReadRows(string channel, ChannelProgress progress, int limit, ref string stage, long? anchor)
     {
-        var selector = filterSecurity ? EventQueries.Build(channel, progress, catalog)
+        var selector = workstation is not null ? EventQueries.BuildWorkstation(channel, progress, workstation)
+            : filterSecurity ? EventQueries.Build(channel, progress, catalog)
             : progress.RecordId is { } id ? $"*[System[EventRecordID {(progress.Bookmark.Length > 0 ? ">=" : ">")} {id.ToString(System.Globalization.CultureInfo.InvariantCulture)}]]" : "*";
         var query = new EventLogQuery(channel, PathType.LogName, selector) { TolerateQueryErrors = false };
         using var reader = new EventLogReader(query) { BatchSize = Math.Clamp(limit, 1, 1024) };

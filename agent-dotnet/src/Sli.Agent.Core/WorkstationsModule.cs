@@ -102,10 +102,13 @@ public sealed record WorkstationPolicy(JsonObject Value, int BatchSize, int Rate
 }
 
 /// <summary>Port of sli_agent/workstations.py. Every cursor and rate count is committed inside the signed packet.</summary>
-public sealed class WorkstationsModule(string hostId, WorkstationPolicy policy, IEventLogSource source, Func<JsonObject>? protectionReader = null)
+public sealed class WorkstationsModule(string hostId, WorkstationPolicy policy, IEventLogSource source,
+    Func<JsonObject>? protectionReader = null, bool includeProcessCommandLine = false)
 {
     public const string ModuleId = "sli.workstations";
     public const string ModuleVersion = "1.1.0";
+    public const int ProcessCommandLineMaxBytes = 1024;
+    public const int DeviceFieldMaxBytes = 512;
     public static readonly string[] ProtectedServices = ["SLIAgentNet", "SLI Agent .NET", "SLIAgent", "SLI Agent", "WinDefend", "Sense", "VSS", "wbengine",
         "Microsoft Defender Antivirus Service", "Windows Defender Antivirus Service", "Microsoft Defender for Endpoint Service",
         "Windows Defender Advanced Threat Protection Service", "Volume Shadow Copy", "Block Level Backup Engine Service",
@@ -165,7 +168,8 @@ public sealed class WorkstationsModule(string hostId, WorkstationPolicy policy, 
         foreach (var name in countsNow.Select(item => item.Key).Where(name => !rates.ContainsKey(name)).ToArray()) countsNow.Remove(name);
         SourceBatch batch;
         string? error = null;
-        try { batch = source.Read(channel, new ChannelProgress(afterId, progress["bookmark"]!.GetValue<string>(), generation), policy.BatchSize); }
+        try { batch = source.Read(channel, new ChannelProgress(afterId, progress["bookmark"]!.GetValue<string>(), generation,
+            SinceUtc: afterId is null ? Iso8601.Format(now.AddDays(-1)) : null), policy.BatchSize); }
         catch (EventLogReadException) { batch = new SourceBatch([]); error = "agent_workstations_read_failed"; }
         if (batch.Rows.Count > policy.BatchSize) throw new AgentException("agent_workstations_range_invalid");
         var records = new List<PacketRecord>();
@@ -272,8 +276,23 @@ public sealed class WorkstationsModule(string hostId, WorkstationPolicy policy, 
 
     private JsonObject BoundTamper(JsonObject row, XElement root)
     {
-        if (row["event_id"]!.GetValue<int>() is not (1102 or 7036 or 7040 or 4104)) return row;
+        int eventId = row["event_id"]!.GetValue<int>();
         XNamespace ns = EventXml.Namespace;
+        if (eventId is 4688 or 6416)
+        {
+            bool bounded = false;
+            foreach (var field in root.Descendants(ns + "EventData").Elements(ns + "Data").ToArray())
+            {
+                if (eventId == 4688 && field.Attribute("Name")?.Value != "CommandLine") continue;
+                string text = eventId == 6416 ? BoundedUtf8(field.Value, DeviceFieldMaxBytes)
+                    : includeProcessCommandLine ? BoundedUtf8(field.Value, ProcessCommandLineMaxBytes) : "";
+                if (text == field.Value) continue;
+                field.Value = text;
+                bounded = true;
+            }
+            return bounded ? EventXml.Parse(root.ToString(SaveOptions.DisableFormatting), hostId, "localhost", row["channel"]!.GetValue<string>()) : row;
+        }
+        if (eventId is not (1102 or 7036 or 7040 or 4104)) return row;
         var changed = false;
         var maskedCount = 0;
         void Mark(string name = "ScriptBlockTextTruncated")

@@ -116,7 +116,7 @@ async function returnLink(page, original) {
 }
 
 /** Uses the existing owned PostgreSQL/app/browser; no mocked report replies. */
-export async function walkWorkstations(page, { url, results, fixture }) {
+export async function walkWorkstations(page, { url, results, fixture, admittedEventIds }) {
   assert.ok(fixture, 'The owned PostgreSQL workstation fixture is required');
   for (const key of ['station_id', 'agent_id', 'source_instance_id', 'host_name', 'domain_id', 'from_utc', 'to_utc', 'search',
     'exact_event_id', 'event_count', 'group_summary_key', 'group_count', 'group_first_seen_utc', 'group_last_seen_utc'])
@@ -127,7 +127,7 @@ export async function walkWorkstations(page, { url, results, fixture }) {
   page.setDefaultTimeout(20_000);
   page.setDefaultNavigationTimeout(20_000);
   try {
-    await verifyWorkstations(page, { url, directory, fixture });
+    await verifyWorkstations(page, { url, directory, fixture, admittedEventIds });
   } catch (error) {
     await writeFile(join(directory, 'failure.json'), JSON.stringify({
       ...error.workstations, current_path: new URL(page.url()).pathname, message: redact(error.message),
@@ -137,7 +137,7 @@ export async function walkWorkstations(page, { url, results, fixture }) {
   }
 }
 
-async function verifyWorkstations(page, { url, directory, fixture }) {
+async function verifyWorkstations(page, { url, directory, fixture, admittedEventIds }) {
   const evidence = [];
   const record = async claim => {
     evidence.push(claim);
@@ -185,10 +185,10 @@ async function verifyWorkstations(page, { url, directory, fixture }) {
     () => fleet.getByRole('link', { name: fixture.host_name, exact: true }).click());
   assertWindow(detail.params, fixture, true, false);
   assert.equal(detail.body.detail?.station?.source_instance_id, fixture.source_instance_id);
-  await verifyStation(page, { detail, detailPath, fixture, fleetUrl, record, screenshot });
+  await verifyStation(page, { detail, detailPath, fixture, fleetUrl, record, screenshot, admittedEventIds });
 }
 
-async function verifyStation(page, { detail, detailPath, fixture, fleetUrl, record, screenshot }) {
+async function verifyStation(page, { detail, detailPath, fixture, fleetUrl, record, screenshot, admittedEventIds }) {
   const events = detail.body.detail?.events?.items ?? [];
   assert.ok(events.length, 'The workstation must read retained rows from the canonical journal');
   assert.equal(events.reduce((total, row) => total + row.event_count, 0), fixture.event_count,
@@ -246,11 +246,11 @@ async function verifyStation(page, { detail, detailPath, fixture, fleetUrl, reco
   await expect(collectionTab).toHaveAttribute('aria-selected', 'true');
   const station = detail.body.detail.station;
   assert.equal(station.profile.state, 'supported');
-  assert.ok(station.profile.event_ids.length > 0);
-  assert.equal(station.profile.event_ids.some(code => [4688, 4689, 6416].includes(code)), false,
-    'The current accepted profile must not advertise unadmitted process or USB events');
+  assert.deepEqual([...station.profile.event_ids].sort((left, right) => left - right),
+    [...admittedEventIds].sort((left, right) => left - right),
+    'The advertised workstation profile must match the events admitted by the server');
   const profile = page.getByRole('table', { name: 'События профиля', exact: true });
-  await expect(profile.locator('tbody > tr')).toHaveCount(station.profile.event_ids.length);
+  await expect(profile.locator('tbody > tr > td:first-child')).toHaveText(station.profile.event_ids.map(String));
   const collection = page.locator('.sli-workstations__collection');
   await expect(collection.getByText(fixture.source_instance_id, { exact: true })).toBeVisible();
   for (const [label, value] of [

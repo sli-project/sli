@@ -57,7 +57,7 @@ internal static class WorkstationJournalInbox
             inputs.Select(input => new DirectEventRequest(channel[("channel", input.Projection.Channel)],
                 input.Row["record_id"]!.GetValue<long>(), input.Time, input.Row, input.Projection.IdentityHash)).ToArray(), ct);
         var events = inputs.Select(input => (ShortEventRow.Create(reservations[input.Ordinal].Id, scope.DomainId, input.Row,
-                input.Projection, scope.ServerId) ?? throw new WorkstationPendingException("workstation_journal_event_not_mapped"))
+                input.Projection, scope.ServerId, workstation: true) ?? throw new WorkstationPendingException("workstation_journal_event_not_mapped"))
             with { Computer = scope.Computer, PacketId = row.PacketId, PacketOrdinal = input.Ordinal }).ToArray();
         await using var publish = new NpgsqlCommand("select public.write_workstation_journal412(@packet,@events)", db, tx);
         publish.Parameters.AddWithValue("packet", row.PacketId);

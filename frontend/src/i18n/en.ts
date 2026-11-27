@@ -3588,6 +3588,7 @@ export const en: Record<MessageKey, string> = {
   "events.semantic.Security:Microsoft-Windows-Security-Auditing:4672.title": "Session with special privileges observed",
   "events.semantic.Security:Microsoft-Windows-Security-Auditing:4672.summary": "4672 confirms observation of a session with special privileges; it does not prove when or whether privileges were elevated.",
   "events.semantic.Security:Microsoft-Windows-Security-Auditing:4688.title": "Process created",
+  "events.semantic.Security:Microsoft-Windows-Security-Auditing:6416.title": "External device observed",
   "events.semantic.Security:Microsoft-Windows-Security-Auditing:4688.summary": "Source-native process lifecycle evidence; an end exists only when exact compatible 4689 is observed before PID reuse.",
   "events.semantic.Security:Microsoft-Windows-Security-Auditing:4689.title": "Process ended",
   "events.semantic.Security:Microsoft-Windows-Security-Auditing:4689.summary": "Source-native process lifecycle evidence; an end exists only when exact compatible 4689 is observed before PID reuse.",

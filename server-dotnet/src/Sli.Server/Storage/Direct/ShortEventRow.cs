@@ -12,10 +12,22 @@ internal sealed record ShortEventRow(long EventId, DateTime Time, int Kind, stri
     string? Actor, string? Target, string? Source, string Computer, long DomainId,
     string Method, string Outcome, IReadOnlyDictionary<string, string?> Fields, Guid? PacketId = null, int? PacketOrdinal = null)
 {
-    internal static ShortEventRow? Create(long eventId, long domainId, JsonObject row, Direct4624Projection projection, long? serverId = null)
+    private static readonly EventStorageDefinition WorkstationDevice = new(6416, "Security",
+        "Microsoft-Windows-Security-Auditing", "External device recognized", "fact", [
+            new("DeviceId", ["DeviceId"], WorkstationsModule.DeviceFieldMaxBytes),
+            new("DeviceDescription", ["DeviceDescription"], WorkstationsModule.DeviceFieldMaxBytes),
+            new("ClassId", ["ClassId", "ClassName"], WorkstationsModule.DeviceFieldMaxBytes),
+            new("LocationInformation", ["LocationInformation"], WorkstationsModule.DeviceFieldMaxBytes),
+        ]);
+
+    internal static ShortEventRow? Create(long eventId, long domainId, JsonObject row, Direct4624Projection projection,
+        long? serverId = null, bool workstation = false)
     {
         var catalog = EventStorageMeaning.Current;
-        var meaning = catalog.Find(projection);
+        var meaning = workstation && projection.EventKind == WorkstationDevice.EventId
+            && string.Equals(projection.Channel, WorkstationDevice.Channel, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(projection.Provider, WorkstationDevice.Provider, StringComparison.OrdinalIgnoreCase)
+            ? WorkstationDevice : catalog.Find(projection);
         if (meaning is null || meaning.Layer == "not_collected") return null;
         int limit = catalog.Common.MaxLength;
         var data = new Dictionary<string, string>(projection.Data, StringComparer.Ordinal);
@@ -83,7 +95,7 @@ internal sealed record ShortEventRow(long EventId, DateTime Time, int Kind, stri
             "ClientAddress", "SourceNetworkAddress", "Workstation", "WorkstationName"
         }.Where(data.ContainsKey).ToDictionary(k => k, k => Bound(data[k], limit)));
         return new ShortEventRow(eventId, DirectEventTime.Utc(row["time_created"]!.GetValue<string>()), projection.EventKind,
-            meaning.Layer, Account(meaning.ActorFields ?? catalog.Common.ActorFields,
+            workstation && projection.EventKind == 4688 ? "fact" : meaning.Layer, Account(meaning.ActorFields ?? catalog.Common.ActorFields,
                 meaning.ActorDomainFields ?? catalog.Common.ActorDomainFields),
             Account(meaning.TargetFields ?? catalog.Common.TargetFields, meaning.TargetDomainFields ?? catalog.Common.TargetDomainFields),
             Pick(catalog.Common.SourceFields, limit), computer, domainId,

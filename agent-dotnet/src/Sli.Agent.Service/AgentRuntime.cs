@@ -180,7 +180,9 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
             var state = policy.Control.State;
             _snapshots ??= new SnapshotCapture(Path.Combine(_options.StateDir, "snapshots"), _files, snapshotReader ?? new DirectorySnapshotReader(), clock);
             if (state != "active") _snapshots.Cancel(clearFailures: true);
-            var source = eventSource ?? (OperatingSystem.IsWindows() ? new EventLogBookmarkSource(_catalog, filterSecurity: policy.AdDc is not null) : null);
+            var workstation = policy.Workstations is { } config ? WorkstationPolicy.Parse(config) : null;
+            var source = eventSource ?? (OperatingSystem.IsWindows() ? new EventLogBookmarkSource(_catalog,
+                filterSecurity: policy.AdDc is not null, workstation: policy.AdDc is null ? workstation : null) : null);
             if (OperatingSystem.IsWindows()) _audit ??= new NativeWindowsAudit(Path.Combine(_options.StateDir, "audit"), _files);
             var fileDirectory = Path.Combine(_options.StateDir,"file-audit");
             if (_fileAudit is null && (policy.FileAuditRequest is not null || _files.ReadAll(Path.Combine(fileDirectory,"state.json")) is not null))
@@ -239,8 +241,9 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
                 var hostId = sourceHostId;
                 var moduleId = policy.AdDc is not null ? AdDcModule.ModuleId : WorkstationsModule.ModuleId;
                 var dc = policy.AdDc is not null ? new AdDcModule(hostId, AdDcConfig.Parse(policy.AdDc, _catalog), source!, _catalog) : null;
-                var ws = policy.Workstations is not null ? new WorkstationsModule(hostId, WorkstationPolicy.Parse(policy.Workstations), source!,
-                    protectionReader ?? (OperatingSystem.IsWindows() ? DefenderProtectionReader.Read : null)) : null;
+                var ws = workstation is not null ? new WorkstationsModule(hostId, workstation, source!,
+                    protectionReader ?? (OperatingSystem.IsWindows() ? DefenderProtectionReader.Read : null),
+                    policy.Control.AuditProcessCommandLine) : null;
                 var deadline = Stopwatch.StartNew();
                 if (_lastCapturePolicy != capturePolicy) _dcCatchUpChannel = null;
                 var channel = dc is not null && _lastCapturePolicy == capturePolicy ? _dcCatchUpChannel : null;

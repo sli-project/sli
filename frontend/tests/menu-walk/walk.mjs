@@ -7,7 +7,8 @@ import { walkWorkstations } from './workstations.mjs';
 
 let input = '';
 for await (const chunk of process.stdin) input += chunk;
-const { url: betaUrl, preview_url: previewUrl, token, results, file_servers: fileServers, workstations } = JSON.parse(input);
+const { url: betaUrl, preview_url: previewUrl, token, results, file_servers: fileServers, workstations,
+  workstation_event_ids: workstationEventIds } = JSON.parse(input);
 for (const url of [betaUrl, previewUrl]) {
   if (!new URL(url).hostname.match(/^(127\.0\.0\.1|localhost|\[::1\])$/)) throw new Error('Owned loopback host required');
 }
@@ -112,7 +113,8 @@ try {
       for (const label of forbiddenLabels(visibleText, [...reasons])) if (!row.labels.some(item => item.label === clean(label))) row.labels.push({ label: clean(label), where: 'body' });
       if (!focus) await page.screenshot({ path: join(results, `${entry.id}.png`), fullPage: true });
       if (entry.id === 'file-audit') await walkFileServers(page, { url, results, fixture: fileServers });
-      if (entry.id === 'workstations-overview') await walkWorkstations(page, { url, results, fixture: workstations });
+      if (entry.id === 'workstations-overview')
+        await walkWorkstations(page, { url, results, fixture: workstations, admittedEventIds: workstationEventIds });
     } catch (error) { row.failures.push(clean(error.message)); }
     finally {
       clearInterval(heartbeat);

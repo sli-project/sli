@@ -8,11 +8,15 @@ namespace Sli.Server.Agents.Control;
 
 internal static class WorkstationGroupSource
 {
-    // Establish inventory only for an explicitly enabled, owner-approved AD computer.
-    // Enrollment itself does not grant collection rights. The caller owns the transaction.
-    internal static async Task<bool> PrepareAsync(NpgsqlConnection db, NpgsqlTransaction tx, Guid agent, CancellationToken ct)
+    internal static async Task<bool> PrepareAsync(NpgsqlConnection db, NpgsqlTransaction tx, Guid agent,
+        bool installerApprovalAvailable, CancellationToken ct)
     {
         if (await WorkstationJournalAdmission.ReadAsync(db, tx, agent, null, null, ct) is not null) return true;
+        if (installerApprovalAvailable && await AgentGroupStore.Scalar(db, tx,
+            "select public.workstation_package_approved459(@agent)", ct, ("agent", agent)) is true)
+            return await PrepareInstallerAsync(db, tx, agent, ct);
+
+        // Group enrollments still require an explicitly approved AD computer.
         var bindings = await AgentGroupStore.Rows(db, tx, """
             select batch.domain_id,request.computer_entity_id,a.registration_host_name,
                    enrollment.used_at is not null and enrollment.replacement_for is null
@@ -60,10 +64,11 @@ internal static class WorkstationGroupSource
             return false;
 
         var existing = await AgentGroupStore.Rows(db, tx, """
-            select domain_id,hostname,fqdn,role,is_active from public.servers
-            where lower(hostname) in (@host,@fqdn) or lower(fqdn) in (@host,@fqdn)
-            for update
-            """, ct, ("host", hostname), ("fqdn", fqdn));
+            select s.domain_id,s.hostname,s.fqdn,s.role,s.is_active
+            from public.servers s join public.domains d on d.id=s.domain_id
+            where d.fqdn<>@installer_domain and (lower(s.hostname) in (@host,@fqdn) or lower(s.fqdn) in (@host,@fqdn))
+            for update of s
+            """, ct, ("host", hostname), ("fqdn", fqdn), ("installer_domain", WorkstationJournalAdmission.InstallerDomain));
         if (existing.Count != 0)
             return existing.Count == 1 && AgentGroupStore.Long(existing[0], "domain_id") == domain
                 && existing[0]["is_active"]?.GetValue<bool>() == true
@@ -79,5 +84,29 @@ internal static class WorkstationGroupSource
             on conflict(domain_id,hostname) do nothing
             """, ct, ("domain", domain), ("host", hostname), ("fqdn", fqdn), ("os", os),
             ("version", AgentGroupInput.Text(attrs?["operating_system_version"]))) == 1;
+    }
+
+    private static async Task<bool> PrepareInstallerAsync(NpgsqlConnection db, NpgsqlTransaction tx, Guid agent, CancellationToken ct)
+    {
+        // The short store requires an inventory ID and a domain ID. Keep the
+        // installer-owned namespace out of AD enrollment and domain selection.
+        return await AgentGroupStore.Execute(db, tx, """
+            with forest as (
+                insert into public.forests(name) values(@namespace)
+                on conflict(name) do update set name=excluded.name returning id
+            ), station_scope as (
+                insert into public.domains as d(forest_id,fqdn,is_archived)
+                select id,@namespace,true from forest
+                on conflict(forest_id,fqdn) do update set fqdn=excluded.fqdn
+                where d.is_archived and d.domain_sid is null and d.netbios_name is null
+                returning id
+            )
+            insert into public.servers as s(domain_id,hostname,fqdn,role)
+            select station_scope.id,lower(a.registration_host_name collate pg_catalog.pg_unicode_fast),a.registration_host_name,'workstation'
+            from station_scope cross join public.sli_agents a
+            where a.id=@agent and nullif(a.registration_host_name,'') is not null
+            on conflict(domain_id,hostname) do update set fqdn=excluded.fqdn,is_active=true
+            where s.role='workstation' and lower(s.fqdn collate pg_catalog.pg_unicode_fast)=excluded.hostname
+            """, ct, ("namespace", WorkstationJournalAdmission.InstallerDomain), ("agent", agent)) == 1;
     }
 }
