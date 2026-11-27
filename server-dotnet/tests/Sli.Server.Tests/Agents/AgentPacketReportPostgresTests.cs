@@ -21,6 +21,7 @@ using Sli.Agent.Protocol;
 using Sli.Server.Agents.Consumer;
 using Sli.Server.Agents.Control;
 using Sli.Server.Agents.Ingress;
+using Sli.Server.Agents.Registry;
 using Sli.Server.Infrastructure;
 using Sli.Server.Tests.Semantic;
 using Xunit;
@@ -207,6 +208,7 @@ public sealed class AgentPacketReportPostgresTests(ITestOutputHelper output)
         foreach (var migration in MigrationDirectory.Read(414))
             await fixture.Pg.ApplyFileAsync(migration.Path, null, ct);
         await ExerciseWorkstationAsync(fixture, owner, connections, consumer, certificates.Ca, certificate => Client(certificate), analyst, now, ct);
+        await ExercisePackagedWorkstationAsync(fixture, owner, consumer, certificates.Ca, certificate => Client(certificate), analyst, now, ct);
         await fixture.RollbackAfterAsync(413, ct);
         await fixture.Pg.ApplyFileAsync(Path.ChangeExtension(upgrade, ".rollback.sql"), null, ct);
         Assert.True(JsonNode.DeepEquals(publishedBefore, await SnapshotPublishedDcAsync(owner, hostId, ct)));
@@ -218,8 +220,8 @@ public sealed class AgentPacketReportPostgresTests(ITestOutputHelper output)
         await using var afterRollback = await retained.ExecuteReaderAsync(ct);
         Assert.True(await afterRollback.ReadAsync(ct));
         Assert.True(afterRollback.GetBoolean(0));
-        Assert.Equal(3L, afterRollback.GetInt64(1));
-        Assert.Equal(1L, afterRollback.GetInt64(2));
+        Assert.Equal(6L, afterRollback.GetInt64(1));
+        Assert.Equal(2L, afterRollback.GetInt64(2));
     }
 
     private static async Task ExerciseWorkstationLoadAsync(SqlPostgresFixture fixture, NpgsqlConnection owner,
@@ -240,7 +242,8 @@ public sealed class AgentPacketReportPostgresTests(ITestOutputHelper output)
         var sources = new string[stationCount];
         var at = now.AddMinutes(-4);
         var profile = AgentModuleAssignmentRules.NormalizeWorkstation(
-            new JsonObject { ["policy_revision"] = "2" }, useCollectionBaseline: true);
+            new JsonObject { ["policy_revision"] = "2" }, useCollectionBaseline: true,
+            baselineEvents: WorkstationJournalAdmission.PreviousEventIds);
 
         using (var schema = new NpgsqlCommand("""
             select max(version)=413 and bool_or(version=413 and name='workstation_journal_admission')
@@ -587,8 +590,8 @@ public sealed class AgentPacketReportPostgresTests(ITestOutputHelper output)
         Assert.Equal(2L, enabled["policy_revision"]!.GetValue<long>());
         var initial = enabled["assigned_modules"]![0]!["config"]!.AsObject();
         Assert.True(JsonNode.DeepEquals(expected.Value["allow_event_ids"], initial["allow_event_ids"]));
-        Assert.False(initial["families"]!["processes"]!.GetValue<bool>());
-        Assert.False(initial["families"]!["usb"]!.GetValue<bool>());
+        Assert.True(initial["families"]!["processes"]!.GetValue<bool>());
+        Assert.True(initial["families"]!["usb"]!.GetValue<bool>());
 
         var explicitConfig = new JsonObject
         {
@@ -604,7 +607,7 @@ public sealed class AgentPacketReportPostgresTests(ITestOutputHelper output)
         var legacyAgent = Guid.NewGuid();
         var legacyPolicy = new JsonObject
         {
-            ["policy_revision"] = "1", ["allow_event_ids"] = new JsonArray(4624, 4688),
+            ["policy_revision"] = "1", ["allow_event_ids"] = new JsonArray(4624, 4104),
             ["families"] = new JsonObject { ["processes"] = true, ["usb"] = false }
         };
         // Seed the assignment shape accepted before the journal profile was enforced.
@@ -745,6 +748,108 @@ public sealed class AgentPacketReportPostgresTests(ITestOutputHelper output)
         await using var counts = await verify.ExecuteReaderAsync(ct);
         Assert.True(await counts.ReadAsync(ct));
         Assert.Equal(new long[] { 3, 2, 1, 4, 1, 0, 3 }, Enumerable.Range(0, counts.FieldCount).Select(counts.GetInt64));
+    }
+
+    private static async Task ExercisePackagedWorkstationAsync(SqlPostgresFixture fixture, NpgsqlConnection owner,
+        AgentWorkstationInboxConsumer consumer, Sli.Server.Agents.Certificates.AgentIssuingCa ca,
+        Func<X509Certificate2, HttpClient> client, HttpClient analyst, DateTimeOffset now, CancellationToken ct)
+    {
+        const string hostName = "WS-ENROLLED-ПК";
+        const string security = "Security";
+        const string provider = "Microsoft-Windows-Security-Auditing";
+        var host = Guid.NewGuid();
+        var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        await using (var grant = new NpgsqlCommand("""
+            insert into sli_agent_console_tokens(id,token_hash,created_at,installer)
+            values(@id,@hash,clock_timestamp(),'{}'::jsonb);
+            """, owner))
+        {
+            grant.Parameters.AddWithValue("id", Guid.NewGuid());
+            grant.Parameters.AddWithValue("hash", Convert.ToHexStringLower(SHA256.HashData(Encoding.ASCII.GetBytes(token))));
+            Assert.Equal(1, await grant.ExecuteNonQueryAsync(ct));
+        }
+
+        await using var db = new NpgsqlConnection(fixture.Dsn("adlog_user"));
+        await db.OpenAsync(ct);
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var auth = new AgentIdentityService(ca);
+        Guid agent;
+        X509Certificate2 certificate;
+        WorkstationPolicy policy;
+        await using (var tx = await db.BeginTransactionAsync(ct))
+        {
+            var enrolled = await new AgentEnrollmentService(ca, auth).EnrollAsync(db, tx, new JsonObject
+            {
+                ["token"] = token, ["reported_hostname"] = hostName, ["machine_role"] = "workstation",
+                ["windows_product_type"] = "WinNT",
+                ["csr_pem"] = new CertificateRequest($"CN={host}", key, HashAlgorithmName.SHA256).CreateSigningRequestPem(),
+            }, ct);
+            agent = Guid.Parse(enrolled["agent_id"]!.GetValue<string>());
+            certificate = X509Certificate2.CreateFromPem(enrolled["certificate_pem"]!.GetValue<string>());
+            var scope = Assert.IsType<WorkstationJournalScope>(await WorkstationJournalAdmission.ReadAsync(db, tx, agent, host.ToString("D"), "2", ct));
+            Assert.True(scope.InstallerScope);
+            Assert.Equal(hostName, scope.Computer);
+            var control = new Sli.Server.Agents.ClientControl.AgentClientControlService(new AgentControlAudit(), TimeProvider.System);
+            var checkIn = await control.CheckInAsync(db, tx, await auth.AuthenticateAsync(db, tx, certificate, false, ct), ct);
+            Assert.True(checkIn["collection_policy"]!["manage_windows_audit"]!.GetValue<bool>());
+            Assert.False(checkIn["collection_policy"]!["audit_process_command_line"]!.GetValue<bool>());
+            var assignment = Assert.Single(checkIn["assigned_modules"]!.AsArray())!;
+            Assert.Equal(WorkstationsModule.ModuleId, assignment["module_id"]!.GetValue<string>());
+            policy = WorkstationPolicy.Parse(assignment["config"]!.AsObject());
+            Assert.True(policy.FamilyEnabled("processes"));
+            Assert.True(policy.FamilyEnabled("usb"));
+            await tx.CommitAsync(ct);
+        }
+        using var stationCertificate = certificate;
+        using var station = client(stationCertificate);
+        var at = now.AddMinutes(-2);
+        string prefix = "arg<&";
+        string command = prefix + new string('x', WorkstationsModule.ProcessCommandLineMaxBytes * 2);
+        EventRow Native(int kind, int record, string fields) => new($"""
+            <Event xmlns="{EventXml.Namespace}"><System><Provider Name="{provider}"/><EventID>{kind}</EventID>
+            <EventRecordID>{record}</EventRecordID><TimeCreated SystemTime="{Iso8601.Format(at)}"/>
+            <Channel>{security}</Channel><Computer>{hostName.ToLowerInvariant()}.example.test</Computer></System><EventData>{fields}</EventData></Event>
+            """, $"bookmark-{record}");
+        var collector = new WorkstationsModule(host.ToString("D"), policy, new PackagedWorkstationLog([
+            Native(4624, 1, """<Data Name="TargetUserName">fixture-user</Data><Data Name="LogonType">2</Data>"""),
+            Native(4688, 2, $"""<Data Name="NewProcessName">fixture.exe</Data><Data Name="CommandLine">{System.Security.SecurityElement.Escape(command)}</Data>"""),
+            Native(6416, 3, """<Data Name="DeviceId">USBSTOR\Fixture</Data><Data Name="DeviceDescription">Fixture USB drive</Data>"""),
+        ]), includeProcessCommandLine: true);
+        var sample = Assert.IsType<Sample>(collector.Collect(null, now).Sample);
+        var packet = Packets.Make(new EcdsaPacketSigner(key), agent.ToString("D"), 1, sample, now);
+        Assert.Equal("committed", (await PostAsync(station, packet, ct))["status"]!.GetValue<string>());
+        var run = await consumer.RunOnceAsync(10, ct);
+        Assert.True(run.Imported == 1, string.Join(", ", run.PendingReasons));
+
+        string period = $"period=custom&from={at.AddMinutes(-1).UtcDateTime:O}&to={at.AddMinutes(1).UtcDateTime:O}";
+        var workspace = await GetReportAsync(analyst, $"/api/v2/reports/workstations.overview/rows/{agent:D}/detail?{period}", ct);
+        var detail = Assert.IsType<JsonObject>(workspace["detail"]);
+        Assert.Equal(hostName, detail["station"]!["display_name"]!.GetValue<string>());
+        Assert.Equal("enabled", detail["station"]!["collection_state"]!.GetValue<string>());
+        Assert.Equal("active", detail["station"]!["agent_status"]!.GetValue<string>());
+        Assert.Null(detail["station"]!["domain_name"]);
+        var expected = new[] { "4624", "4688", "6416" };
+        Assert.Equal(expected, detail["events"]!["items"]!.AsArray().Select(row => row!["event_id"]!.ToString()).Order());
+        var journal = await GetReportAsync(analyst, $"/api/v2/reports/events.journal/data?{period}&source_instance_id={host:D}&source_plugin=sli.workstations", ct);
+        Assert.Equal(expected, journal["items"]!.AsArray().Select(row => row!["event_id"]!.ToString()).Order());
+
+        await using var stored = new NpgsqlCommand("""
+            select fields->>'CommandLine' from event_cold_facts
+            where method#>>'{$origin,source_instance_id}'=@host and event_kind=4688
+            """, owner);
+        stored.Parameters.AddWithValue("host", host.ToString("D"));
+        Assert.Equal(command[..WorkstationsModule.ProcessCommandLineMaxBytes], await stored.ExecuteScalarAsync(ct));
+
+        // The historical rollback through 442 requires ASCII registration names.
+        // Retained events and their source identifiers remain in the fixture.
+        await using var clearRegistration = new NpgsqlCommand("update sli_agents set registration_host_name=null where id=@agent", owner);
+        clearRegistration.Parameters.AddWithValue("agent", agent);
+        Assert.Equal(1, await clearRegistration.ExecuteNonQueryAsync(ct));
+    }
+
+    private sealed class PackagedWorkstationLog(EventRow[] rows) : IEventLogSource
+    {
+        public SourceBatch Read(string channel, ChannelProgress progress, int limit) => new(rows);
     }
 
     private sealed class WorkstationFixtureLog(string expected, int record, string xml) : IEventLogSource
