@@ -91,6 +91,22 @@ public static class ProblemPresentation
     internal static bool CatalogDetection(string rule) => rule is "semantic.qw.privileged-group-addition" or "semantic.qw.security-log-cleared" or "semantic.qw.audit-disabled";
     internal static bool IsDcCatalogFinding(string rule) => rule is "semantic.security.dc_scheduled_task_created" or "semantic.security.dc_service_installed";
     internal static bool IsPasswordFinding(string rule) => rule is "semantic.qw.password-brute-force" or "semantic.qw.password-spray";
+    private static bool MultiAddressSpray(JsonObject finding) =>
+        ProblemJson.Text(finding["rule_code"]) == "semantic.qw.password-spray" &&
+        ProblemJson.Bool(finding["presentation_facts"]?["campaign"]) &&
+        ProblemJson.Long(finding["presentation_facts"]?["address_count"]) > 1;
+
+    private static string? CampaignSpan(JsonNode? facts, string language)
+    {
+        if (!ProblemJson.Bool(facts?["campaign"]) ||
+            !DateTimeOffset.TryParse(ProblemJson.Text(facts?["first"]), CultureInfo.InvariantCulture, DateTimeStyles.None, out var first) ||
+            !DateTimeOffset.TryParse(ProblemJson.Text(facts?["last"]), CultureInfo.InvariantCulture, DateTimeStyles.None, out var last) ||
+            last < first) return null;
+        var duration = last - first;
+        string unit = duration.TotalHours >= 1 ? "hours" : duration.TotalMinutes >= 1 ? "minutes" : "seconds";
+        return ProblemJson.Text(Message("security.problems.presentation.campaign_span." + unit, language,
+            new() { ["hours"] = (int)duration.TotalHours, ["minutes"] = duration.Minutes, ["seconds"] = duration.Seconds })["text"]);
+    }
 
     private static string PasswordQuantity(string noun, JsonNode count, string language, bool groupDigits = false)
     {
@@ -144,7 +160,7 @@ public static class ProblemPresentation
             }
         }
         var source = finding["presentation_facts"]?["source"] ?? finding["source"];
-        if (technical && !Regex.IsMatch(ProblemJson.Text(source), @"\A\d+\z")) parameters["source"] = Name(source);
+        if (technical && !MultiAddressSpray(finding) && !Regex.IsMatch(ProblemJson.Text(source), @"\A\d+\z")) parameters["source"] = Name(source);
         bool guessing = ProblemJson.Text(finding["rule_code"]) == "semantic.qw.password-brute-force" &&
             !ProblemJson.Bool(finding["presentation_facts"]?["password_success"]);
         parameters["count"] = (guessing ? finding["occurrence_count"] : finding["presentation_facts"]?["count"])?.DeepClone() ??
@@ -185,10 +201,11 @@ public static class ProblemPresentation
         if (threshold && suffix == "title")
         {
             bool spray = rule == "semantic.qw.password-spray";
+            bool campaign = MultiAddressSpray(finding) && ProblemJson.Long(parameters["address_count"]) > 1;
             if (parameters["attempts"] is { } attempts &&
-                (spray ? parameters["source"] is not null && parameters["account_count"] is not null : parameters["account"] is not null))
+                (spray ? (campaign || parameters["source"] is not null) && parameters["account_count"] is not null : parameters["account"] is not null))
             {
-                string key = (queueTitle, spray) switch {
+                string key = campaign ? "spray_campaign_title" : (queueTitle, spray) switch {
                     (true, true) => "queue_spray_title",
                     (true, false) => "queue_brute_title",
                     (false, true) => "spray_threshold_title",
@@ -200,6 +217,8 @@ public static class ProblemPresentation
                 if (parameters["address_count"] is { } addresses) titleParameters["address_quantity"] = PasswordQuantity("address", addresses, language, queueTitle);
                 if (parameters["account_count"] is { } accounts) titleParameters["account_quantity"] = PasswordQuantity("account", accounts, language, queueTitle);
                 var title = Message("security.problems.presentation." + key, language, titleParameters);
+                if (queueTitle && CampaignSpan(finding["presentation_facts"], language) is { } span)
+                    title["text"] = $"{title["text"]} · {span}";
                 title["rendered"] = true;
                 return title;
             }
@@ -209,6 +228,8 @@ public static class ProblemPresentation
         {
             string key = rule == "semantic.qw.password-spray" ? "spray" : "brute";
             var tail = ProblemJson.Bool(finding["presentation_facts"]?["password_success"]) ? "_threshold_success_what" : "_threshold_what";
+            if (MultiAddressSpray(finding))
+                tail = "_campaign" + (ProblemJson.Bool(finding["presentation_facts"]?["password_success"]) ? "_success_what" : "_what");
             code = "security.problems.presentation." + key + tail;
         }
         if (suffix == "next" && (CatalogDetection(rule) || rule == "semantic.qw.agent-tamper") &&
@@ -310,6 +331,7 @@ public static class ProblemPresentation
             return text.Length == 0 ? null : JsonValue.Create(text);
         }
         var row = ProblemJson.Pick(finding, FindingFields); var messages = new JsonObject();
+        if (MultiAddressSpray(finding)) row["source"] = null;
         var identity = ProblemJson.Object(finding["identity_context"]); string actorRaw = ProblemJson.Text(finding["actor"]).Trim();
         var actor = identity["actor"] as JsonObject ?? identity["principals"]?[actorRaw] as JsonObject;
         string rule = ProblemJson.Text(finding["rule_code"]);
@@ -354,19 +376,21 @@ public static class ProblemPresentation
             ("evidence", new[] { "event_db_id", "event_record_id", "event_id", "hostname", "channel", "time_created_utc", "evidence_role", "note" }),
             ("entities", new[] { "entity_type", "display_name", "entity_role" }), ("status_history", new[] { "id", "old_status", "new_status", "changed_at", "changed_by", "note" }) })
             row[key] = new JsonArray(ProblemJson.Array(finding[key]).OfType<JsonObject>().Select(r => (JsonNode)ProblemJson.Pick(r, fieldsToKeep)).ToArray());
-        if (IsPasswordFinding(rule)) {
+        if (IsPasswordFinding(rule) || rule == "semantic.qw.audit-disabled") {
             string? Decision(string note)
             {
                 if (note == "password_rule_replaced420") return ProblemJson.Text(M("security.problems.presentation.password_replaced")["text"]);
-                const string merged = "password_rule_merged420:";
-                if (note.StartsWith(merged, StringComparison.Ordinal) &&
-                    long.TryParse(note.AsSpan(merged.Length), NumberStyles.None, CultureInfo.InvariantCulture, out long id) && id > 0)
-                    return ProblemJson.Text(M("security.problems.presentation.password_merged", new() { ["id"] = id })["text"]);
+                if (note == "password_campaign_quiet444") return ProblemJson.Text(M("security.problems.presentation.campaign_quiet")["text"]);
+                foreach (var (prefix, key) in new[] { ("password_rule_merged420:", "password_merged"), ("problem_campaign_merged444:", "campaign_merged") })
+                    if (note.StartsWith(prefix, StringComparison.Ordinal) &&
+                        long.TryParse(note.AsSpan(prefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out long id) && id > 0)
+                        return ProblemJson.Text(M("security.problems.presentation." + key, new() { ["id"] = id })["text"]);
                 return null;
             }
             if (Decision(ProblemJson.Text(row["status_reason"])) is { } reason) row["status_reason"] = reason;
             foreach (var entry in ProblemJson.Array(row["status_history"]).OfType<JsonObject>())
-                if (ProblemJson.Text(entry["changed_by"]) == "SLI" && Decision(ProblemJson.Text(entry["note"])) is { } note) entry["note"] = note;
+                if (ProblemJson.Text(entry["changed_by"]) is "SLI" or "semantic-worker" &&
+                    Decision(ProblemJson.Text(entry["note"])) is { } note) entry["note"] = note;
         }
         row["risk_acceptance"] = finding["risk_acceptance"] is JsonObject risk
             ? ProblemJson.Pick(risk, queue && !includeDescription ? ["state", "expires_at"] : RiskFields) : null;

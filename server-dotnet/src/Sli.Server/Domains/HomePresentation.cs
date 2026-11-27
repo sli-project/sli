@@ -45,7 +45,7 @@ internal static class HomePresentation
             }
             var totals = finding["password_totals"];
             var accounts = totals?["accounts"] is null ? password.Number("accounts") : totals.Number("accounts");
-            var addresses = password.Number("addresses");
+            var addresses = totals?["addresses"] is null ? password.Number("addresses") : totals.Number("addresses");
             var name = accounts > 1
                 ? NumberMessage(query.OpenQueue && totals?["accounts"] is null ? "sample_accounts" : "accounts", accounts)
                 : DisplayName(totals.Text("account") ?? password.Text("account"));
@@ -56,8 +56,9 @@ internal static class HomePresentation
             if (attempts > 0)
                 detail.Add(NumberMessage(query.OpenQueue && totals?["attempts"] is null ? "sample_attempts" : "attempts", attempts));
             if (addresses > 1) detail.Add(NumberMessage("addresses", addresses));
-            else if (DisplayName(password.Text("address")) is { } address) detail.Add(address);
-            if (password.Stamp("first_at") is { } first && password.Stamp("last_at") is { } last)
+            else if (DisplayName(totals.Text("address") ?? password.Text("address")) is { } address) detail.Add(address);
+            if ((totals.Stamp("first_at") ?? password.Stamp("first_at")) is { } first &&
+                (totals.Stamp("last_at") ?? password.Stamp("last_at")) is { } last)
             {
                 var zone = TimeZoneInfo.FindSystemTimeZoneById(query.TimeZone);
                 var from = TimeZoneInfo.ConvertTime(first, zone);
