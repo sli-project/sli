@@ -22,6 +22,24 @@ namespace Sli.Server.Tests.Domains;
 
 public sealed partial class HomeSummaryEndpointTests
 {
+    [Theory]
+    [InlineData("en", "Password guessing against an account · Failed attempts: 18")]
+    [InlineData("ru", "Подбирают пароль к учётной записи · Неудачные попытки: 18")]
+    public void Open_queue_password_fact_contains_only_the_rule_title_and_attempt_count(string language, string expected)
+    {
+        var window = new HomeWindow(DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch.AddDays(1));
+        var query = new HomeSummaryQuery("v5", 7, "UTC", "24h", window.To, window, window, window, true)
+            { Language = language };
+        var finding = JsonNode.Parse("""
+            {"rule_code":"semantic.qw.password-brute-force","password_totals":{
+                "attempts":18,"accounts":1,"account":"test-account","addresses":3,
+                "first_at":"2026-11-21T23:21:00Z","last_at":"2026-11-22T00:32:00Z"
+            }}
+            """)!.AsObject();
+
+        Assert.Equal(("test-account", expected), HomePresentation.PeriodProblem(finding, query, identity: true));
+    }
+
     private sealed class LocalHomeDatabase(PostCollectionPostgres pg) : IPostgresConnectionFactory, IAsyncDisposable
     {
         private readonly NpgsqlDataSource source = NpgsqlDataSource.Create(new NpgsqlConnectionStringBuilder(pg.ConnectionString) { Pooling = true }.ConnectionString);

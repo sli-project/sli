@@ -448,6 +448,29 @@ it.each(["ru", "en"] as const)("keeps status filters and hides a legacy default 
   expect(within(drawer).queryByText(/Legacy internal action/)).toBeNull();
 });
 
+it("defaults the Problems queue to Open and restores an explicit tab from the URL", async () => {
+  setLocale("en");
+  const raw = { ...definition, ...reportDefinitions.find((report) => report.key === "security.problems")! } as ReportDefinitionDto;
+  vi.spyOn(api, "reportV2Data").mockImplementation(async (_, params) =>
+    page({ report_key: raw.key, items: [{ id: 7, title_text: `Problem from ${params.get("queue_view")}` }] }));
+  const mountQueue = () => render(<QueryClientProvider client={new QueryClient()}>
+    <OverlayProvider><ProblemsQueue definition={raw}/></OverlayProvider>
+  </QueryClientProvider>);
+  window.history.replaceState(null, "", "/app/report/security.problems?domain=7#queue");
+  const { unmount } = mountQueue();
+  await screen.findByText("Problem from open");
+  expect(screen.getByRole("button", { name: /^Open/, pressed: true })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: /^All/ }));
+  await screen.findByText("Problem from all");
+  expect(new URLSearchParams(window.location.search).get("queue_view")).toBe("all");
+  expect(new URLSearchParams(window.location.search).get("domain")).toBe("7");
+  expect(window.location.hash).toBe("#queue");
+  unmount();
+  mountQueue();
+  await screen.findByText("Problem from all");
+  expect(screen.getByRole("button", { name: /^All/, pressed: true })).toBeTruthy();
+});
+
 it.each(["partial", "stale", "processing", "not_collected"] as const)("keeps queue data states off the working table (%s)", async (state) => {
   const raw = { ...definition, key: "security.problems", params: [], presets: [] };
   dataResponse.body = page({ state, items: [{ id: 7, actor: { name: "fixture-account" } }],

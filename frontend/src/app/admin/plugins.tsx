@@ -21,14 +21,15 @@ export function PluginsRoute() {
 }
 
 export function PluginsPage() {
+  const titleId = useId();
   const plugins = useQuery({ queryKey: ["plugins"], queryFn: api.plugins, refetchInterval: 5_000 });
   const { timeZone } = useTimeZone();
   const canManage = plugins.data?.can_manage === true;
   return <section className="sli-ds-report">
-    <PageHeader title={t("plugins.title")}/>
+    <PageHeader title={t("plugins.title")} titleId={titleId}/>
     {plugins.isLoading ? <StateView state="loading"/> : plugins.error ? <StateView state="unavailable" detail={t("plugins.unavailable")} onRetry={() => void plugins.refetch()}/> : null}
     {!plugins.isError && plugins.data ? <DataTable
-      caption={t("plugins.title")} rows={moduleRows(plugins.data.items)} rowKey={(item) => item.plugin_id}
+      labelledBy={titleId} rows={moduleRows(plugins.data.items)} rowKey={(item) => item.plugin_id}
       showFooter={false} density="compact" columns={[
         { key: "name", label: t("plugins.module"), width: "20%", wrap: true, render: moduleName },
         { key: "status", label: t("systemStatus.state"), width: "24%", wrap: true, render: (item) =>

@@ -375,6 +375,7 @@ export function AdStateReport({ definition, initialSearch }: { definition: Repor
       { key: "observed_at_utc", label: copy("detected"), kind: "datetime" },
     ];
   } else if (active.key === "semantic") {
+    rows = current.data?.collections?.semantic ?? [];
     columns = [
       { key: "severity", label: copy("severity"), render: (row) => <SeverityBadge severity={row.severity}/> },
       { key: "object", label: copy("object"), render: objectLink },
@@ -403,11 +404,13 @@ export function AdStateReport({ definition, initialSearch }: { definition: Repor
       title={String(collision.spn ?? EMPTY_VALUE)} actual={Number(collision.owner_count)}
       condition={copy("spn_rule")} basis={copy("spn_basis")} object={String(collision.spn ?? EMPTY_VALUE)}
       affected={collision.owners} onClose={closeDetail}/> : undefined;
-  const emptyMessages: Partial<Record<string, string>> = {
-    parameter_changes: "no_ad_changes", spn_collisions: "no_collisions", semantic: "no_linked_findings",
-  };
-  const emptyMessage = emptyMessages[active.key];
-  const confirmedEmpty = current.data?.state === "ok" || current.data?.state === "empty";
+  const resultState = current.data?.state;
+  const confirmed = resultState === "ok" || resultState === "empty";
+  const collectionTab = active.key === "spn_collisions" || active.key === "semantic";
+  const hasCollection = confirmed || (resultState === "partial" || resultState === "stale") &&
+    Array.isArray(current.data?.collections?.[active.key]);
+  const emptyLine = collectionTab && rows.length === 0 && (hasCollection
+    ? copy(active.key === "spn_collisions" ? "no_collisions" : "no_linked_findings") : t("reports.state.not_collected"));
 
   return <Tabs items={displayViews.map((view) => {
     const count = countFor(view.key);
@@ -431,11 +434,11 @@ export function AdStateReport({ definition, initialSearch }: { definition: Repor
         initialOpen={initialOpen} selected={detailKey} select={selectDetail}/> : <>
         {["changes", "privileged_changes"].includes(active.key) ? <div className="sli-ds-field">{copy("tab.parameter_changes")}<Select label={copy("tab.parameter_changes")} value={active.key} onChange={(selectedValue) => select(selectedValue)}
           options={views.filter((view) => ["parameter_changes", "changes", "privileged_changes"].includes(view.key) && view.access?.allowed !== false).map((view) => ({ value: view.key, label: view.key === "parameter_changes" ? copy("tab.parameter_changes") : view.title ?? view.key }))}/></div> : null}
-        <DataTable caption={title} columns={columns} rows={rows} rowKey={(row) => String(row.row_id ?? row.finding_id ?? row.id ?? JSON.stringify(row))}
+        {emptyLine ? <p role="status">{emptyLine}</p> : <DataTable caption={title} columns={columns} rows={rows} rowKey={(row) => String(row.row_id ?? row.finding_id ?? row.id ?? JSON.stringify(row))}
           selectedKey={detailKey} onRowClick={active.key === "spn_collisions" ? selectDetail : undefined}
           showFooter={active.key === "parameter_changes" && Boolean(changes.hasNextPage)} hasMore={active.key === "parameter_changes" && changes.hasNextPage}
           loadingMore={changes.isFetchingNextPage} onLoadMore={() => void changes.fetchNextPage()} total={active.key === "parameter_changes" ? countFor(active.key) : undefined}
-          emptyContent={confirmedEmpty && emptyMessage ? copy(emptyMessage) : EMPTY_VALUE}/>
+          emptyContent={confirmed && active.key === "parameter_changes" ? copy("no_ad_changes") : EMPTY_VALUE}/>}
       </>}
     </ReportLayout>
   </Tabs>;

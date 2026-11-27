@@ -43,6 +43,45 @@ public sealed class FileAuditManagerTests : IDisposable
     }
 
     [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void AnUpgradeRetriesADurableTerminalCheckOnce(bool recordedVersion, bool pendingReceipt)
+    {
+        var api = new FakeFileApi(_dir) { Owner = "native_unavailable" };
+        var oldPolicy = Policy(Request("check"));
+        var manager = new FileAuditManager(_dir, _files, api);
+        var oldReport = manager.Reconcile(oldPolicy, new FakeAudit(), Helpers.Now).Report!;
+        if (!pendingReceipt) manager.Acknowledge(oldReport);
+        var statePath = Path.Combine(_dir, "state.json");
+        var state = JsonNode.Parse(File.ReadAllBytes(statePath))!.AsObject();
+        var walk = state["walks"]!["scope:one"]!.AsObject();
+        if (recordedVersion) walk["terminal_check_version"] = "26.0.136";
+        else walk.Remove("terminal_check_version");
+        File.WriteAllBytes(statePath, CanonicalJson.ToBytes(state));
+
+        var newPolicy = AgentPolicy.Parse(new JsonObject {
+            ["agent_id"] = "synthetic-agent", ["policy_revision"] = 1,
+            ["collection_policy"] = new JsonObject(), ["assigned_modules"] = new JsonArray(),
+            ["file_audit"] = Request("check"), ["file_audit_retry_version"] = oldPolicy.Report("active")["agent_version"]!.DeepClone()
+        }, "synthetic-agent", EventCatalog.Load());
+        api.Owner = "ok";
+        var now = Helpers.Now.AddMinutes(1);
+        var restarted = new FileAuditManager(_dir, _files, api);
+        var retry = Assert.IsType<JsonObject>(restarted.Reconcile(newPolicy, new FakeAudit(), now).Report);
+        Assert.NotEmpty(retry["snapshots"]!.AsArray());
+        Assert.Equal(oldReport["command_id"]!.ToString(), retry["command_id"]!.ToString());
+        Assert.Equal(Iso8601.Format(now), retry["observed_at_utc"]!.ToString());
+        Assert.Equal(2, api.CheckPreflightCalls);
+        restarted.Acknowledge(retry);
+        var restartedAgain = new FileAuditManager(_dir, _files, api);
+        Assert.Null(restartedAgain.Reconcile(newPolicy, new FakeAudit(), now.AddDays(2)).Report);
+        Assert.Equal(2, api.CheckPreflightCalls);
+        Assert.Equal(0, api.Writes);
+    }
+
+    [Theory]
     [InlineData("audit_policy", "audit_policy_read_unavailable:5")]
     [InlineData("share", "share_read_unavailable:5")]
     [InlineData("directory", "directory_read_unavailable:5")]

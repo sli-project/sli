@@ -32,7 +32,6 @@ public sealed record FileAuditReconcileResult(JsonObject? Audit, JsonObject? Rep
 /// <summary>Durable ownership and inventory. Every mutation has a saved intent and exact native readback.</summary>
 public sealed class FileAuditManager(string directory, IDurableFiles files, IFileAuditApi api, Func<TimeSpan>? clock = null)
 {
-    private static readonly string AgentVersion = typeof(FileAuditManager).Assembly.GetName().Version!.ToString(3);
     private string StatePath => Path.Combine(directory,"state.json");
     private static string Hash(JsonNode value) => Convert.ToHexStringLower(SHA256.HashData(CanonicalJson.ToBytes(value)));
     private static string Text(JsonNode node,string name) => node[name]!.GetValue<string>();
@@ -103,9 +102,13 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
         var terminalVersion = walks.Select(walk => walk.Value?["terminal_check_version"]?.ToString())
             .FirstOrDefault(version => version is not null);
         bool sameCommand = state["scan_command"]?.ToString() == key;
+        var agentVersion = AgentPolicy.AgentVersion;
+        bool retryRecorded = sameCommand && walks.Any(walk => walk.Value?["check_retry_version"]?.ToString() == agentVersion);
+        bool retryCheck = action == "check" && sameCommand && !retryRecorded
+            && (terminalVersion is not null ? terminalVersion != agentVersion : policy.FileAuditRetryVersion == agentVersion);
         if (state["pending_report"] is JsonObject pending)
         {
-            if (terminalVersion is null || sameCommand && terminalVersion == AgentVersion)
+            if (!NativeCheckFailed(pending) || sameCommand && !retryCheck)
                 return new(Shared(), (JsonObject)pending.DeepClone());
             // A new command or agent version supersedes a pending terminal check.
             // An apply or restore receipt still has to be delivered in order.
@@ -115,8 +118,8 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
         if (commands[key] is not null && commands[key]!.ToString() != digest) throw new AgentException("file_audit_command_reused");
         if (!commands.ContainsKey(key) && commands.Count >= 4096) throw new AgentException("file_audit_command_limit");
         commands[key]=digest;
-        if (sameCommand && terminalVersion == AgentVersion) return new(Shared(), null);
-        if (!sameCommand || terminalVersion is not null || state["completed_at"] is not null && now - Iso8601.ParseUtc(state["completed_at"]!.ToString()) >= TimeSpan.FromDays(1))
+        if (sameCommand && terminalVersion == agentVersion) return new(Shared(), null);
+        if (!sameCommand || retryCheck || !retryRecorded && state["completed_at"] is not null && now - Iso8601.ParseUtc(state["completed_at"]!.ToString()) >= TimeSpan.FromDays(1))
         { state["scan_command"]=key; state["walks"]=new JsonObject(); state["completed_at"]=null; }
         if (state["completed_at"] is not null) return new(Shared(),null);
         Save(state);
@@ -258,18 +261,30 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
         }
         report["ownership_remaining"]=state["objects"]!.AsObject().Count > 0 || state["masks"]!.AsObject().Count > 0;
         state["pending_report"]=report.DeepClone();
-        if (action == "check" && report["scopes"]!.AsArray().Count == cmd["collection_scope_ids"]!.AsArray().Count
-            && report["scopes"]!.AsArray().All(scope => scope?["state"]?.ToString() == "failed"
-                && scope["reason_code"]?.ToString() == "native_unavailable"))
+        var scopes = report["scopes"]!.AsArray();
+        var scopeIds = cmd["collection_scope_ids"]!.AsArray();
+        bool nativeFailure = NativeCheckFailed(report);
+        bool upgradeRetry = retryCheck || retryRecorded;
+        if (scopes.Count == scopeIds.Count && (nativeFailure || upgradeRetry && scopes.All(scope => scope?["state"]?.ToString() == "failed")))
         {
-            foreach (var id in cmd["collection_scope_ids"]!.AsArray())
-                state["walks"]![id!.ToString()] = new JsonObject {
-                    ["stack"] = new JsonArray(), ["page"] = 0, ["gaps"] = 0, ["done"] = true, ["terminal_check_version"] = AgentVersion
-                };
+            foreach (var id in scopeIds)
+            {
+                var finished = new JsonObject { ["stack"] = new JsonArray(), ["page"] = 0, ["gaps"] = 0, ["done"] = true };
+                if (nativeFailure) finished["terminal_check_version"] = agentVersion;
+                state["walks"]![id!.ToString()] = finished;
+            }
         }
-        if (cmd["collection_scope_ids"]!.AsArray().All(id => state["walks"]![id!.ToString()]?["done"]?.GetValue<bool>() == true)) state["completed_at"]=Iso8601.Format(now);
+        if (upgradeRetry)
+            foreach (var walk in state["walks"]!.AsObject())
+                walk.Value!["check_retry_version"] = agentVersion;
+        if (scopeIds.All(id => state["walks"]![id!.ToString()]?["done"]?.GetValue<bool>() == true)) state["completed_at"]=Iso8601.Format(now);
         Save(state); return new(auditReport,report);
     }
+
+    private static bool NativeCheckFailed(JsonObject report) =>
+        report["action"]?.ToString() == "check" && report["scopes"] is JsonArray { Count: > 0 } scopes
+        && scopes.All(scope => scope?["state"]?.ToString() == "failed" && scope["reason_code"]?.ToString() == "native_unavailable");
+
     private static void ResetWalk(JsonObject state,JsonObject root)
     {
         var walk = state["walks"]![Text(root,"collection_scope_id")]!;

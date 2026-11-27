@@ -38,6 +38,8 @@ public sealed record AgentPolicy(long Revision, CollectionControl Control, JsonA
     public IReadOnlyDictionary<string, SnapshotPolicy> Snapshots { get; init; } = new Dictionary<string, SnapshotPolicy>();
     public FileAuditPolicy? FileAudit { get; init; }
     public JsonObject? FileAuditRequest { get; init; }
+    public string? FileAuditRetryVersion { get; init; }
+    public static string AgentVersion { get; } = typeof(AgentPolicy).Assembly.GetName().Version!.ToString(3);
     public IReadOnlyDictionary<string,int> FileAuditMasks { get; init; } = new Dictionary<string,int>();
     public bool FileAuditManage { get; init; }
     public IReadOnlyDictionary<string, NpsPolicy> NpsModules { get; init; } = new Dictionary<string, NpsPolicy>();
@@ -96,13 +98,17 @@ public sealed record AgentPolicy(long Revision, CollectionControl Control, JsonA
             if (!JsonRead.TryString(probe["request_id"], out request) || !Guid.TryParseExact(request, "D", out _))
                 throw new AgentException("agent_rights_probe_invalid");
         }
-        return new((long)revision, control, (JsonArray)modules.DeepClone(), dc, workstation, request) { Snapshots = snapshots, FileAudit = fileAudit, FileAuditRequest = fileRequest, NpsModules = nps, Handoff = RuntimeHandoff.Parse(body["runtime_handoff"]) };
+        return new((long)revision, control, (JsonArray)modules.DeepClone(), dc, workstation, request) {
+            Snapshots = snapshots, FileAudit = fileAudit, FileAuditRequest = fileRequest,
+            FileAuditRetryVersion = JsonRead.TryString(body["file_audit_retry_version"], out var retryVersion) ? retryVersion : null,
+            NpsModules = nps, Handoff = RuntimeHandoff.Parse(body["runtime_handoff"])
+        };
     }
 
     public JsonObject Report(string state, string rightsStatus = "unavailable")
     {
         var body = new JsonObject { ["applied_policy_revision"] = Revision, ["collection_state"] = state, ["runtime_handoff_supported"] = true };
-        body["agent_version"]=typeof(AgentPolicy).Assembly.GetName().Version!.ToString(3);
+        body["agent_version"]=AgentVersion;
         if (RightsProbeRequest is not null) body["rights_probe"] = new JsonObject { ["request_id"] = RightsProbeRequest, ["status"] = rightsStatus };
         return body;
     }

@@ -87,7 +87,7 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
                     : actionRows ? await ReadScreenActions(session, context, tab, options, Read, ct)
                     : (await Read(options, context.Paging.Limit))[0]!["data"]!.AsObject();
                 if (data["service_filter_version"]?.GetValue<int>() != 1) return Unreadable(context);
-                if (tab == "overview") await ResourceAuditAsync(session, Array(data["items"]), ct);
+                if (tab == "overview") await ResourceAuditAsync(session, context, Array(data["items"]), ct);
                 if (actionRows) await LinkActionProblemsAsync(session, context, Array(data["items"]), tab, ct);
             }
             await RestoreEvidenceAsync(context, readRoots, Array(data["items"]), ct);

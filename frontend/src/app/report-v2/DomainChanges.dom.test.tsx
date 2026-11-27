@@ -76,6 +76,8 @@ it("shows server counts and sends the selected tab and operation", async () => {
   expect(await screen.findByRole("tab", { name: "All changes 4" })).toBeTruthy();
   expect(screen.getByRole("tab", { name: "Groups 2" })).toBeTruthy();
   const table = within(screen.getByRole("table", { name: "Domain changes" }));
+  expect(table.getByRole("columnheader", { name: "Operation outcome" })).toBeTruthy();
+  expect(table.getAllByTitle("Success").length).toBeGreaterThan(0);
   expect(table.getByRole("columnheader", { name: "Change" })).toBeTruthy();
   expect(table.queryByText(/· 4728/)).toBeNull();
   expect(table.queryByRole("columnheader", { name: "DC" })).toBeNull();

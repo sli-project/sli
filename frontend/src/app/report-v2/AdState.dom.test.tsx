@@ -47,17 +47,17 @@ function renderReport() {
 }
 
 it.each([
-  ["parameter_changes", "AD changes", "No AD changes in the selected period"],
-  ["spn_collisions", "SPN collisions", "No SPN collisions"],
-  ["semantic", "Linked findings", "No linked findings in the selected period"],
-])("shows a tab-specific line for an empty %s result", async (key, tab, phrase) => {
+  ["parameter_changes", "AD changes", "No AD changes in the selected period", "empty"],
+  ["spn_collisions", "SPN collisions", "No SPN collisions found", "partial"],
+  ["semantic", "Linked findings", "No linked problems found", "partial"],
+] as const)("shows a tab-specific line for an empty %s result", async (key, tab, phrase, state) => {
   vi.mocked(api.reportV2Data).mockImplementation(async (_, params) => params.get("tab") === key
-    ? { ...result(), state: "empty" }
+    ? { ...result([], { [key]: [] }), state }
     : result(controls));
   renderReport();
   fireEvent.click(await screen.findByRole("tab", { name: new RegExp(tab) }));
-  const table = await screen.findByRole("table", { name: tab });
-  expect(await within(table).findByRole("cell", { name: phrase })).toBeTruthy();
+  expect(await screen.findByText(phrase)).toBeTruthy();
+  if (key !== "parameter_changes") expect(screen.queryByRole("table", { name: tab })).toBeNull();
 });
 
 it("accepts the legacy all view on a domain-scoped AD URL", async () => {
@@ -193,7 +193,7 @@ it("keeps a failed history distinct from a settled empty result after retry", as
 it("switches to SPN collisions and linked findings using their report collections", async () => {
   renderReport();
   fireEvent.click(await screen.findByRole("tab", { name: "SPN collisions 0" }));
-  expect(await screen.findByText("No SPN collisions")).toBeTruthy();
+  expect(await screen.findByText("No SPN collisions found")).toBeTruthy();
   fireEvent.click(screen.getByRole("tab", { name: "Linked findings 1" }));
   expect(await screen.findByText("Lockout threshold disabled")).toBeTruthy();
   expect(screen.getByRole("link", { name: "Open problem" }).getAttribute("href")).toContain("id=23");

@@ -72,7 +72,10 @@ export function FileAuditReport({ definition: initial }: { definition: ReportDef
   const params = definition ? fileAuditParams(definition, requestValues, timeZone, pages.at(-1), anchor, pageSize) : null;
   const data = useQuery({ queryKey: ["report-v2", "file-audit", session, "data", reportKey, params?.toString()],
     queryFn: () => api.reportV2Data(reportKey, params!), enabled: Boolean(params && definition?.access?.allowed !== false && !definitionQuery.error),
-    retry: false, refetchOnWindowFocus: false });
+    retry: false, refetchOnWindowFocus: false,
+    refetchInterval: query => view === "overview" && query.state.data?.items.some(row =>
+      row.check_pending === true || ((row.check_receipt ?? row.audit_receipt) as { reason_code?: string } | undefined)?.reason_code === "native_unavailable")
+      ? 15_000 : false });
   const result = data.data;
   const error = definitionQuery.error ?? data.error;
   const denied = definition?.access?.allowed === false || result?.access?.allowed === false || result?.state === "denied"
@@ -193,7 +196,7 @@ export function FileAuditReport({ definition: initial }: { definition: ReportDef
           message={definition && !params ? t("file-audit.invalid_period") : t("file-audit.screen.load_error", { subject: title })}
           onRetry={definition && !params ? undefined : retry}/>}>
         {definition && result ? <div ref={list}>
-          <DataTable caption={title} compact density="compact" columns={fileServerColumns(view, definition.columns, rows, baseParams, canPermissions, open, hrefFor)}
+          <DataTable caption={title} compact density="compact" columns={fileServerColumns(view, definition.columns, rows, baseParams, canPermissions, open, hrefFor, () => void data.refetch())}
             rows={rows} rowKey={row => String(row[definition.row_key])} selectedKey={selectedId}
             emptyContent={<p role="status">{t(emptyMessage)}</p>}
             onRowClick={view === "actions" ? open : undefined}

@@ -47,6 +47,15 @@ async function confirmDisable() {
   fireEvent.click(within(await openDisableDialog()).getByRole("button", { name: "Выключить" }));
 }
 
+it("uses the page heading to name the All plugins table", async () => {
+  mocks.list.mockResolvedValue({ items: [item], can_manage: false });
+  mount();
+  const table = await screen.findByRole("table", { name: t("plugins.title") });
+  const heading = screen.getByRole("heading", { name: t("plugins.title") });
+  expect(document.getElementById(table.getAttribute("aria-labelledby") ?? "")).toBe(heading);
+  expect(table.querySelector("caption")).toBeNull();
+});
+
 it("opens the failing module row on System status", async () => {
   const errorAt = "2026-11-26T08:00:00Z";
   mocks.list.mockResolvedValue({ items: [{ ...item,

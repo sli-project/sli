@@ -15,6 +15,7 @@ export type HomeProblem = {
   name: string | null;
   fact: string | null;
   severity: HomeSeverity;
+  first_at?: string | null;
   at: string | null;
   status: "new" | "confirmed" | "repeated" | "active" | "review";
   assignee: string | null;
