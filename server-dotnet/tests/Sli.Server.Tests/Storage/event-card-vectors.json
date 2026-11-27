@@ -2320,7 +2320,7 @@
       "has_card": false,
       "severity": "info",
       "tier": "technical",
-      "title": "External device observed",
+      "title": "Подключено внешнее устройство",
       "title_code": "Security:Microsoft-Windows-Security-Auditing:6416.title",
       "summary_code": "Security:Microsoft-Windows-Security-Auditing:6416.summary",
       "risk": "Информация",
@@ -2329,7 +2329,7 @@
       "facts": [
         [
           "Событие",
-          "External device observed"
+          "Подключено внешнее устройство"
         ],
         [
           "Сервер",
@@ -2408,7 +2408,7 @@
       "has_card": false,
       "severity": "info",
       "tier": "technical",
-      "title": "External device observed",
+      "title": "Подключено внешнее устройство",
       "title_code": "Security:Microsoft-Windows-Security-Auditing:6416.title",
       "summary_code": "Security:Microsoft-Windows-Security-Auditing:6416.summary",
       "risk": "Информация",
@@ -2417,7 +2417,7 @@
       "facts": [
         [
           "Событие",
-          "External device observed"
+          "Подключено внешнее устройство"
         ],
         [
           "Сервер",

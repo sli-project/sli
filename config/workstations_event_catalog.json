@@ -9,7 +9,7 @@
       "provider_name": "Microsoft-Windows-Security-Auditing",
       "event_id": 6416,
       "event_key": "6416",
-      "title": "External device observed",
+      "title": "Подключено внешнее устройство",
       "severity": "info",
       "base_risk": "info",
       "noise_class": "signal",

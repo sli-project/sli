@@ -1127,7 +1127,7 @@
       "server": "dc-test",
       "channel": "Security",
       "provider_name": "Microsoft-Windows-Security-Auditing",
-      "label": "Process created",
+      "label": "Запущен процесс",
       "category": "operations",
       "severity": "info",
       "tier": "technical",
