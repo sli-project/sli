@@ -181,7 +181,13 @@ describe("AppShell", () => {
     expect(within(main).queryByText("В разработке")).toBeNull();
   });
 
-  it.each(["sli.ad", "sli.gpo", "sli.file-audit", "sli.remote-access", "sli.workstations"])("routes %s to its plugin screen and retains the administration gate", async (id) => {
+  it.each([
+    ["sli.ad", "Active Directory"],
+    ["sli.gpo", "Групповые политики"],
+    ["sli.file-audit", "Файловый аудит"],
+    ["sli.remote-access", "VPN / NPS"],
+    ["sli.workstations", "Рабочие станции"],
+  ])("routes %s to its plugin screen and retains the administration gate", async (id, title) => {
     registryState.preview = id === "sli.remote-access";
     const path = `/admin/plugins/${id}`;
     await renderShell(path);
@@ -190,9 +196,11 @@ describe("AppShell", () => {
     cleanup();
     state.access = adminAccess;
     await renderShell(path);
-    expect(await screen.findByRole("tab", { name: "Подключение" })).toBeTruthy();
-    expect(screen.getAllByRole("tab")).toHaveLength(5);
-    expect(within(screen.getByRole("main")).queryByText("В разработке")).toBeNull();
+    const main = within(screen.getByRole("main"));
+    expect(await main.findByRole("heading", { name: title })).toBeTruthy();
+    await userEvent.click(main.getByRole("tab", { name: "Подключение" }));
+    expect(main.getByRole("tab", { name: "Подключение", selected: true })).toBeTruthy();
+    expect(main.queryByText("В разработке")).toBeNull();
   });
 
   it("opens both plugin pages from the administration menu even when their collection is off", async () => {

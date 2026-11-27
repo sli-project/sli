@@ -8,13 +8,14 @@ namespace Sli.Server.InstallationSetup;
 public sealed partial class InstallationService
 {
     internal static (string State, DateTimeOffset? LastDataAt, DateTimeOffset? ErrorAt) DerivePluginStatus(
-        bool enabled, bool hasSource, DateTimeOffset? latest, TimeSpan interval, DateTimeOffset? failure, DateTimeOffset now)
+        bool enabled, bool hasSource, DateTimeOffset? latest, TimeSpan interval, DateTimeOffset? failure, DateTimeOffset now,
+        bool hasCurrentHeartbeat = false)
     {
         if (!enabled) return ("disabled", null, null);
         if (failure is not null) return ("error", null, failure);
         if (!hasSource) return ("no_sources", null, null);
         if (latest is null) return ("waiting", null, null);
-        return now - latest <= interval ? ("working", latest, null) : ("error", null, latest + interval);
+        return hasCurrentHeartbeat || now - latest <= interval ? ("working", latest, null) : ("error", null, latest + interval);
     }
 
     // The installation's configured flag controls admission. Agent assignments describe actual sources.
@@ -100,7 +101,7 @@ public sealed partial class InstallationService
                       and jsonb_typeof(p.definition_json#>'{source_selector,execution,scope}')='object') as has_source,
                     (select jsonb_build_object('last_data_at',coalesce(details_json->>'sigma_last_data_at',details_json#>>'{result,sigma,last_data_at}'),
                         'failure_at',coalesce(details_json->>'sigma_failure_at',details_json#>>'{result,sigma,failure_at}'),
-                        'interval_seconds',expected_interval_seconds::text)
+                        'interval_seconds',expected_interval_seconds::text, 'heartbeat_at',heartbeat_at, 'status',status)
                      from runtime_worker_heartbeats where worker_name='semantic' and details_json->>'manual_runtime'='false') as telemetry
                 """, ct)), ct);
         }
@@ -156,7 +157,12 @@ public sealed partial class InstallationService
             || hasSource && Text(receipts["state"]) == "unavailable" && observation.At is null;
         var failure = StatusTime(failed?["failure_at"], now) ?? (hasSource ? StatusTime(telemetry?["failure_at"], now) : null)
             ?? (unavailable ? now : (DateTimeOffset?)null);
-        var status = DerivePluginStatus(enabled, hasSource, observation.At, observation.Interval, failure, now);
+        // Sigma can poll successfully without consuming a match for an extended period.
+        bool hasCurrentSigmaHeartbeat = telemetry is not null && Text(telemetry["status"]) is "running" or "idle"
+            && StatusTime(telemetry["heartbeat_at"], now) is DateTimeOffset heartbeatAt
+            && now - heartbeatAt <= SourceInterval(telemetry);
+        var status = DerivePluginStatus(enabled, hasSource, observation.At, observation.Interval, failure, now,
+            hasCurrentHeartbeat: hasCurrentSigmaHeartbeat);
 
         var outdated = enabled && id == "sli.file-audit" ? assigned
             .Where(row => row["check_agent_requirement"] is JsonObject)
