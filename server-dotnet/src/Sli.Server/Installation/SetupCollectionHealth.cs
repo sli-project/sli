@@ -19,9 +19,14 @@ public static class SetupCollectionHealth
     static long? Age(JsonNode? n, DateTimeOffset now) => Time(n) is { } t ? Math.Max(0, (long)(now - t).TotalSeconds) : null;
     static bool Snapshot(string module) => module is "sli.ad-snapshot" or "sli.gpo-snapshot";
     internal static JsonArray DataGaps(JsonNode? expiry) => new((expiry as JsonObject ?? new())
-        .Select(m => m.Value?["data_gap"]).OfType<JsonObject>()
-        .Where(g => Time(g["from_utc"]) is {} from && Time(g["to_utc"]) is {} to && from <= to)
-        .Select(g => (JsonNode?)g.DeepClone()).ToArray());
+        .Where(m => m.Value?["data_gap"] is JsonObject gap
+            && Time(gap["from_utc"]) is {} from && Time(gap["to_utc"]) is {} to && from <= to)
+        .Select(m => (JsonNode?)new JsonObject
+        {
+            ["module_id"] = m.Key,
+            ["from_utc"] = m.Value!["data_gap"]!["from_utc"]?.DeepClone(),
+            ["to_utc"] = m.Value!["data_gap"]!["to_utc"]?.DeepClone(),
+        }).ToArray());
     internal static long ContactBudgetSeconds(long interval) => Math.Max(300, interval * 3);
     internal static string FreshStreamState(long? pendingAge, bool missingReadEvidence, bool hasImport)
     {

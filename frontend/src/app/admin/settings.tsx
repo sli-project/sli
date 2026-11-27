@@ -39,7 +39,7 @@ export function SettingsPage() {
   const changed = language !== getLocale() || zone !== timeZone || serverZoneChanged;
 
   return <section className="sli-ds-report">
-    <PageHeader title={t("operations.settings.title")}
+    <PageHeader title={t("shell.adminNav.locale")}
       actions={<button type="button" className="sli-ds-button" onClick={() => logout.mutate()} disabled={logout.isPending}>{logout.isPending ? t("operations.settings.logging_out") : t("operations.settings.logout")}</button>}/>
     {principal ? <p className="sli-ds-header__subtitle">{principal.username ?? "—"} · {principal.role ? roleLabel(principal.role) : "—"}</p> : null}
     {bootstrap.isLoading ? <StateView state="loading" compact/> : bootstrap.error ? <p role="alert">{t("operations.settings.load_error")} <button type="button" className="sli-ds-button" onClick={() => void bootstrap.refetch()}>{t("state.retry")}</button></p> : null}

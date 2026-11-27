@@ -7,6 +7,7 @@ import { DataTable, ReportLayout, TabList, TabPanel, Tabs, type TableColumn } fr
 import { Icon } from "../../design-system/Icon";
 import { useDateFormatters } from "../../design-system/useDateFormatters";
 import { plural, t, type MessageKey } from "../../i18n";
+import { auditLeaf, auditLeafLabel, auditLeafValue, auditMode, auditPath } from "./gpo-audit-setting";
 import { GpoSnapshotComparison } from "./GpoSnapshotComparison";
 import { ReportDenied } from "../../app/report-v2/ReportDenied";
 
@@ -26,7 +27,7 @@ export type PolicyRow = Versions & {
   owner?: string;
   modification_time?: string;
 };
-type Setting = { id: string; side: Side; setting_name?: string; category?: string; path?: string; value_display?: string };
+type Setting = { id: string; side: Side; setting_name?: string; category?: string; extension?: string; path?: string; value_display?: string; audit_mode?: string };
 type LinkRow = { id: string; scope_name?: string; order?: number; enabled?: boolean; enforced?: boolean };
 type Permission = { id: string; trustee_name?: string; permission?: string };
 type Change = { id: string; object_id: string; object_type: string; field: string; kind: string; name?: string;
@@ -146,7 +147,7 @@ export function GpoPolicyCard({ definition, domain, initial, backHref }: {
           <div role="alert">{t("reports.gpo.history_failed")}{" "}
             <button className="sli-ds-button" type="button" onClick={() => void history.refetch()}>{t("state.retry")}</button></div>
           : historyState === "not_collected" ? <p role="status">{t("reports.state.not_collected")}</p>
-          : <PolicyChanges changes={changes}/>;
+          : <PolicyChanges changes={changes} settings={fields?.settings ?? []}/>;
     }
   };
   const observed = detail.data?.coverage.observed_at_utc;
@@ -160,7 +161,6 @@ export function GpoPolicyCard({ definition, domain, initial, backHref }: {
   return <ReportLayout title={policy.display_name} domain={domain} actions={back}>
     <div className="sli-ds-header__meta">
       {typeof observed === "string" ? <span>{t("reports.gpo.observed")} <time dateTime={observed} title={observed}>{formatDateTime(observed)}</time></span> : null}
-      {policy.guid ? <span>GUID <code>{policy.guid}</code></span> : null}
       {status ? <span>{t(`reports.v2.ad.gpo.v2.columns.status.labels.${status}` as MessageKey)}</span> : null}
     </div>
     <Tabs active={tab} items={items} onChange={(key) => changeLocation(key as PolicyTab, item)}>
@@ -187,7 +187,16 @@ function PolicySettings({ settings, changes, item, selectItem }: {
   const [category, setCategory] = useState("");
   const [pageSize, setPageSize] = useState(50);
   const [page, setPage] = useState<number>();
-  const matchingSide = settings.filter((row) => row.side === side);
+  const matchingSide = settings.filter((row) => row.side === side).map((row) => {
+    const leaf = auditLeaf(row.setting_name, row.path, row.category, row.extension);
+    if (!leaf) return row;
+    const path = auditPath(row.side);
+    const category = t("reports.gpo.audit.category");
+    const value = leaf === "subcategoryguid" ? (row.audit_mode == null ? undefined : auditMode(row.audit_mode))
+      : auditLeafValue(leaf, row.value_display, row.side);
+    return { ...row, category, path, setting_name: auditLeafLabel(leaf, row.value_display),
+      value_display: typeof value === "string" ? value : undefined };
+  });
   const categories = [...new Set(matchingSide.map((row) => row.category).filter((value): value is string => Boolean(value)))].sort((left, right) => left.localeCompare(right));
   const text = query.trim().toLocaleLowerCase();
   const rows = matchingSide.filter((row) => (!category || row.category === category) &&
@@ -233,10 +242,13 @@ function PolicySettings({ settings, changes, item, selectItem }: {
       onRowClick={open} emptyContent="—" expandedContent={(row) => {
         if (item !== row.id) return null;
         const change = lastChanges.get(row.id);
-        const before = change?.after_value === row.value_display ? change?.before_value : undefined;
+        const original = settings.find((setting) => setting.id === row.id);
+        const leaf = auditLeaf(original?.setting_name, original?.path, original?.category, original?.extension);
+        const rawBefore = change?.after_value === original?.value_display ? change?.before_value : undefined;
+        const before = auditLeafValue(leaf, rawBefore, original?.side);
         return <div className="sli-ds-table__row-details">
           <dl>
-            <dt>{t("reports.gpo.configured_value")}</dt><dd>{row.value_display ?? "—"}{before != null && change?.observed_at
+            <dt>{t("reports.gpo.configured_value")}</dt><dd>{row.value_display ?? "—"}{typeof before === "string" && change?.observed_at
               ? <span className="sli-ds-text-muted"> · {t("reports.gpo.previous", { value: before, time: formatDateTime(change.observed_at) })}</span> : null}</dd>
             {row.path ? <><dt>{t("reports.gpo.path")}</dt><dd>{row.path}</dd></> : null}
           </dl>
@@ -277,8 +289,20 @@ function PolicyVersions({ versions, domain }: { versions: Versions[]; domain: st
   </div>;
 }
 
-function PolicyChanges({ changes }: { changes: Change[] }) {
-  return <CardTable caption={t("reports.gpo.changes")} rows={changes} columns={[
+function PolicyChanges({ changes, settings }: { changes: Change[]; settings: Setting[] }) {
+  const byId = new Map(settings.map((setting) => [setting.id, setting]));
+  const displayed = changes.map((change) => {
+    const setting = change.object_type === "gpo_setting" ? byId.get(change.object_id) : undefined;
+    const leaf = auditLeaf(setting?.setting_name, setting?.path, setting?.category, setting?.extension);
+    if (!leaf) return change;
+    const name = auditLeafLabel(leaf, setting?.value_display);
+    if (change.field !== "value_display") return { ...change, name, before_value: undefined, after_value: undefined };
+    const before = auditLeafValue(leaf, change.before_value, setting?.side);
+    const after = auditLeafValue(leaf, change.after_value, setting?.side);
+    return { ...change, name, before_value: typeof before === "string" ? before : undefined,
+      after_value: typeof after === "string" ? after : undefined };
+  });
+  return <CardTable caption={t("reports.gpo.changes")} rows={displayed} columns={[
     { key: "observed_at", label: t("reports.gpo.time"), kind: "datetime", width: "13rem" },
     { key: "name", label: t("reports.gpo.parameter"), render: (row) => {
       const key = [row.field, row.object_type].find((value) => Object.hasOwn(changeLabels, value));

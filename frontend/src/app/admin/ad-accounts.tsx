@@ -35,7 +35,7 @@ export function AdAccountsPage() {
   const reference = selected ? { credential_id: selected.credential_id, credential_revision: selected.credential_revision } : undefined;
   const denied = accounts.error?.message === "ad_operations_denied";
   return <section className="sli-ds-report">
-    <PageHeader title={t("adAccounts.title")} crumbs={[{ label: t("operations.settings.title"), href: "/app/settings" }, { label: t("adAccounts.title") }]}
+    <PageHeader title={t("adAccounts.title")} crumbs={[{ label: t("shell.adminNav.locale"), href: "/app/settings" }, { label: t("adAccounts.title") }]}
       subtitle={items.length ? t("adAccounts.count", { count: items.length, domains: domains.length }) : t("adAccounts.empty")}
       actions={accounts.data ? <button type="button" className="sli-ds-button" data-variant="primary" disabled={!available} onClick={() => open({ kind: "add" })}>{t("adAccounts.add")}</button> : undefined}/>
     {accounts.isLoading ? <StateView state="loading"/> : accounts.error ? <StateView state={denied ? "denied" : "unavailable"}

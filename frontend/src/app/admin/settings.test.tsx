@@ -47,7 +47,7 @@ it.each(["ru", "en"] as const)("shows a compact profile and saves the language o
   setLocale(locale);
   const { container } = renderProfile();
   await screen.findByText(`fixture-user · ${roleLabel("operator")}`);
-  expect(screen.getByRole("heading", { level: 1, name: locale === "ru" ? "Профиль" : "Profile" })).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 1, name: locale === "ru" ? "Язык и время" : "Language & time" })).toBeTruthy();
   expect(screen.getByRole("button", { name: t("operations.settings.logout") })).toBeTruthy();
   expect(container.textContent).not.toMatch(/не реализована|not implemented|Текущая сессия|Current session|Запомнить меня|Remember me/);
   expect(screen.queryByRole("link")).toBeNull();

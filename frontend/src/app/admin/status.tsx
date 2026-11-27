@@ -3,11 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import { DataTable, LoadingRegion, PageHeader, TableSkeleton, type TableColumn } from "../../design-system";
 import { t } from "../../i18n";
-import { EMPTY_VALUE, formatNumber } from "../../shared/format";
+import { EMPTY_VALUE } from "../../shared/format";
+import { formatByteSize } from "../../shared/byte-size";
 import { formatDate, formatDateTime } from "../../shared/date-time";
 import { useEffectiveAccess, useTimeZone } from "../App";
 import { downloadOperationsExport } from "../operations-actions";
-import { statusAdDcImportIssue, statusAuditChecks, statusPasswordRules, statusServices, statusSources } from "./status-view";
+import { statusAdDcImportIssue, statusAuditChecks, statusPasswordRules, statusServices, statusSourceGaps, statusSources } from "./status-view";
 import { RestoreAgentAction } from "./agent-restore-action";
 import { OldAgentsTable } from "./agent-removal-status";
 import { moduleName, moduleRows, moduleStatusId, moduleStatusText } from "./plugin-status";
@@ -46,8 +47,7 @@ export function SystemStatusPage() {
   const telegram = useQuery({ queryKey: ["telegram-setup-status"], queryFn: () => api.telegramSetup("status"), ...options,
     enabled: !!notifications.data?.can_configure && notifications.data.channels.some((channel) => channel.kind === "telegram" && channel.enabled) });
   const health = setup.data?.agent_collection;
-  const gaps = [...new Map((health?.items ?? []).flatMap((agent) => (agent.data_gaps ?? [])
-    .map((gap) => [`${agent.id}:${gap.from_utc}:${gap.to_utc}`, { name: agent.name, ...gap }] as const))).entries()];
+  const gaps = statusSourceGaps(health, timeZone);
   const sources = statusSources(health, setup.data?.domains ?? [], timeZone);
   const auditChecks = statusAuditChecks(health, setup.data?.domains ?? []);
   const agentIssues = (health?.items ?? []).flatMap((agent) => [
@@ -60,17 +60,15 @@ export function SystemStatusPage() {
       state: t("agents.identityConflict"), action: t("agents.checkIdentity"), plain: false }] : []),
   ]);
   const workers = operations.data?.workers;
-  const services = statusServices(workers?.items ?? [], timeZone, canViewOperations);
+  const services = statusServices(workers?.items ?? [], timeZone);
   const passwordRules = statusPasswordRules(workers?.password_detection, timeZone);
   const importIssue = statusAdDcImportIssue(workers?.items ?? []);
   const disk = storage.data?.storage.postgres_volume;
   const backup = storage.data?.storage.footprint?.backups;
-  const bytes = (value: number | null | undefined) => typeof value === "number" && Number.isFinite(value) && value >= 0
-    ? `${formatNumber(value / 1024 ** 3, { maximumFractionDigits: 1 })} ${t("operations.source.unit_gb")}` : EMPTY_VALUE;
   const diskRows = disk ? [{
     mount: disk.mount_point,
-    used: bytes(disk.used_bytes),
-    free: bytes(disk.free_bytes),
+    used: formatByteSize(disk.used_bytes) ?? EMPTY_VALUE,
+    free: formatByteSize(disk.free_bytes) ?? EMPTY_VALUE,
   }] : [];
   const latest = sources.map((source) => source.lastData).filter((time): time is string => Boolean(time))
     .sort((a, b) => Date.parse(b) - Date.parse(a))[0];
@@ -132,55 +130,54 @@ export function SystemStatusPage() {
       <li><span aria-label={t(latest ? "systemStatus.done" : "systemStatus.pending")}>{latest ? "✓" : "○"}</span> {latest ? t("systemStatus.step.received", { time: formatDateTime(latest, timeZone, { withYear: false }) }) : t("systemStatus.step.waiting")}</li>
     </ol> : null}
     {showSteps && (notifications.isError || smtp.isError || telegram.isError) ? failed(t("systemStatus.notifications"), () => Promise.all([notifications.refetch(), smtp.isEnabled ? smtp.refetch() : null, telegram.isEnabled ? telegram.refetch() : null])) : null}
-    <h2 className="sli-ds-section-title">{t("systemStatus.sources")}</h2>
+    <h2 id="status-sources" className="sli-ds-section-title">{t("systemStatus.sources")}</h2>
     {!showSteps && controllerCount ? <p>{controllerCount}</p> : null}
-    {setup.isPending ? loading(sourceColumns.length) : sourcesReady ? <DataTable columns={sourceColumns} rows={sources} rowKey={(row) => row.id} caption={t("systemStatus.sources")} showFooter={false}/>
+    {setup.isPending ? loading(sourceColumns.length) : sourcesReady ? <DataTable columns={sourceColumns} rows={sources} rowKey={(row) => row.id} labelledBy="status-sources" showFooter={false}/>
       : failed(t("systemStatus.sources"), setup.refetch)}
-    {gaps.map(([key, gap]) => <p key={key}>{t("systemStatus.dataGap", { computer: gap.name || EMPTY_VALUE,
-      period: `${formatDateTime(gap.from_utc, timeZone)} — ${formatDateTime(gap.to_utc, timeZone)}` })}</p>)}
+    {gaps.map(([key, gap]) => <p key={key}>{gap}</p>)}
     {canViewOperations && securityLogFull.data?.items.map((event) => <p key={`${event.server}:${event.time_created_utc}:${event.record_id}`}>
       {t("systemStatus.securityLogFull", { computer: event.server, time: formatDateTime(event.time_created_utc, timeZone, { seconds: true }), record: event.record_id })}
     </p>)}
     {canViewOperations && securityLogFull.isError ? failed(t("systemStatus.securityLogEvents"), securityLogFull.refetch) : null}
-    {agentIssues.length ? <><h2 className="sli-ds-section-title">{t("agents.title")}</h2><DataTable columns={[
+    {agentIssues.length ? <><h2 id="status-agents" className="sli-ds-section-title">{t("agents.title")}</h2><DataTable columns={[
       { key: "name", label: t("systemStatus.computer") },
       { key: "state", label: t("systemStatus.state"), render: (row) => row.plain ? row.state : <Status tone="error">{row.state}</Status> },
       { key: "action", label: t("systemStatus.action"), render: (row) => row.action },
-    ]} rows={agentIssues} rowKey={(row) => row.id} caption={t("agents.title")} showFooter={false}/></> : null}
+    ]} rows={agentIssues} rowKey={(row) => row.id} labelledBy="status-agents" showFooter={false}/></> : null}
     <OldAgentsTable agents={health?.replaced_agents ?? []} canRemove={Boolean(access?.platform_owner)}/>
-    <h2 className="sli-ds-section-title">{t("systemStatus.services")}</h2>
+    <h2 id="status-services" className="sli-ds-section-title">{t("systemStatus.services")}</h2>
     {operations.isPending ? loading(serviceColumns.length) : workers && workers.status !== "unavailable" && workers.items && !operations.isError
-      ? <DataTable columns={serviceColumns} rows={services} rowKey={(row) => row.id} caption={t("systemStatus.services")} showFooter={false}/>
+      ? <DataTable columns={serviceColumns} rows={services} rowKey={(row) => row.id} labelledBy="status-services" showFooter={false}/>
       : failed(t("systemStatus.services"), operations.refetch)}
     {canViewOperations && !operations.isPending && !operations.isError ? <>
-      <h2 className="sli-ds-section-title">{t("systemStatus.passwordDetection.title")}</h2>
+      <h2 id="status-password-detection" className="sli-ds-section-title">{t("systemStatus.passwordDetection.title")}</h2>
       {passwordRules.length ? <DataTable columns={[
         { key: "name", label: t("systemStatus.passwordDetection.rule") },
         { key: "state", label: t("systemStatus.state"), render: (row) => <Status tone={row.tone}>{row.state}</Status> },
         { key: "observed", label: t("systemStatus.passwordDetection.observed") },
-      ]} rows={passwordRules} rowKey={(row) => row.id} caption={t("systemStatus.passwordDetection.title")} showFooter={false}/>
+      ]} rows={passwordRules} rowKey={(row) => row.id} labelledBy="status-password-detection" showFooter={false}/>
         : <p role="status">{t("systemStatus.passwordDetection.unavailable")}</p>}
     </> : null}
     {importIssue ? <p>{importIssue}</p> : null}
     {canViewOperations ? <>
-      <h2 className="sli-ds-section-title">{t("plugins.title")}</h2>
+      <h2 id="status-plugins" className="sli-ds-section-title">{t("plugins.title")}</h2>
       {plugins.isPending ? loading(2) : plugins.isError ? failed(t("plugins.title"), plugins.refetch)
-        : <DataTable caption={t("plugins.title")} rows={moduleRows(pluginItems ?? [])} rowKey={moduleStatusId} showFooter={false} columns={[
+        : <DataTable labelledBy="status-plugins" rows={moduleRows(pluginItems ?? [])} rowKey={moduleStatusId} showFooter={false} columns={[
           { key: "name", label: t("plugins.module"), render: (item) => <span id={moduleStatusId(item)} tabIndex={-1}>{moduleName(item)}</span> },
           { key: "status", label: t("systemStatus.state"), render: (item) => moduleStatusText(item, timeZone) },
         ]}/>}
     </> : null}
-    {auditChecks.length ? <><h2 className="sli-ds-section-title">{t("systemStatus.auditChecks")}</h2>
+    {auditChecks.length ? <><h2 id="status-audit-checks" className="sli-ds-section-title">{t("systemStatus.auditChecks")}</h2>
       <DataTable columns={[
         { key: "name", label: t("systemStatus.computer") }, { key: "check", label: t("systemStatus.auditCheck") },
         { key: "action", label: t("systemStatus.action"), render: (row) => <a href={row.href}>{row.action}</a> },
-      ]} rows={auditChecks} rowKey={(row) => row.id} caption={t("systemStatus.auditChecks")} showFooter={false}/></> : null}
-    {storage.isPending ? <><h2 className="sli-ds-section-title">{t("systemStatus.disk")}</h2>{loading(3)}</>
-      : storage.isError ? <><h2 className="sli-ds-section-title">{t("systemStatus.disk")}</h2>{failed(t("systemStatus.disk"), storage.refetch)}</>
-      : diskRows.length ? <><h2 className="sli-ds-section-title">{t("systemStatus.disk")}</h2><DataTable columns={[
-        { key: "mount", label: t("operations.disk.partition") },
+      ]} rows={auditChecks} rowKey={(row) => row.id} labelledBy="status-audit-checks" showFooter={false}/></> : null}
+    {storage.isPending ? <><h2 id="status-volume" className="sli-ds-section-title">{t("systemStatus.postgresVolume")}</h2>{loading(3)}</>
+      : storage.isError ? <><h2 id="status-volume" className="sli-ds-section-title">{t("systemStatus.postgresVolume")}</h2>{failed(t("systemStatus.postgresVolume"), storage.refetch)}</>
+      : diskRows.length ? <><h2 id="status-volume" className="sli-ds-section-title">{t("systemStatus.postgresVolume")}</h2><DataTable columns={[
+        { key: "mount", label: t("systemStatus.mount") },
         { key: "used", label: t("systemStatus.used") }, { key: "free", label: t("systemStatus.free") },
-      ]} rows={diskRows} rowKey={(row) => row.mount} caption={t("systemStatus.disk")} showFooter={false}/></> : null}
+      ]} rows={diskRows} rowKey={(row) => row.mount} labelledBy="status-volume" showFooter={false}/></> : null}
     {backup?.last_backup_at_utc && !storage.isError ? <p>{t(backup.same_disk_as_postgres === true
       ? "systemStatus.lastBackupSameDisk" : "systemStatus.lastBackup", {
       time: formatDateTime(backup.last_backup_at_utc, timeZone),

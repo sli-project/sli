@@ -729,6 +729,11 @@ function ConvertTo-SLIGpoV2Settings {
     $sideNode = $sideNode.CloneNode($true)
     Protect-SLIGpoXmlValues -Node $sideNode
 
+    # Retain the parent association before generic leaf paths and values are deduplicated.
+    $auditCounts = @{}
+    foreach ($subcategory in $sideNode.SelectNodes(".//*[local-name()='SubcategoryGuid']")) {
+        $auditCounts[$subcategory.InnerText.Trim()]++
+    }
     $extensionNodes = $sideNode.SelectNodes("./*[local-name()='ExtensionData']/*[local-name()='Extension']")
     foreach ($extensionNode in $extensionNodes) {
         $extensionName = $null
@@ -762,7 +767,7 @@ function ConvertTo-SLIGpoV2Settings {
             $seed = "{0}|{1}|{2}|{3}|{4}|{5}" -f $GpoId, $Side, $extensionName, $path, $leaf.LocalName, $value
             $fingerprint = SLIV2-Get-Sha256Hex -Text $seed
             if (-not $seenSettingFingerprints.Add($fingerprint)) { continue }
-            [void]$rows.Add([pscustomobject][ordered]@{
+            $setting = [ordered]@{
                 id              = SLIV2-New-StableId -Prefix "setting" -Seed $seed
                 gpo_id          = $GpoId
                 gpo_name        = $GpoName
@@ -776,7 +781,14 @@ function ConvertTo-SLIGpoV2Settings {
                 source_xml_path = "/GPO/$sideNodeName/ExtensionData/Extension/$path"
                 source_state    = SLIV2-New-SourceState -Status "observed" -Source "Get-GPOReport XML normalizer" -Detail $null -Error $null -Coverage $null -Value $null
                 fingerprint     = $fingerprint
-            })
+            }
+            if ($leaf.LocalName -eq "SubcategoryGuid" -and $auditCounts[$value] -eq 1) {
+                $modes = $leaf.ParentNode.SelectNodes("./*[local-name()='SettingValue']")
+                if ($modes.Count -eq 1 -and $modes[0].InnerText.Trim() -match "^[0-4]$") {
+                    $setting["audit_mode"] = $modes[0].InnerText.Trim()
+                }
+            }
+            [void]$rows.Add([pscustomobject]$setting)
         }
     }
 

@@ -185,7 +185,15 @@ public static class AdV2Endpoints
             if (string.IsNullOrEmpty(value)) { if (param["required"]?.GetValue<bool>() == true) throw new AdInputException("report_parameter_required:" + name); continue; }
             if (value.EnumerateRunes().Count() > (param.Int("max_length") > 0 ? param.Int("max_length") : 256)) throw new AdInputException("report_parameter_invalid:" + name);
             if (kind is "int" or "domain") { if (!long.TryParse(value, out long number) || number <= 0) throw new AdInputException("report_parameter_invalid:" + name); p[name] = number; }
-            else { if (kind == "choice" && param["options"] is JsonArray { Count: > 0 } options && !options.Any(o => o!.Text("value") == value)) throw new AdInputException("report_parameter_invalid:" + name); p[name] = value; }
+            else
+            {
+                bool savedComputerFilter = key == "ad.computers.v6" && name == "activity"
+                    && value is "within_threshold" or "over_threshold" or "over_60_days" or "missing";
+                if (kind == "choice" && !savedComputerFilter && param["options"] is JsonArray { Count: > 0 } options
+                    && !options.Any(o => o!.Text("value") == value))
+                    throw new AdInputException("report_parameter_invalid:" + name);
+                p[name] = value;
+            }
         }
         if(key=="ad.users.v2")_ = AdUsersActivity.Window(p);
         if (selected is not null && !domains.Contains(selected.Value)) throw new AdAccessException("domain_scope_denied");

@@ -1838,6 +1838,26 @@ it.each((["ru", "en"] as const).flatMap(locale => ["ok", "empty", "partial", "no
 });
 
 
+it("shows only the four non-overlapping Computers activity choices and sends the selected bucket", async () => {
+  setLocale("ru");
+  const declaration = adDefinitions["ad.computers.v6"].declaration;
+  const raw = { ...declaration, filter_options: {} } as unknown as ReportDefinitionDto;
+  const data = page({ report_key: raw.key, items: [{ id: 1, display_name: "PC-TEST" }] });
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    requested.push(url);
+    return Response.json(url.includes("/data?") ? data : raw);
+  }));
+  window.history.replaceState(null, "", "/app/report/ad.computers.v6?tab=computers");
+  renderReport(raw.key);
+  await userEvent.click(await screen.findByRole("button", { name: /Активность/ }));
+  const choices = await screen.findAllByRole("option");
+  expect(choices.filter((option) => option.dataset.key).map((option) => option.textContent))
+    .toEqual(["До 30 дней", "31–90 дней", "Более 90 дней", "Никогда"]);
+  await userEvent.click(screen.getByRole("option", { name: "Более 90 дней" }));
+  await waitFor(() => expect(requested.some((url) => url.includes("activity=over_90_days"))).toBe(true));
+});
+
 it.each(["ru", "en"] as const)("keeps user and computer inventories free of source warnings and view notes (%s)", async (locale) => {
   setLocale(locale);
   for (const [key, tab] of [["ad.users.v2", "all"], ["ad.computers.v6", "computers"]]) {
