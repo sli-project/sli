@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Sli.Server.Access;
 using Sli.Server.Ad;
 using Sli.Server.Auth;
 using Sli.Server.Gpo;
@@ -160,6 +161,13 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
                 })
             }
         });
+        // An all-domain grant distinguishes an empty domain inventory from an empty access scope.
+        if (domains.Count == 0 && queue?.Grant.Kind == DomainGrantKind.All && result["problems"] is JsonObject emptyProblems)
+        {
+            emptyProblems["open_count"] = 0;
+            emptyProblems["hygiene"] = 0;
+            emptyProblems["other"] = 0;
+        }
         if (openQueue)
         {
             result.Remove("activity");

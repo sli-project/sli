@@ -5246,7 +5246,7 @@ export const en: Record<MessageKey, string> = {
   "reports.v2.workstations.usb.detail.columns.source_sha256.label": "XML SHA-256",
   "reports.v2.workstations.usb.detail.columns.observation_sha256.label": "Observation SHA-256",
   "reports.v2.workstations.protection.title": "Local administrators and protection",
-  "reports.v2.workstations.protection.description": "Latest Defender snapshot regardless of the period, plus changes in the period. The snapshot time shows its freshness; unknown flags do not confirm protection.",
+  "reports.v2.workstations.protection.description": "Latest Defender snapshot regardless of the period, plus changes in the period.",
   "reports.v2.workstations.protection.params.period.label": "Period",
   "reports.v2.workstations.protection.params.agent_key.label": "Agent identifier",
   "reports.v2.workstations.protection.columns.observed_at.label": "Time",

@@ -222,6 +222,21 @@ def quiet_counts(home, read_problems):
 PROBE_ERRORS = (CheckFailed, OSError, ValueError, KeyError, TypeError, http.client.HTTPException, CookieError)
 
 
+def check_quiet_home(home, read_problems, quiet):
+    try:
+        quiet["reason"] = "home_count_unavailable"
+        quiet["open_count"] = open_count(home)
+        quiet["reason"] = "queue_count_mismatch"
+        hygiene, other = quiet_counts(home, read_problems)
+        quiet.update(hygiene=hygiene, other=other)
+        if hygiene <= 10 and other == 0:
+            quiet.update(status="pass", reason=None)
+        else:
+            quiet["reason"] = "quiet_limits"
+    except PROBE_ERRORS:
+        pass
+
+
 def probe(commit, install_log, phase, commands, started):
     checks = blank_results("not_reached")
     install, login, quiet = (checks[key] for key in METRICS)
@@ -259,18 +274,7 @@ def probe(commit, install_log, phase, commands, started):
         require(response.status == 200)
         return response.json()
 
-    try:
-        quiet["reason"] = "home_count_unavailable"
-        quiet["open_count"] = open_count(home)
-        quiet["reason"] = "queue_count_mismatch"
-        hygiene, other = quiet_counts(home, read_problems)
-        quiet.update(hygiene=hygiene, other=other)
-        if hygiene <= 10 and other == 0:
-            quiet.update(status="pass", reason=None)
-        else:
-            quiet["reason"] = "quiet_limits"
-    except PROBE_ERRORS:
-        pass
+    check_quiet_home(home, read_problems, quiet)
     return checks
 
 

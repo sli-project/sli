@@ -5242,7 +5242,7 @@ export const ru = {
   "reports.v2.workstations.usb.detail.columns.source_sha256.label": "SHA-256 XML",
   "reports.v2.workstations.usb.detail.columns.observation_sha256.label": "SHA-256 наблюдения",
   "reports.v2.workstations.protection.title": "Локальные администраторы и защита",
-  "reports.v2.workstations.protection.description": "Последний снимок Defender независимо от периода и события изменений за период. Время снимка показывает его свежесть; неизвестные флаги не подтверждают защиту.",
+  "reports.v2.workstations.protection.description": "Последний снимок Defender независимо от периода и события изменений за период.",
   "reports.v2.workstations.protection.params.period.label": "Период",
   "reports.v2.workstations.protection.params.agent_key.label": "Идентификатор агента",
   "reports.v2.workstations.protection.columns.observed_at.label": "Время",

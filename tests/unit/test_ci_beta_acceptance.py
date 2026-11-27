@@ -9,7 +9,32 @@ def test_quiet_home_requires_an_observed_count():
     with pytest.raises(beta_acceptance.CheckFailed):
         beta_acceptance.quiet_counts({"problems": {"open_count": None}}, None)
 
-    assert beta_acceptance.quiet_counts({"problems": {"open_count": 0}}, None) == (0, 0)
+
+@pytest.mark.parametrize("hygiene, other, status, reason", [
+    (0, 0, "pass", None),
+    (10, 0, "pass", None),
+    (11, 0, "fail", "quiet_limits"),
+    (0, 1, "fail", "quiet_limits"),
+])
+def test_check_six_reports_open_counts_and_applies_limits(hygiene, other, status, reason):
+    total = hygiene + other
+    home = {"domains": [], "domain_id": None, "problems": {"open_count": total, "items": []}, "weak_spots": {}}
+    if total:
+        home.update(domains=[{"id": 7}], domain_id=7)
+
+    def read(params):
+        assert total > 0
+        assert params["domain_id"] == 7 and params["population"] == "open"
+        items = [
+            {"id": index, "rule_code": "qw.ad-hardening.machine-account-quota" if index <= hygiene else "unclassified"}
+            for index in range(1, total + 1)
+        ]
+        return {"items": items, "has_more": False}
+
+    quiet = beta_acceptance.blank_results("not_reached")["quiet"]
+    beta_acceptance.check_quiet_home(home, read, quiet)
+
+    assert quiet == {"status": status, "reason": reason, "open_count": total, "hygiene": hygiene, "other": other}
 
 
 def test_quiet_home_classifies_the_entire_open_queue():
