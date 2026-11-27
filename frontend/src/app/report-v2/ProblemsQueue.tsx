@@ -161,8 +161,16 @@ export function ProblemsQueue({ definition, initialSearch }: { definition: Repor
   const ownerAllowed = definition.params.some(({ key }) => key === "queue_assignee");
   const [initial] = useState(() => new URLSearchParams(initialSearch ?? window.location.search));
   const openEntity = initial.get("population") === "open" ? initial.get("entity_id") : null;
-  const [view, setView] = useState<View>(() => views.find((item) => item === initial.get("queue_view")) ??
-    (initial.get("risk") === "accepted" ? "deferred" : initial.get("status") === "active" ? "active" : ["closed", "false_positive"].includes(initial.get("status") ?? "") ? "resolved" : initial.get("population") === "attention" || initial.get("status") === "new" ? "open" : "all"));
+  const [view, setView] = useState<View>(() => {
+    const chosen = views.find((item) => item === initial.get("queue_view"));
+    if (chosen) return chosen;
+    const status = initial.get("status");
+    if (initial.get("risk") === "accepted") return "deferred";
+    if (status === "active") return "active";
+    if (status === "closed" || status === "false_positive") return "resolved";
+    if (initial.get("population") === "attention" || status === "new") return "open";
+    return ["id", "entity_id", "cohort", "created_from", "created_to"].some((key) => initial.has(key)) ? "all" : "open";
+  });
   const [domain, setDomain] = useState(initial.get("domain") ?? String(definition.default_domain_id ?? ""));
   const [severity, setSeverity] = useState(initial.get("severity") ?? "");
   const [owner, setOwner] = useState(initial.get("queue_assignee") ?? "");
@@ -186,6 +194,15 @@ export function ProblemsQueue({ definition, initialSearch }: { definition: Repor
   });
   const [checked, setChecked] = useState<number[]>([]);
   const clearRows = () => { setPage({ key: "", cursors: [] }); setExpanded(null); setSelected(null); setChecked([]); };
+  const changeView = (next: string) => {
+    const chosen = views.find((item) => item === next);
+    if (!chosen || chosen === view) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("queue_view", chosen);
+    window.history.replaceState(window.history.state, "", url);
+    setView(chosen);
+    clearRows();
+  };
   const select = setSelected;
   const refresh = () => {
     if (period.preset !== "custom" && bounds) {
@@ -247,7 +264,7 @@ export function ProblemsQueue({ definition, initialSearch }: { definition: Repor
   const denied = list.error instanceof ApiResponseError && [401, 403].includes(list.error.status) || result?.state === "denied";
   const error = list.isError || result?.state === "error";
   const firstAdSource = useFirstAdSource(initial, initial.size === 0 && !cursor && !domain
-    && view === "all" && !severity && !owner && !search && period.preset === "7d"
+    && view === "open" && !severity && !owner && !search && period.preset === "7d"
     && definition.access?.allowed !== false && list.isSuccess && !list.isFetching && isEmptyFirstAdReportResult(result));
   const incomplete = (result?.state === "not_collected" || result?.state === "partial" || result?.state === "stale" || result?.state === "processing") && rows.length === 0;
   const counts = incomplete ? {} : record(result?.series?.queue_counts);
@@ -310,7 +327,7 @@ export function ProblemsQueue({ definition, initialSearch }: { definition: Repor
       <FilterChips label={t("problems.queue.views")} value={view}
         items={views.map((item) => ({ key: item, label: t(`problems.queue.view.${item}`),
           count: asCount(counts[item]) === null ? undefined : formatNumber(Number(counts[item])) }))}
-        onChange={(key) => { const next = views.find((item) => item === key); if (next) { setView(next); clearRows(); } }}/>
+        onChange={changeView}/>
       <div className="sli-ds-header__actions">
       <Checkbox checked={fold} onChange={(event) => { setFold(event.target.checked); clearRows(); }}>{t("problems.queue.fold")}</Checkbox>
       <Select label={t("problems.queue.density")} value={compact ? "compact" : "standard"} onChange={(value) => setCompact(value === "compact")}
