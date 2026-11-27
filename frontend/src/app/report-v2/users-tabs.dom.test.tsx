@@ -115,6 +115,17 @@ it("starts with account rows, filters by nonempty checks, and opens the filtered
   expect(calls.some((params) => params.get("limit") === "1")).toBe(false);
 });
 
+it.each([
+  ["en", /^Data as of .*21.*2026/],
+  ["ru", /^Данные на .*21.*2026/],
+] as const)("shows the collection time in the Users header in %s", async (locale, label) => {
+  setLocale(locale);
+  window.history.replaceState(null, "", "/app/report/ad.users.v2?tab=all&domain=8");
+  mock(() => Response.json(page("all", { coverage: { observed_at_utc: "2026-11-21T12:00:00Z" } })));
+  show();
+  expect(await screen.findByText(label)).toBeTruthy();
+});
+
 it("preserves an enabled or disabled filter without offering unknown status", async () => {
   window.history.replaceState(null, "", "/app/report/ad.users.v2?tab=all");
   show();
