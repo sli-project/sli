@@ -24,6 +24,34 @@ public sealed class OperationsStorageViewTests
         Assert.Equal(root, files.PostgresMount([root, Path.Combine(root, "srv", "sli")]));
     }
 
+    [Fact]
+    public void PostgresVolumeReadsCapacityAtTheDataPath()
+    {
+        string root = Path.GetPathRoot(Path.GetTempPath())!;
+        string data = Path.Combine(root, "srv", "sli-db", "pgdata");
+        var files = new VolumeFiles(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Sli:Operations:SLI_POSTGRES_DATA_DIRECTORY"] = data,
+        }).Build());
+
+        var volume = files.PostgresVolume();
+
+        Assert.Equal(data, files.MeasuredPath);
+        Assert.Equal(23L, (long?)volume?["used_bytes"]);
+        Assert.Equal(81L, (long?)volume?["free_bytes"]);
+    }
+
+    sealed class VolumeFiles(IConfiguration config) : OperationsFiles(config)
+    {
+        public string? MeasuredPath { get; private set; }
+
+        protected override (long Available, long TotalFree, long Total) ReadPostgresDiskSpace(string path, string mount)
+        {
+            MeasuredPath = path;
+            return (81, 82, 105);
+        }
+    }
+
     [Theory] [InlineData(false)] [InlineData(true)]
     public async Task ReadinessReportsForeignArchiveRootWithoutExposingPaths(bool foreign)
     {

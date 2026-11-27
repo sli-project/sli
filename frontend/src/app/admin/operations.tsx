@@ -15,8 +15,9 @@ const hasSize = (value: string | null | undefined) => typeof value === "string" 
 function DiskTable({ data, growth }: { data: StorageOverview; growth?: StorageGrowth }) {
   const components = data.storage.footprint?.components ?? [];
   const database = components.find((item) => item.key === "postgres_database");
-  const disk = data.storage.disk_pressure?.disk;
-  const volume = disk?.used_bytes == null && !hasSize(disk?.used_human) ? data.storage.postgres_volume : undefined;
+  const volume = data.storage.postgres_volume;
+  // Older responses without a PostgreSQL volume field describe only the application disk.
+  const disk = volume === undefined ? data.storage.disk_pressure?.disk : undefined;
   const measured = growth?.measured_growth?.components;
   const daily = (key: "database_bytes" | "disk_used_bytes") => {
     const value = measured?.[key];
@@ -28,7 +29,7 @@ function DiskTable({ data, growth }: { data: StorageOverview; growth?: StorageGr
     { key: "disk", label: volume ? t("operations.disk.postgresVolume", { mount: volume.mount_point }) : t("operations.disk.partition"),
       used: volume ? formatByteSize(volume.used_bytes) : formatByteSize(disk?.used_bytes) ?? localizeByteSize(disk?.used_human),
       free: volume ? formatByteSize(volume.free_bytes) : formatByteSize(disk?.free_bytes) ?? localizeByteSize(disk?.free_human),
-      growth: volume ? null : daily("disk_used_bytes"), days: volume ? null : growth?.forecast?.estimated_days },
+      growth: disk ? daily("disk_used_bytes") : null, days: disk ? growth?.forecast?.estimated_days : null },
   ];
   const used = rows.some((row) => hasSize(row.used));
   const free = rows.some((row) => hasSize(row.free));

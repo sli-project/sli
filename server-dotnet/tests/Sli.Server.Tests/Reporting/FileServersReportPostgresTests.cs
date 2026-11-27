@@ -42,6 +42,31 @@ public sealed class FileServersReportPostgresTests
         Assert.Equal(7, summary["permission_changes"]!.GetValue<int>());
         Assert.Equal(1, summary["permission_change_groups"]!.GetValue<int>());
         Assert.Equal("saved_4670_events", summary["permission_change_unit"]!.ToString());
+        var receipt = Guid.NewGuid();
+        await using (var check = new NpgsqlCommand("""
+            insert into sli_plugin_file_audit.audit_commands
+              (command_id,agent_id,source_instance_id,policy_revision,action,collection_scope_ids,requested_at,actor_kind,actor_id,command_sha256)
+            values ('check-fixture',@agent,@source,2,'check',array[@scope],now()-interval '20 minutes','session',1,repeat('b',64));
+            insert into sli_plugin_file_audit.audit_receipts
+              (receipt_id,command_id,agent_id,source_instance_id,policy_revision,action,collection_scope_id,state,observed_at,reason_code)
+            values (@receipt,'check-fixture',@agent,@source,2,'check',@scope,'failed',now()-interval '19 minutes','native_unavailable');
+            update public.sli_agents
+            set rights_probe='{"agent_version":"26.0.136"}',
+                file_audit=jsonb_build_object('request','{"command":{"command_id":"check-fixture","action":"check"}}'::jsonb,
+                    'scopes',jsonb_build_object(@scope,jsonb_build_object('receipt_id',@receipt::text)))
+            where id=@agent
+            """, owner))
+        {
+            check.Parameters.AddWithValue("agent", FileServersReportFixture.Agent);
+            check.Parameters.AddWithValue("source", FileServersReportFixture.Source.ToString("D"));
+            check.Parameters.AddWithValue("scope", FileServersReportFixture.Scope);
+            check.Parameters.AddWithValue("receipt", receipt);
+            await check.ExecuteNonQueryAsync(ct);
+        }
+        var resource = Assert.Single((await Read("overview", Filter()))["items"]!.AsArray())!;
+        var requirement = resource["audit_receipt"]!["check_agent_requirement"]!;
+        Assert.Equal("26.0.136", requirement["agent_version"]!.GetValue<string>());
+        Assert.Equal("26.0.154", requirement["minimum_version"]!.GetValue<string>());
         foreach (string tab in new[] { "permission-changes", "actions" })
         {
             var page = await Read(tab, Filter());

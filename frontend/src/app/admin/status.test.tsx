@@ -7,6 +7,7 @@ import type { NotificationWorkspace } from "../../api/notification-types";
 import { localeRuntime, setLocale, t } from "../../i18n";
 import { formatDateTime } from "../../shared/date-time";
 import * as actions from "../operations-actions";
+import { OperationsPage } from "./operations";
 import { SystemStatusPage } from "./status";
 
 const access = vi.hoisted(() => ({ platform_owner: true, subject: { coarse_role: "admin" }, capabilities: ["operations.view"] }));
@@ -32,6 +33,27 @@ const notifications = (enabled = false): NotificationWorkspace => ({ channels: [
   can_configure: true, subscriptions: [], counts: { total: 0, new_count: 0, accepted: 0, errors: 0, waiting: 0, other: 0 }, items: [], has_more: false, next_cursor: null, previous_login_at: null });
 const clients: QueryClient[] = [];
 const postgresVolume = { mount_point: "/srv/sli-db", used_bytes: 2 * 1024 ** 3, free_bytes: 3 * 1024 ** 3 };
+
+it("shows the same PostgreSQL filesystem capacity in Storage and System status", async () => {
+  setLocale("ru");
+  vi.spyOn(api, "bootstrap").mockResolvedValue({ effective_role: "admin" } as Awaited<ReturnType<typeof api.bootstrap>>);
+  vi.spyOn(api, "systemHealth").mockResolvedValue({});
+  vi.spyOn(api, "platformSettings").mockResolvedValue({ items: [] });
+  vi.spyOn(api, "storageGrowth").mockResolvedValue({});
+  vi.mocked(api.storageOverview).mockResolvedValue({ storage: {
+    postgres_volume: { ...postgresVolume, used_bytes: 23 * 1024 ** 3, free_bytes: 81 * 1024 ** 3 },
+    disk_pressure: { disk: { used_bytes: 12 * 1024 ** 3, free_bytes: 17 * 1024 ** 3 } },
+  } });
+  const client = new QueryClient();
+  clients.push(client);
+  render(<QueryClientProvider client={client}><OperationsPage/><SystemStatusPage/></QueryClientProvider>);
+  for (const title of ["Диск", "Том PostgreSQL"]) {
+    const table = await screen.findByRole("table", { name: title });
+    const row = within(table).getByRole("row", { name: /\/srv\/sli-db/ });
+    expect(within(row).getByText("23 ГБ")).toBeTruthy();
+    expect(within(row).getByText("81 ГБ")).toBeTruthy();
+  }
+});
 
 it("shows the PostgreSQL mount and omits the backup line until a copy exists", async () => {
   vi.mocked(api.storageOverview).mockResolvedValue({ storage: {

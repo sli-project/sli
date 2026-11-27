@@ -11,15 +11,16 @@ namespace Sli.Server.Tests.Semantic;
 
 public sealed class DetectionReadPerformancePostgresTests(ITestOutputHelper output)
 {
+    private const int PredecessorVersion = 444;
     private static string Migration => Path.Combine(PostCollectionPostgres.Repository(),
-        "config/postgres_migrations/428_detection_read_checkpoints.sql");
+        "config/postgres_migrations/447_detection_read_checkpoints.sql");
 
     [Fact]
     public async Task Detection_discovery_and_incremental_account_reads_at_stand_size()
     {
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new SqlPostgresFixture();
-        await fixture.StartAsync(ct, throughVersion: 422);
+        await fixture.StartAsync(ct, throughVersion: PredecessorVersion);
         await using var owner = await fixture.Pg.OpenAsync(ct);
         var events = await ShortEventAdmissionPostgresTests.SeedAsync(owner, ct, eventKinds: [4625],
             occurredAt: DateTime.UtcNow.Date.AddDays(-1).AddHours(12));
@@ -72,44 +73,47 @@ public sealed class DetectionReadPerformancePostgresTests(ITestOutputHelper outp
             "t109_detection_sources", "short_detection_sources337"];
         string[] readers = ["read_account_decoy_events", "read_account_decoy_events_short337",
             "read_account_watch_events", "read_account_watch_events_short337"];
-        List<(string Function, double Milliseconds, long Blocks)> after = [];
-        Dictionary<string, string[]> beforeRows = new();
-        foreach (string phase in new[] { "before", "after" })
+        await fixture.Pg.ApplyFileAsync(Migration, null, ct);
+        // Warm the session's catalog and plan caches after the schema change.
+        var installedScope = (string)(await discover.ExecuteScalarAsync(ct))!;
+        Assert.Equal(scope, installedScope);
+        List<(string Function, double Milliseconds, long Blocks)> measurements = [];
+        foreach (string function in discovery.Concat(readers))
         {
-            if (phase == "after") await fixture.Pg.ApplyFileAsync(Migration, null, ct);
-            foreach (string function in discovery.Concat(readers))
+            bool source = discovery.Contains(function);
+            bool watch = function.Contains("watch", StringComparison.Ordinal);
+            string arguments = source ? "" :
+                $"(@scope::jsonb->>'installation_id')::uuid,'sli.windows.ad-dc'," +
+                $"@scope::jsonb->>'source_instance_id',@scope::jsonb->>'source_generation',repeat('{(watch ? 'b' : 'a')}',64),null::uuid";
+            string query = $"select * from public.{function}({arguments})";
+            if (function is "read_account_decoy_events" or "read_account_watch_events")
             {
-                bool watch = function.Contains("watch", StringComparison.Ordinal);
-                string arguments = discovery.Contains(function) ? "" :
-                    $"(@scope::jsonb->>'installation_id')::uuid,'sli.windows.ad-dc'," +
-                    $"@scope::jsonb->>'source_instance_id',@scope::jsonb->>'source_generation',repeat('{(watch ? 'b' : 'a')}',64),null::uuid";
-                string query = $"select * from public.{function}({arguments})";
-                await using var explain = new NpgsqlCommand("explain (analyze,buffers,format json) " + query, worker) { CommandTimeout = 0 };
-                explain.Parameters.AddWithValue("scope", scope);
-                var plan = JsonNode.Parse((string)(await explain.ExecuteScalarAsync(ct))!)![0]!;
-                var root = plan["Plan"]!;
-                double time = plan["Execution Time"]!.GetValue<double>();
-                long blocks = new[] { "Shared Hit Blocks", "Shared Read Blocks", "Local Hit Blocks", "Local Read Blocks",
-                    "Temp Read Blocks", "Temp Written Blocks" }.Sum(key => root[key]?.GetValue<long>() ?? 0);
-                output.WriteLine(FormattableString.Invariant($"{phase} {function} {time:F3} ms {blocks} blocks"));
-                if (phase == "after") after.Add((function, time, blocks));
-                if (function is not ("default_detection_sources" or "t109_detection_sources"
-                    or "read_account_decoy_events" or "read_account_watch_events")) continue;
-                await using var rows = new NpgsqlCommand($"select to_jsonb(r)::text from ({query}) r", worker) { CommandTimeout = 0 };
-                rows.Parameters.AddWithValue("scope", scope);
-                await using var reader = await rows.ExecuteReaderAsync(ct);
-                var values = new List<string>();
-                while (await reader.ReadAsync(ct)) values.Add(reader.GetString(0));
-                if (!discovery.Contains(function)) Assert.Equal(128, values.Count);
-                if (phase == "before") beforeRows.Add(function, values.ToArray());
-                else Assert.Equal(beforeRows[function], values);
+                await using var candidates = new NpgsqlCommand($"select source_event_id from ({query}) r", worker);
+                candidates.Parameters.AddWithValue("scope", scope);
+                await using var rows = await candidates.ExecuteReaderAsync(ct);
+                for (long id = 2499801; id < 2499929; id++)
+                {
+                    Assert.True(await rows.ReadAsync(ct));
+                    Assert.Equal(id, rows.GetInt64(0));
+                }
+                Assert.False(await rows.ReadAsync(ct));
             }
+            await using var explain = new NpgsqlCommand("explain (analyze,buffers,format json) " + query, worker);
+            explain.Parameters.AddWithValue("scope", scope);
+            var plan = JsonNode.Parse((string)(await explain.ExecuteScalarAsync(ct))!)![0]!;
+            var root = plan["Plan"]!;
+            double time = plan["Execution Time"]!.GetValue<double>();
+            long blocks = new[] { "Shared Hit Blocks", "Shared Read Blocks", "Local Hit Blocks", "Local Read Blocks",
+                "Temp Read Blocks", "Temp Written Blocks" }.Sum(key => root[key]?.GetValue<long>() ?? 0);
+            output.WriteLine(FormattableString.Invariant($"{function} {time:F3} ms {blocks} blocks"));
+            Assert.Equal(source ? 1d : 128d, root["Actual Rows"]!.GetValue<double>());
+            measurements.Add((function, time, blocks));
         }
-        Assert.All(after, item =>
+        Assert.All(measurements, measurement =>
         {
-            bool source = discovery.Contains(item.Function);
-            Assert.True(item.Milliseconds <= (source ? 50 : 1000), $"{item.Function}: {item.Milliseconds} ms");
-            if (!source) Assert.True(item.Blocks <= 5000, $"{item.Function}: {item.Blocks} blocks");
+            bool source = discovery.Contains(measurement.Function);
+            Assert.True(measurement.Milliseconds <= (source ? 50 : 1000), $"{measurement.Function}: {measurement.Milliseconds} ms");
+            if (!source) Assert.True(measurement.Blocks <= 5000, $"{measurement.Function}: {measurement.Blocks} blocks");
         });
     }
 
@@ -125,7 +129,7 @@ public sealed class DetectionReadPerformancePostgresTests(ITestOutputHelper outp
         async Task<string[]> Produce(bool upgraded)
         {
             await using var fixture = new SqlPostgresFixture();
-            await fixture.StartAsync(ct, throughVersion: 422);
+            await fixture.StartAsync(ct, throughVersion: PredecessorVersion);
             if (upgraded) await fixture.Pg.ApplyFileAsync(Migration, null, ct);
             await using var owner = await fixture.Pg.OpenAsync(ct);
             var rows = await ShortEventAdmissionPostgresTests.SeedAsync(owner, ct, eventKinds: [4625], occurredAt: at);
@@ -189,10 +193,10 @@ public sealed class DetectionReadPerformancePostgresTests(ITestOutputHelper outp
                 // producer while it owns the waiting command.
                 await using (var block = await owner.BeginTransactionAsync(ct))
                 {
-                    await using var hold = new NpgsqlCommand("lock table public.detection_source_catalog428 in access exclusive mode", owner, block);
+                    await using var hold = new NpgsqlCommand("lock table public.detection_source_catalog447 in access exclusive mode", owner, block);
                     await hold.ExecuteNonQueryAsync(ct);
                     using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    var waiting = detector.RunOnceAsync(worker, stop.Token, discovered: []);
+                    var waiting = detector.RunOnceAsync(worker, stop.Token);
                     try
                     {
                         await using var blocked = new NpgsqlCommand("select cardinality(pg_blocking_pids(@pid))>0", owner, block);

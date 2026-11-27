@@ -7,7 +7,7 @@ import {
   periodBounds, type FilterValues, type PeriodPreset, type PeriodValue, type TableColumn,
 } from "../../design-system";
 import { t, type MessageKey } from "../../i18n";
-import { browserTimeZone, dayKey, formatClockWithOffset, formatDateTime, isValidTimeZone, localDateTimeToUtc } from "../../shared/date-time";
+import { browserTimeZone, formatClockWithOffset, formatDateTime, formatTableTime, isValidTimeZone, localDateTimeToUtc } from "../../shared/date-time";
 import { formatNumber } from "../../shared/format";
 import { useTimeZone } from "../../shared/time-zone";
 import { preserveNavigationView } from "../navigation";
@@ -113,11 +113,6 @@ function ErrorLine({ onRetry }: { onRetry: () => void }) {
 function Result({ value }: { value: string }) {
   return value === "failure" ? <span className="sli-ds-error"><span aria-hidden="true">✗ </span>{t(`${prefix}failure`)}</span>
     : value === "success" ? <span aria-label={t(`${prefix}success`)} title={t(`${prefix}success`)}>✓</span> : dash();
-}
-
-function shortTime(time: string, timeZone: string) {
-  const today = !!time && dayKey(time, timeZone) === dayKey(new Date(), timeZone);
-  return formatDateTime(time, timeZone, { seconds: true, timeOnly: today });
 }
 
 function ChangeDetails({ change, query, timeZone, close, pivot }: {
@@ -286,11 +281,11 @@ export function DomainChanges({ definition, initialSearch }: { definition: Repor
   };
   const columns: TableColumn<Change>[] = [
     { key: "time", label: labels("time"), minWidth: "calc(5 * var(--sli-space-8))", sortable: true, render: (row) => row.count > 1 && row.first !== row.time
-      ? `${shortTime(row.first, timeZone)}–${shortTime(row.time, timeZone)}` : shortTime(row.time, timeZone) },
-    { key: "change", label: labels("change_id"), render: (row) => row.count > 1
+      ? `${formatTableTime(row.first, timeZone)}–${formatTableTime(row.time, timeZone)}` : formatTableTime(row.time, timeZone) },
+    { key: "change", label: labels("change"), render: (row) => row.count > 1
       ? <button type="button" className="sli-ds-button" data-variant="ghost" data-size="compact" aria-expanded={expanded === row.id}
-          onClick={(event) => toggleBatch(event, row.id)}>{row.sign} {row.title} · {row.event} ×{formatNumber(row.count)}</button>
-      : `${row.sign} ${row.title} · ${row.event}` },
+          onClick={(event) => toggleBatch(event, row.id)}>{row.sign} {row.title} ×{formatNumber(row.count)}</button>
+      : `${row.sign} ${row.title}` },
     { key: "object", label: labels("object"), render: (row) => row.count > 1 ? dash() : show(row.object) },
     { key: "field", label: labels("field"), hiddenByDefault: false, render: (row) => row.count > 1 ? dash() : row.fields.map(({ label }) => label).join(" · ") || dash() },
     { key: "value", label: labels("value"), hiddenByDefault: false, render: (row) => row.count > 1 ? dash() : row.fields.map(({ value }) => show(value)).join(" · ") || dash() },
@@ -359,7 +354,7 @@ export function DomainChanges({ definition, initialSearch }: { definition: Repor
         <div className="sli-ds-control-field"><span>{labels("operation")}</span>
           <Select label={labels("operation")} value={text(filters.event_id)}
             options={[{ value: "", label: labels("any_operation") }, ...operations.map(({ value }) => ({
-              value, label: t(`reports.v2.security.events.chains.actions.${value}` as MessageKey) + " · " + value,
+              value, label: value === "5136" ? t("reports.v2.security.events.chains.actions.5136") : t(`security.events.action.${value}` as MessageKey),
             }))]} onChange={(eventId) => set({ ...values, event_id: eventId, category: undefined, changes_view: "all" })}/>
         </div>
       </div></div>}

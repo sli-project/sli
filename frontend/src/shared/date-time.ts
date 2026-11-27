@@ -91,6 +91,15 @@ export function formatDateTime(value: string | Date | null | undefined, timeZone
 export const formatDate = (value: string | Date | null | undefined, timeZone: DisplayTimeZone | undefined = "browser") =>
   formatDateTime(value, timeZone, { withTime: false });
 
+/** Compact timestamp for report tables, using the selected zone's calendar day. */
+export function formatTableTime(value: string | Date | null | undefined, timeZone: DisplayTimeZone = "browser"): string {
+  const clock = formatDateTime(value, timeZone, { timeOnly: true, seconds: true });
+  if (!value || clock === EMPTY_VALUE || (timeZone !== "browser" && !isValidTimeZone(timeZone))) return clock;
+  if (dayKey(value, timeZone) === dayKey(new Date(), timeZone)) return clock;
+  const date = formatDateTime(value, timeZone, { withTime: false, withYear: false });
+  return `${date} ${formatDateTime(value, timeZone, { timeOnly: true })}`;
+}
+
 export function formatClockWithOffset(instant: Date, timeZone: DisplayTimeZone, seconds = false) {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: timeZone === "browser" ? undefined : timeZone,

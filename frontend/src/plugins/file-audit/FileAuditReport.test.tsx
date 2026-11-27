@@ -67,6 +67,29 @@ it("opens Actions by default and keeps the same period across the three views", 
   expect(screen.getAllByText(t("period.24h"), { selector: "summary span" })).toHaveLength(1);
 });
 
+it("gives the next action for empty Actions and Permissions tabs", async () => {
+  mocks.data.mockImplementation(async (key, params) => ({ ...result(key, params),
+    state: "partial", items: [], has_more: false, next_cursor: null, filtered_count: 0 }));
+  mount();
+  expect(await screen.findByText(t("file-audit.screen.empty_actions"))).toBeTruthy();
+  await userEvent.click(screen.getByRole("tab", { name: t("file-audit.screen.permissions") }));
+  expect(await screen.findByText(t("file-audit.screen.empty_permissions"))).toBeTruthy();
+  expect(screen.queryByText(t("file-audit.screen.empty_actions"))).toBeNull();
+});
+
+it("shows the server's agent upgrade requirement on Resources", async () => {
+  mocks.data.mockImplementation(async (key, params) => ({ ...result(key, params), items: [{
+    id: "fixture-resource", share_name: "Fixture share", audit_receipt: {
+      observed_at: "2026-11-26T08:00:00Z", state: "failed", reason_code: "native_unavailable",
+      check_agent_requirement: { agent_version: "26.0.136", minimum_version: "26.0.154" },
+    },
+  }] }));
+  mount(declaration("file-audit.overview"));
+  const row = await screen.findByRole("row", { name: /Fixture share/ });
+  expect(row.textContent).toContain(t("file-audit.screen.update_agent", { version: "26.0.136", minimum: "26.0.154" }));
+  expect(row.textContent).not.toContain(t("file-audit.screen.audit_unreadable"));
+});
+
 it.each([
   ["delete", "actions", "operation", "delete"],
   ["changes", "actions", "activity", "changes"],
@@ -169,11 +192,11 @@ it("hides stale rows and export on denial and names a failed result with retry",
   expect(await screen.findByRole("table")).toBeTruthy();
 });
 
-it("shows a blank table on an empty successful result and keeps export independently authorized", async () => {
+it("shows a next action for an empty successful result and keeps export independently authorized", async () => {
   mocks.access.capabilities = ["file-audit.view"];
   mocks.data.mockImplementation(async (key, params) => ({ ...result(key, params), items: [], has_more: false, filtered_count: 0 }));
   mount();
   const table = await screen.findByRole("table");
-  expect(table.querySelector("tbody")?.childElementCount).toBe(0);
+  expect(within(table).getByText(t("file-audit.screen.empty_actions"))).toBeTruthy();
   expect(screen.queryByRole("link", { name: /CSV/ })).toBeNull();
 });

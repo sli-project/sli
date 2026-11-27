@@ -12,6 +12,7 @@ vi.mock("../../api/client", async (importOriginal) => {
 });
 import { localeRuntime, setLocale, t } from "../../i18n";
 import { createAdminPlaceholderRoutes } from "./navigation-pages";
+import { PluginPage } from "./plugin-page";
 import { PluginsPage } from "./plugins";
 
 const item: PluginState = { plugin_id: "sli.ad", package_version: "0.1.0", installed: true,
@@ -20,7 +21,7 @@ const item: PluginState = { plugin_id: "sli.ad", package_version: "0.1.0", insta
   status: { state: "waiting", last_data_at: null, error_at: null, error_object: null } };
 vi.mock("../App", async (importOriginal) => ({
   ...await importOriginal<typeof import("../App")>(),
-  useEffectiveAccess: () => ({ capabilities: ["operations.view"], reports: [] }),
+  useEffectiveAccess: () => ({ subject: { coarse_role: "viewer" }, capabilities: ["operations.view"], reports: [] }),
 }));
 
 const disabledStatus = { ...item.status!, state: "disabled" as const };
@@ -52,7 +53,7 @@ it("opens the failing module row on System status", async () => {
     status: { state: "error", last_data_at: null, error_at: errorAt, error_object: "DC01" },
   }], can_manage: false });
   const view = mount();
-  const link = await screen.findByRole("link", { name: /^Ошибка · DC01 · 26/ });
+  const link = await screen.findByRole("link", { name: /^Включён · Сбой сбора · DC01 · 26/ });
   const href = link.getAttribute("href")!;
   view.unmount();
 
@@ -65,7 +66,7 @@ it("opens the failing module row on System status", async () => {
   mount(<RouterProvider router={router}/>);
   expect(await screen.findByRole("heading", { name: t("shell.adminNav.status") })).toBeTruthy();
   const table = await screen.findByRole("table", { name: t("plugins.title") });
-  const row = within(table).getByRole("row", { name: /Active Directory Ошибка · DC01/ });
+  const row = within(table).getByRole("row", { name: /Active Directory Включён · Сбой сбора · DC01/ });
   expect(row.contains(document.getElementById(new URL(href, "http://localhost").hash.slice(1)))).toBe(true);
 });
 
@@ -84,13 +85,13 @@ it("disables through the current revision and reads the new status from the serv
   await waitFor(() => expect(mocks.change).toHaveBeenCalledWith(item, false));
   expect((await screen.findByRole("button", { name: "Включить" }) as HTMLButtonElement).disabled).toBe(true);
   expect(screen.getByText(t("plugins.status.disabled"))).toBeTruthy();
-  expect(screen.queryByText(t("plugins.status.waiting"))).toBeNull();
+  expect(screen.queryByText(new RegExp(t("plugins.status.waiting")))).toBeNull();
 });
 
 it("keeps delegated readers from mutating", async () => {
   mocks.list.mockResolvedValue({ items: [item], can_manage: false });
   mount();
-  await screen.findByText(t("plugins.status.waiting"));
+  await screen.findByText(new RegExp(t("plugins.status.waiting")));
   expect(screen.queryByRole("button", { name: "Выключить" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Включить" })).toBeNull();
   expect(screen.queryByText(/^Работает/)).toBeNull();
@@ -177,19 +178,45 @@ it.each(["ru", "en"] as const)("keeps only the latest received data visible when
   expect(screen.getByRole("link", { name: t("plugins.status.disabled") })).toBeTruthy();
 });
 
-it("shows an unassigned file-server module as disabled and opens Agents without mutating state", async () => {
+it("keeps an unassigned file-server module enabled and opens its setup without mutating state", async () => {
   const fileServers: PluginState = { ...item, plugin_id: "sli.file-audit", source_names: [], source_count: 0,
-    status: { ...item.status!, state: "no_sources" } };
+    status: { ...item.status!, state: "no_sources", reason: "no_sources", next_action: "connect_file_server" } };
   const gpo = { ...item, plugin_id: "sli.gpo", source_names: ["DC01", "DC02", "DC03", "DC04"], source_count: 4 };
   mocks.list.mockResolvedValue({ items: [gpo, item, fileServers], can_manage: true });
   mount();
   const fileRow = await screen.findByRole("row", { name: /Файловые серверы/ });
-  expect(within(fileRow).getByRole("link", { name: "Выключен" })).toBeTruthy();
+  expect(within(fileRow).getByRole("link", { name: /Включён.*Установите агент SLI на файловый сервер/ })).toBeTruthy();
   expect(within(fileRow).getAllByText("—")).toHaveLength(2);
-  expect(within(fileRow).getByRole("link", { name: "Включить" }).getAttribute("href")).toBe("/app/agents");
-  expect(within(fileRow).queryByRole("button", { name: "Выключить" })).toBeNull();
+  expect(within(fileRow).getByRole("link", { name: "Открыть" }).getAttribute("href")).toBe("/app/admin/plugins/sli.file-audit");
+  expect(within(fileRow).getByRole("button", { name: "Выключить" })).toBeTruthy();
   expect(screen.getByText("DC01, DC02 и ещё 2")).toBeTruthy();
   expect(mocks.change).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["sli.file-audit", "working", null, 1, "Включён · 1 сервер подключён"],
+  ["sli.workstations", "no_sources", "install_workstation_agent", 0, "Включён · Нет подключённых источников · Установите агент SLI на рабочую станцию"],
+  ["sli.remote-access", "disabled", null, 0, "Выключен"],
+  ["sli.sigma", "no_sources", "connect_sigma_events", 0, "Включён · Нет подключённых источников · Подключите контроллер домена для сбора событий Windows"],
+] as const)("shows the same server state for %s on all three screens", async (pluginId, state, action, sourceCount, expected) => {
+  mocks.list.mockResolvedValue({ can_manage: false, items: [{ ...item, plugin_id: pluginId, enabled: state !== "disabled",
+    source_count: sourceCount, source_names: sourceCount ? ["FS01"] : [],
+    status: { ...item.status!, state, next_action: action },
+  }] });
+  const list = mount();
+  const href = (await screen.findByRole("link", { name: expected })).getAttribute("href")!;
+  list.unmount();
+
+  const page = mount(<PluginPage pluginId={pluginId} title={pluginId}/>);
+  expect(await screen.findByText(expected, { selector: "header p" })).toBeTruthy();
+  page.unmount();
+
+  const root = createRootRoute();
+  const router = createRouter({ routeTree: root.addChildren(createAdminPlaceholderRoutes(root)),
+    history: createMemoryHistory({ initialEntries: [href] }), basepath: "/app" });
+  mount(<RouterProvider router={router}/>);
+  const table = await screen.findByRole("table", { name: t("plugins.title") });
+  expect(within(table).getByRole("cell", { name: expected })).toBeTruthy();
 });
 
 it("keeps file-server setup and disable hidden for delegated readers", async () => {
