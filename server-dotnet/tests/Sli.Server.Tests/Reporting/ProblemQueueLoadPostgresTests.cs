@@ -19,7 +19,7 @@ public sealed class ProblemQueueLoadPostgresTests(ITestOutputHelper output)
     {
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new SqlPostgresFixture();
-        await fixture.StartAsync(ct, throughVersion: 437);
+        await fixture.StartAsync(ct, throughVersion: 442);
         await using var owner = await fixture.Pg.OpenAsync(ct);
         await PostCollectionPostgres.Sql(owner, "alter system set max_wal_size='4GB'", ct);
         await PostCollectionPostgres.Sql(owner, "select pg_reload_conf()", ct);
@@ -27,7 +27,8 @@ public sealed class ProblemQueueLoadPostgresTests(ITestOutputHelper output)
         await ProblemQueuePagingTests.SeedPopulation(owner, ct);
         await using (var seed = new NpgsqlCommand(Seed, owner) { CommandTimeout = 0 })
             await seed.ExecuteNonQueryAsync(ct);
-        await PostCollectionPostgres.Sql(owner, "vacuum analyze", ct);
+        await using var vacuum = new NpgsqlCommand("vacuum analyze", owner) { CommandTimeout = 0 };
+        await vacuum.ExecuteNonQueryAsync(ct);
         await using var reader = new NpgsqlConnection(fixture.Dsn("adlog_user"));
         await reader.OpenAsync(ct);
         await PostCollectionPostgres.Sql(reader, "set jit=off", ct);
@@ -39,9 +40,9 @@ public sealed class ProblemQueueLoadPostgresTests(ITestOutputHelper output)
         await Measure(reader, "Before page", before.Page, before.Arguments, ct);
         await Measure(reader, "Before counts", before.Summary, before.Arguments, ct);
 
-        string migration = Path.Combine(PostCollectionPostgres.Repository(), "config/postgres_migrations/438_problem_queue_read.sql");
+        string migration = Path.Combine(PostCollectionPostgres.Repository(), "config/postgres_migrations/443_problem_queue_read.sql");
         await fixture.Pg.ApplyFileAsync(migration, null, ct);
-        await PostCollectionPostgres.Sql(owner, "vacuum analyze", ct);
+        await vacuum.ExecuteNonQueryAsync(ct);
         await PostCollectionPostgres.Sql(reader, "set " + ProblemRepository.QueueWorkMem, ct);
         var after = ProblemRepository.FindingsQueries(query, usePasswordProjection: true, useQueueRead: true);
         var page = await Measure(reader, "After page", after.Page, after.Arguments, ct);

@@ -153,8 +153,8 @@ public sealed partial class ProblemRepository
             where s.kind='risk_acceptance' order by s.finding_id,s.id desc
         ) risk on risk.finding_id=findings.id
         """;
-    private const string QueueEvidence = " left join problem_queue_evidence438 witnesses on witnesses.finding_id=findings.id";
-    private const string QueueExternal = " left join problem_queue_external438 external_evidence on external_evidence.finding_id=findings.id";
+    private const string QueueEvidence = " left join problem_queue_evidence443 witnesses on witnesses.finding_id=findings.id";
+    private const string QueueExternal = " left join problem_queue_external443 external_evidence on external_evidence.finding_id=findings.id";
     private static string QueueState(string status) =>
         $"case ({status}) when 'deferred' then 'deferred' when 'active' then 'active' when 'review' then 'active' when 'closed' then 'resolved' when 'false_positive' then 'resolved' else 'open' end";
     private static bool IsQueueList(FindingQuery query) => query.QueueList && query.QueueView is not null && query.Cohort is null;
@@ -230,7 +230,7 @@ public sealed partial class ProblemRepository
         args["limit"] = query.Limit + 1;
         string deferral = query.QueueView is null ? "" : " left join finding_queue_deferrals d on d.finding_id=findings.id";
         string population = useQueueRead
-            ? "from problem_queue_visible438 findings" + QueueRisk + deferral +
+            ? "from problem_queue_visible443 findings" + QueueRisk + deferral +
                 (query.GroupQueue || query.Domains is not null ? QueueEvidence : "") + (query.Domains is null ? "" : QueueExternal)
             : Population + PageRisk + deferral;
         string prefix = "", groupFields = "", summaryPopulation = population, summaryWhere = where;
@@ -337,7 +337,7 @@ public sealed partial class ProblemRepository
         bool usePasswordProjection = query.GroupQueue && query.QueueList &&
             (await One(tx, "select to_regprocedure('public.password_queue_presentation399(bigint,text)') is not null as enabled", null, ct))?["enabled"]?.GetValue<bool>() == true;
         bool useQueueRead = IsQueueList(query) &&
-            (await One(tx, "select to_regclass('public.problem_queue_visible438') is not null as enabled", null, ct))?["enabled"]?.GetValue<bool>() == true;
+            (await One(tx, "select to_regclass('public.problem_queue_visible443') is not null as enabled", null, ct))?["enabled"]?.GetValue<bool>() == true;
         if (useQueueRead && query.GroupQueue) await Execute(tx, "set local " + QueueWorkMem, new(), ct);
         var (page, summarySql, args) = FindingsQueries(query, usePasswordProjection: usePasswordProjection, useQueueRead: useQueueRead);
         JsonArray rows, summary;

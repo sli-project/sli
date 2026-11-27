@@ -1,12 +1,12 @@
 with queue_group_stats as (
     select cohort.key collate "C" as problem_cohort,
         (array_agg(row(findings.id,(__STATUS__),(__ACCEPTED__),findings.severity,__ASSIGNEE__,password.aliases)
-            ::public.problem_queue_representative438 order by
+            ::public.problem_queue_representative443 order by
             case (__STATUS__) when 'new' then 1 when 'repeated' then 2
                 when 'confirmed' then 3 when 'active' then 4 when 'review' then 5
                 when 'false_positive' then 6 when 'closed' then 7 else 8 end,
             priority.severity,findings.last_seen_utc desc,findings.id desc))[1] as representative,
-        (array_agg(row(findings.severity,password.facts)::public.problem_queue_password438
+        (array_agg(row(findings.severity,password.facts)::public.problem_queue_password443
             order by priority.severity,findings.last_seen_utc desc,findings.id desc)
             filter (where findings.rule_code in ('semantic.qw.password-brute-force','semantic.qw.password-spray')))[1] as password_priority,
         bool_or(password.facts->>'cohort_key' is not null) as password_cohort,

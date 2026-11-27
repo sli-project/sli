@@ -4,7 +4,7 @@
         where findings.rule_code in ('semantic.qw.password-brute-force','semantic.qw.password-spray')
         offset 0
     ) password on true
-    left join problem_queue_scenario_keys438 scenario
+    left join problem_queue_scenario_keys443 scenario
         on scenario.scenario_key=findings.scenario_key and scenario.rule_code=findings.rule_code
     cross join lateral (
         select case
