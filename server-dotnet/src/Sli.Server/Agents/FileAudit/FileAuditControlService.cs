@@ -95,6 +95,35 @@ internal sealed class FileAuditControlService(IAgentControlAudit audit)
         }
         return AgentControlJson.Element(new JsonObject { ["items"]=output });
     }
+    public async Task<JsonElement> CheckResource(NpgsqlConnection db,NpgsqlTransaction tx,JsonObject body,Principal principal,CapabilityDecisionSet access,CancellationToken ct)
+    {
+        if (!JsonRead.HasExactly(body,"agent_id","source_instance_id","collection_scope_id","expected_revision")
+            || !JsonRead.TryString(body["source_instance_id"],out var source)
+            || !JsonRead.TryString(body["collection_scope_id"],out var scope))
+            throw Invalid();
+        Guid id = AgentControlJson.Id(JsonSerializer.SerializeToElement(body["agent_id"]));
+        var agent = await Lock(db,tx,id,ct);
+        var currentSource = Source(agent);
+        RequireScopes(access,principal,id,currentSource,[scope]);
+        long revision = Revision(agent,body["expected_revision"]);
+        var state = agent["file_audit"];
+        var request = state?["request"];
+        // Replacing an apply command would suspend file-event collection.
+        if (source != currentSource || state?["retired_apply"] is not null || Flag(state?["may_own_audit"])
+            || request?["command"]?["action"]?.ToString() != "check"
+            || request["config"] is not JsonObject config || config["source_kind"]?.ToString() == "workstation"
+            || config["roots"] is not JsonArray roots || !roots.Any(root => root?["collection_scope_id"]?.ToString() == scope))
+            throw new AgentControlException("file_audit_check_conflict",409);
+        return await Enqueue(db,tx,new JsonObject {
+            ["agent_id"] = id.ToString(), ["expected_revision"] = revision - 1, ["config"] = config.DeepClone(),
+            ["command"] = new JsonObject {
+                ["contract_id"] = "sli.file-audit.audit-command.v1", ["command_id"] = Guid.NewGuid().ToString("D"),
+                ["action"] = "check", ["policy_revision"] = revision.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["collection_scope_ids"] = new JsonArray(scope)
+            }
+        },principal,access,ct);
+    }
+
     public async Task<JsonElement> Enqueue(NpgsqlConnection db,NpgsqlTransaction tx,JsonObject body,Principal principal,CapabilityDecisionSet access,CancellationToken ct)
     {
         if(JsonRead.HasExactly(body,"agent_id","expected_revision","enabled") && IsBool(body["enabled"]) && !Flag(body["enabled"]))

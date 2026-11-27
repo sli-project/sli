@@ -2,8 +2,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { userEvent } from "@testing-library/user-event";
 import type { HomePeriod } from "../api/home-period";
 import { localeRuntime, setLocale, t } from "../i18n";
+import { formatTableTime } from "../shared/date-time";
 import { HomePage } from "./home";
 
 vi.mock("./App", () => ({
@@ -71,7 +73,7 @@ it("shows the open queue, repeats, review links and only failed checks", async (
   expect(within(problems).getByText("High").textContent).toContain("◆");
   expect(within(problems).getByText("×3")).toBeTruthy();
   expect(within(problems).getByText("analyst-example")).toBeTruthy();
-  expect(within(problems).getByText(/Nov 22.*1:15 AM/)).toBeTruthy();
+  expect(within(problems).getByText(formatTableTime(example.problems.items[0].at, "UTC"))).toBeTruthy();
   expect(within(problems).getByRole("link", { name: t("home.status.active") }).getAttribute("href")).toContain("id=12");
   fireEvent.keyDown(within(problems).getByText(example.problems.items[0].fact).closest("tr")!, { key: "Enter" });
   const observations = within(problems).getByRole("table", { name: t("home.observations") });
@@ -93,16 +95,30 @@ it("shows the open queue, repeats, review links and only failed checks", async (
 
 it("shows the password problem totals alongside the event sample size", async () => {
   const finding = {
-    ...example.problems.items[0], name: "Accounts: 18", fact: "Failed attempts: 2,002",
+    ...example.problems.items[0], name: "Accounts: 18", fact: "Password guessing · Failed attempts: 2,002",
+    first_at: "2026-11-21T23:20:00Z",
     observations_are_sample: true,
   };
   show(() => ({ ...example, problems: { ...example.problems, items: [finding] } }));
 
   const accounts = await screen.findByRole("link", { name: "Accounts: 18" });
   const row = accounts.closest("tr")!;
-  expect(within(row).getByText("Failed attempts: 2,002")).toBeTruthy();
+  expect(within(row).getAllByRole("cell")[2].textContent).toBe(finding.fact);
+  expect(within(row).getAllByRole("cell")[3].textContent).toBe(
+    formatTableTime(finding.first_at, "UTC") + "–" + formatTableTime(finding.at, "UTC"),
+  );
   fireEvent.keyDown(row, { key: "Enter" });
   expect(screen.getByRole("table", { name: "Event sample (1)" })).toBeTruthy();
+});
+
+it("shows the selected period only once while choosing another period", async () => {
+  const request = show();
+  await screen.findByRole("table", { name: t("home.problems") });
+  await userEvent.click(screen.getByRole("button", { name: /Period.*Last 24 hours|Last 24 hours.*Period/ }));
+  expect(await screen.findByRole("option", { name: "Last 24 hours" })).toBeTruthy();
+  expect(screen.getAllByText("Last 24 hours").filter((node) => node.tagName !== "OPTION")).toHaveLength(1);
+  await userEvent.click(screen.getByRole("option", { name: "Last 7 days" }));
+  await waitFor(() => expect(request.mock.calls.some(([url]) => url.includes("period=7d"))).toBe(true));
 });
 
 it("requests server pages and keeps whole-population totals on filtered pages", async () => {
