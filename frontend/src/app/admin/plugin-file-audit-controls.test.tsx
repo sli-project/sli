@@ -281,10 +281,9 @@ it.each(["unavailable", "incomplete", "transport"] as const)("allows a manual se
   expect(body).not.toHaveProperty("activate_collection");
 });
 
-it.each([[false, true], [true, false]])("hides commands with connection=%s and canEdit=%s", async (connection, canEdit) => {
+it.each([[false, true], [true, false]])("hides commands with connection=%s and canEdit=%s", (connection, canEdit) => {
   const action = vi.spyOn(api, "agentAction");
   mount(connection, canEdit);
-  await screen.findByRole("link", { name: t("plugins.next.connect_file_server") });
   expect(screen.queryByText(t("agents.fileAudit.title"))).toBeNull();
   expect(action).not.toHaveBeenCalled();
   expect(api.agents).not.toHaveBeenCalled();

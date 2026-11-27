@@ -204,13 +204,24 @@ it("keeps an unassigned file-server module enabled and opens its setup without m
 
 it.each([
   ["sli.file-audit", "working", null, 1, "Включён · 1 сервер подключён"],
+  ["sli.file-audit", "error", null, 1, "Включён · FS01 подключён, агент устарел · Агент 26.0.136 не может проверить файловый аудит. Обновите его до версии 26.0.154 или новее."],
   ["sli.workstations", "no_sources", "install_workstation_agent", 0, "Включён · Нет подключённых источников · Установите агент SLI на рабочую станцию"],
   ["sli.remote-access", "disabled", null, 0, "Выключен"],
   ["sli.sigma", "no_sources", "connect_sigma_events", 0, "Включён · Нет подключённых источников · Подключите контроллер домена для сбора событий Windows"],
+  ["sli.sigma", "error", "check_collection", 0, "Включён"],
 ] as const)("shows the same server state for %s on all three screens", async (pluginId, state, action, sourceCount, expected) => {
+  const status: PluginState["status"] = { ...item.status!, state, next_action: action };
+  if (pluginId === "sli.file-audit" && state === "error") {
+    status.reason = "outdated_agent";
+    status.error_object = "FS01";
+    status.check_agent_requirement = { agent_version: "26.0.136", minimum_version: "26.0.154" };
+  }
+  if (pluginId === "sli.sigma" && state === "error") {
+    status.reason = "collection_delayed";
+    status.error_at = "2026-11-27T16:46:00Z";
+  }
   mocks.list.mockResolvedValue({ can_manage: false, items: [{ ...item, plugin_id: pluginId, enabled: state !== "disabled",
-    source_count: sourceCount, source_names: sourceCount ? ["FS01"] : [],
-    status: { ...item.status!, state, next_action: action },
+    source_count: sourceCount, source_names: sourceCount ? ["FS01"] : [], status,
   }] });
   const list = mount();
   const href = (await screen.findByRole("link", { name: expected })).getAttribute("href")!;

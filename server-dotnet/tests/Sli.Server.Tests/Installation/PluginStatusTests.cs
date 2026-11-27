@@ -61,6 +61,47 @@ public sealed class PluginStatusTests
     }
 
     [Theory]
+    [InlineData("26.0.136", "26.0.136", true)]
+    [InlineData("26.0.136", null, true)]
+    [InlineData("26.0.154", "26.0.136", false)]
+    [InlineData(null, null, false)]
+    public async Task Reports_an_outdated_file_server_from_a_check_before_collection_is_configured(
+        string? currentVersion, string? checkVersion, bool outdated)
+    {
+        var file = ScriptDatabase.State();
+        file["plugin_id"] = "sli.file-audit";
+        var check = new JsonObject
+        {
+            ["module"] = "sli.file-audit",
+            ["agent_id"] = "00000000-0000-4000-8000-000000000001",
+            ["source_name"] = "FS01",
+            ["collects"] = false,
+            ["check_only"] = true,
+            ["current_version"] = currentVersion,
+            ["check_version"] = checkVersion
+        };
+        var database = new ScriptDatabase { Override = (sql, _) => sql.Contains("read_plugin_states_v1")
+            ? new JsonArray(file) : sql.Contains("from sli_agents a") ? new JsonArray(check) : null };
+        var configuration = new ConfigurationBuilder().Build();
+        var service = new InstallationService(database, new InstallationPackages(configuration), configuration);
+        var response = await service.DispatchAsync("GET", "/api/v1/plugins", new(),
+            new Principal("session", 1, "admin", "fixture"), null, false, TestContext.Current.CancellationToken);
+        var item = Assert.Single(response["items"]!.AsArray())!;
+        var status = item["status"]!;
+        Assert.Equal(outdated ? 1 : 0, item["source_count"]!.GetValue<int>());
+        Assert.Equal(outdated ? "outdated_agent" : "no_sources", status["reason"]!.GetValue<string>());
+        if (outdated)
+        {
+            Assert.Equal("FS01", Assert.Single(item["source_names"]!.AsArray())!.GetValue<string>());
+            Assert.Equal("FS01", status["error_object"]!.GetValue<string>());
+            Assert.Equal("26.0.136", status["check_agent_requirement"]!["agent_version"]!.GetValue<string>());
+            Assert.Equal("26.0.154", status["check_agent_requirement"]!["minimum_version"]!.GetValue<string>());
+            Assert.Null(status["next_action"]);
+        }
+        else Assert.Null(status["check_agent_requirement"]);
+    }
+
+    [Theory]
     [InlineData("sli.file-audit", "connect_file_server")]
     [InlineData("sli.workstations", "install_workstation_agent")]
     [InlineData("sli.remote-access", "connect_nps")]

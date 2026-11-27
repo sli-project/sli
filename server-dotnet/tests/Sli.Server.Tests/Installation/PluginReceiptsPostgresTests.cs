@@ -46,7 +46,8 @@ public sealed class PluginReceiptsPostgresTests
                 create table sli_agent_snapshot_cycles(module_id text not null,
                     transport_state text,completed_at timestamptz,publication_state text,published_at timestamptz);
                 create table sli_agents(id integer, status text, assigned_modules jsonb, collection_policy jsonb,
-                    file_audit jsonb, registration_host_name text);
+                    file_audit jsonb, registration_host_name text,
+                    rights_probe jsonb not null default '{}'::jsonb);
                 create table sli_agent_module_bindings(agent_id integer, module_id text);
                 """, ct);
         }
@@ -125,12 +126,13 @@ public sealed class PluginReceiptsPostgresTests
             create function read_plugin_states_v1() returns table(plugin_id text,enabled boolean)
                 language sql as $$select 'sli.file-audit'::text,true$$;
             """, ct);
-        async Task<JsonNode> ReadStatus()
+        async Task<JsonNode> ReadPlugin()
         {
             var response = await f.Service.DispatchAsync("GET", "/api/v1/plugins", new(),
                 new Principal("session", 1, "admin", "fixture"), null, true, ct);
-            return Assert.Single(response["items"]!.AsArray())!["status"]!;
+            return Assert.Single(response["items"]!.AsArray())!;
         }
+        async Task<JsonNode> ReadStatus() => (await ReadPlugin())["status"]!;
 
         Assert.Equal("waiting", (await ReadStatus())["state"]!.ToString());
         await f.SqlAsync("""
@@ -148,6 +150,17 @@ public sealed class PluginReceiptsPostgresTests
         Assert.Equal("error", failure["state"]!.ToString());
         Assert.Equal("file.example.test", failure["error_object"]!.ToString());
         Assert.NotNull(failure["error_at"]);
+
+        await f.SqlAsync("""
+            update sli_agents set assigned_modules='[]', rights_probe='{"agent_version":"26.0.136"}',
+                file_audit='{"request":{"command":{"action":"check"},"config":{"source_kind":"server"}},
+                             "scopes":{"fixture":{"state":"failed","reason_code":"native_unavailable","agent_version":"26.0.136"}}}';
+            """, ct);
+        var outdated = await ReadPlugin();
+        Assert.Equal(1, (int?)outdated["source_count"]);
+        Assert.Equal("file.example.test", (string?)Assert.Single(outdated["source_names"]!.AsArray()));
+        Assert.Equal("outdated_agent", (string?)outdated["status"]!["reason"]);
+        Assert.Equal("26.0.136", (string?)outdated["status"]!["check_agent_requirement"]!["agent_version"]);
     }
 
     [Fact]
@@ -182,7 +195,18 @@ public sealed class PluginReceiptsPostgresTests
         var worker = Guid.NewGuid();
         Task Pulse(string status, JsonNode? observation = null) => SemanticProduction.Heartbeat(connection, worker,
             SemanticRuntimeSettings.FindingsMode, status, 30, ct, observation is null ? null : new JsonObject { ["sigma"] = observation });
-        string stamp = DateTimeOffset.UtcNow.ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+        var now = DateTimeOffset.UtcNow;
+        string stamp = now.ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+        string olderStamp = now.AddDays(-1).ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+        await Pulse("running", new JsonObject { ["last_data_at"] = olderStamp });
+        await Pulse("idle", new JsonObject());
+        var idleWithOlderData = await ReadStatus();
+        Assert.Equal("working", idleWithOlderData["state"]!.ToString());
+        Assert.Equal(olderStamp, idleWithOlderData["last_data_at"]!.ToString());
+
+        await f.SqlAsync("update runtime_worker_heartbeats set heartbeat_at=now()-interval '1 day'", ct);
+        Assert.Equal("collection_delayed", (string?)(await ReadStatus())["reason"]);
+
         await Pulse("running", new JsonObject { ["last_data_at"] = stamp });
         await Pulse("running");
         var first = await ReadStatus();
