@@ -6,6 +6,7 @@ import definitions from "../../../../server-dotnet/src/Sli.Server/Reporting/V2/r
 import type { ReportDefinitionDto, ReportResultDto } from "../../api/report-v2-types";
 import * as app from "../../app/App";
 import { localeRuntime, setLocale, t } from "../../i18n";
+import { TimeZoneContext } from "../../shared/time-zone";
 import { WorkstationsPage } from "./route";
 import { WORKSTATIONS_KEY, type StationDetailResult } from "./model";
 
@@ -16,6 +17,7 @@ const from = "2026-11-25T09:14:23.456Z", to = "2026-11-25T11:18:29.789Z";
 const requests: URL[] = [], invalidRequests: string[] = [];
 let revision = "initial", denied = false, detailMode: "normal" | "denied" | "events_denied" | "malformed" = "normal";
 let client: QueryClient;
+let directoryOnly = false;
 const station = (index = 0) => ({ station_id: index ? `00000000-0000-4000-8000-${String(index + 2).padStart(12, "0")}` : stationId,
   agent_key: index ? `00000000-0000-4000-8000-${String(index + 2).padStart(12, "0")}` : stationId,
   transport_agent_id: "00000000-0000-4000-8000-000000000003", source_instance_id: index ? `10000000-0000-4000-8000-${String(index).padStart(12, "0")}` : source,
@@ -47,6 +49,7 @@ const detailResult = (): StationDetailResult => ({ ...result({ items: [station()
 
 beforeEach(() => {
   denied = false; detailMode = "normal"; revision = "initial"; requests.length = 0; invalidRequests.length = 0;
+  directoryOnly = false;
   localStorage.clear();
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
   vi.spyOn(app, "useEffectiveAccess").mockImplementation(() => ({ subject: { type: "session", id: 7 }, evaluated_at_utc: revision,
@@ -63,6 +66,14 @@ beforeEach(() => {
     if (unknown.length) { invalidRequests.push(...unknown); return new Response(JSON.stringify({ error: "report_parameter_unknown" }), { status: 400 }); }
     if (denied) return new Response(JSON.stringify({ error: "workstation_access_denied" }), { status: 403 });
     if (url.pathname.includes("/detail")) return new Response(JSON.stringify(detailResult()));
+    if (directoryOnly) {
+      const items = Array.from({ length: 3 }, (_, index) => ({
+        station_id: `ws:ad:${index + 1}`, display_name: `WS-AD-${index + 1}`, operating_system: "Windows 11",
+        last_logon_utc: "2026-11-25T10:00:00Z", agent_key: null, agent_version: null,
+        collection_state: "unbound", profile: { state: "unbound" },
+      }));
+      return new Response(JSON.stringify(result({ items, filtered_count: 3 })));
+    }
     const total = url.searchParams.get("source_instance_id") === source ? 1 : 205;
     const limit = Number(url.searchParams.get("limit")), offset = url.searchParams.has("cursor") ? 200 : 0;
     const items = Array.from({ length: Math.max(0, Math.min(limit, total - offset)) }, (_, index) => station(index + offset));
@@ -73,9 +84,33 @@ beforeEach(() => {
 afterEach(() => { cleanup(); client?.clear(); setLocale("ru"); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 function mount() {
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-  const view = render(<QueryClientProvider client={client}><WorkstationsPage/></QueryClientProvider>);
-  return { ...view, refresh: () => view.rerender(<QueryClientProvider client={client}><WorkstationsPage/></QueryClientProvider>) };
+  const page = () => <TimeZoneContext.Provider value={{ timeZone: "UTC", setTimeZone: () => undefined }}>
+    <QueryClientProvider client={client}><WorkstationsPage/></QueryClientProvider>
+  </TimeZoneContext.Provider>;
+  const view = render(page());
+  return { ...view, refresh: () => view.rerender(page()) };
 }
+
+it("shows all three AD workstations before an agent is installed", async () => {
+  setLocale("ru"); directoryOnly = true;
+  window.history.replaceState(null, "", "/app/report/workstations.overview");
+  mount();
+  const table = await screen.findByRole("table", { name: t("workstations.overview.stations") });
+  const rows = within(table).getAllByRole("row");
+  expect(within(rows[0]).getAllByRole("columnheader").map(cell => cell.textContent)).toEqual([
+    t("workstations.overview.station"), t("workstations.overview.os"),
+    t("reports.v2.ad.computers.v6.columns.last_logon_utc.label"), t("workstations.overview.agent"),
+  ]);
+  expect(rows).toHaveLength(4);
+  rows.slice(1).forEach((row, index) => {
+    const cells = within(row).getAllByRole("cell");
+    expect(cells[0].textContent).toBe(`WS-AD-${index + 1}`);
+    expect(cells[1].textContent).toBe("Windows 11");
+    expect(cells[2].textContent).toMatch(/10:00/);
+    expect(cells[3].textContent).toBe("—");
+  });
+  expect(screen.queryByText(t("state.partial.title"))).toBeNull();
+});
 
 it.each(["ru", "en"] as const)("uses the real registry for fleet → full station → grouped fact → permitted evidence → collection → exact return (%s)", async locale => {
   setLocale(locale); mount();
