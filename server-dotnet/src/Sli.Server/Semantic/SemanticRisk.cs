@@ -48,12 +48,20 @@ internal sealed partial class SemanticProduction
             try
             {
                 await using var tx = await db.BeginTransactionAsync(ct); var session = new SemanticSession(db, tx);
+                string sourceId = job.Text("source_reference")!;
+                if (job.Text("policy_id")!.StartsWith(SigmaStarterPrefix, StringComparison.Ordinal)
+                    && !await CanPublishSigmaStarter(session, sourceId, ct))
+                {
+                    await Complete(session, "semantic_risk_evaluation_jobs", "evaluation_status", job, ct);
+                    await tx.CommitAsync(ct);
+                    completed++;
+                    continue;
+                }
                 var row = (await session.QueryAsync("select p.*,encode(p.definition_sha256,'hex') as definition_sha256,semantic_policy_mode_v160(p.policy_id,p.policy_version,p.lifecycle_status) as effective_mode from semantic_risk_policies p where p.policy_id=$1 and p.policy_version=$2 for share", ct, job.Text("policy_id"), (int)job.Number("policy_version"))).Single()!;
                 var policy = SemanticPolicy.Compile(row); string evaluationMode = job.Text("evaluation_mode")!;
                 if (development) RequireDevelopmentEvaluation(evaluationMode);
                 if (row.Text("effective_mode") != evaluationMode || row.Text("source_kind") != job.Text("source_kind")) throw new InvalidOperationException("semantic_risk_admission_changed");
                 if (evaluationMode == "enabled" && !(await session.QueryAsync("select enabled from semantic_policy_admission where policy_id=$1 and policy_version=$2", ct, policy.Id, policy.Version)).Single().Flag("enabled")) throw new InvalidOperationException("semantic_policy_admission_required");
-                string sourceId = job.Text("source_reference")!;
                 JsonObject? dcEvidence = null;
                 if (policy.Source == "canonical_action" && policy.Id is ("l1-dc-scheduled-task-created" or "l1-dc-service-installed"))
                 {
@@ -99,6 +107,8 @@ internal sealed partial class SemanticProduction
                     Guid.Parse(job.Text("job_id")!), scenario, evaluationMode, assessment.Risk, assessment.Raw, assessment.Display, assessment.HardCritical, assessment.Confidence, assessment.Score, assessment.Coverage, conclusion, snapshot);
                 bool created = false;
                 if (!development && evaluationMode == "enabled" && persisted is not null && persisted.Text("evidence_state") != "evidence_pending" && proposal.Conclusion == "observed") created = await PublishFinding(session, proposal, persisted, Guid.Parse(job.Text("job_id")!), ct);
+                if (created && policy.Id.StartsWith(SigmaStarterPrefix, StringComparison.Ordinal))
+                    await session.QueryAsync("select public.apply_sigma_repeats433($1,0)", ct, sourceId);
                 await Complete(session, "semantic_risk_evaluation_jobs", "evaluation_status", job, ct); await tx.CommitAsync(ct); completed++; if (created) published++;
                 modes[evaluationMode] = modes.Number(evaluationMode) + 1;
             }
@@ -207,7 +217,19 @@ internal sealed partial class SemanticProduction
             if (policy.Source == "detection_match")
             {
                 if (document.Text("conclusion_state") != "observed" || document.Text("quality") != "good" || document.Flag("suppressed")) throw new InvalidDataException("sigma_detection_not_eligible");
-                native.Add(document["evidence"].Copy()); strict["policy"] = policy.Id; strict["entity"] = document["entity_key"].Copy(); strict["episode"] = (SigmaProjection.At(document, "occurred_at_utc").ToUnixTimeSeconds() / policy.Window).ToString(System.Globalization.CultureInfo.InvariantCulture);
+                native.Add(document["evidence"].Copy());
+                if (policy.Id.StartsWith(SigmaStarterPrefix, StringComparison.Ordinal))
+                {
+                    var facts = document["sigma_starter"];
+                    if (facts.Text("computer") is { } computer) strict["source_host"] = computer;
+                    if (facts.Text("account") is { } account) strict["target_entity"] = account;
+                }
+                else
+                {
+                    strict["policy"] = policy.Id;
+                    strict["entity"] = document["entity_key"].Copy();
+                    strict["episode"] = (SigmaProjection.At(document, "occurred_at_utc").ToUnixTimeSeconds() / policy.Window).ToString(System.Globalization.CultureInfo.InvariantCulture);
+                }
             }
             else
             {

@@ -4,13 +4,13 @@
     "workspace", "problems", "security-events", "events",
     "ad-report", "users-report", "computers-report", "gpo-report", "file-audit", "workstations-overview",
     "admin-status", "agents", "access-center", "notifications", "operations", "admin-locale",
-    "plugins"
+    "admin-plugin-sigma", "plugins"
   ],
   "preview_entries": [
     "vpn-connections",
-    "admin-plugin-file-audit", "admin-plugin-remote-access", "admin-plugin-workstations", "admin-plugin-sigma"
+    "admin-plugin-file-audit", "admin-plugin-remote-access", "admin-plugin-workstations"
   ],
-  "preview_plugins": ["sli.remote-access", "sli.sigma"],
+  "preview_plugins": ["sli.remote-access"],
   "global_search": {
     "path": "/search",
     "capabilities": ["objects.view", "entity.view"]
