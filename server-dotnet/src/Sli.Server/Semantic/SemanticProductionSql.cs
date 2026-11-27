@@ -268,7 +268,11 @@ internal static class SemanticProductionSql
                                 and admission.enabled is true)))
                       and (evaluation_status in ('queued','failed')
                            or (evaluation_status='leased' and lease_until < now()))
-                    order by available_at,created_at,job_id
+                    order by available_at,created_at,
+                        case when job.policy_id like 'default:qw.password-spray:%' then (
+                            select signal.document_json#>>'{password_threshold_context,facts,first}'
+                            from public.semantic_qw_signals signal where signal.signal_id=job.qw_signal_id
+                        ) end,job_id
                     for update skip locked limit $1
                 )
                 update semantic_risk_evaluation_jobs job

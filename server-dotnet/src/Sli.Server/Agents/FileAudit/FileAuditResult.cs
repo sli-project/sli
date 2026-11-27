@@ -14,11 +14,19 @@ public static class FileAuditResult
     internal static readonly Version MinimumNativeCheckVersion = new(26, 0, 154);
 
     internal static Version? ReportedAgentVersion(JsonNode? probe) =>
-        Version.TryParse(probe?["agent_version"]?.ToString(), out var version) && version.Build >= 0
+        ReportedAgentVersion(probe?["agent_version"]?.ToString());
+
+    internal static Version? ReportedAgentVersion(string? value) =>
+        Version.TryParse(value, out var version) && version.Build >= 0
             ? version : null;
 
     internal static bool NativeUnavailable(JsonNode? scope) =>
         scope?["state"]?.ToString() == "failed" && scope["reason_code"]?.ToString() == "native_unavailable";
+
+    internal static JsonObject? CheckAgentRequirement(Version? version) =>
+        version is not null && version < MinimumNativeCheckVersion
+            ? new JsonObject { ["agent_version"] = version.ToString(), ["minimum_version"] = MinimumNativeCheckVersion.ToString() }
+            : null;
 
     internal static bool NativeCheckFailed(JsonObject audit) =>
         audit["state"]?.ToString() == "failed" && audit["scopes"] is JsonObject { Count: > 0 } scopes

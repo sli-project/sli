@@ -169,9 +169,19 @@ public partial class OperationsFiles
         return (disk.AvailableFreeSpace, disk.TotalSize);
     }
 
-    internal string? PostgresMount(IEnumerable<string> mounts)
+    string PostgresDataPath()
     {
         string directory = Setting("SLI_POSTGRES_DATA_DIRECTORY");
+        const string nativePgdata = "/srv/sli-db/pgdata";
+        if (directory == nativePgdata + "/18/main" ||
+            (directory.Length == 0 && Setting("SLI_DEPLOYMENT_MODE") == "native"))
+            return nativePgdata; // The SLI service can measure pgdata without entering the postgres-owned cluster.
+        return directory;
+    }
+
+    internal string? PostgresMount(IEnumerable<string> mounts)
+    {
+        string directory = PostgresDataPath();
         if (!Path.IsPathFullyQualified(directory)) return null;
         string path = Path.TrimEndingDirectorySeparator(directory) + Path.DirectorySeparatorChar;
         var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
@@ -186,12 +196,17 @@ public partial class OperationsFiles
         {
             string? mount = PostgresMount(DriveInfo.GetDrives().Select(drive => drive.Name));
             if (mount is null) return null;
-            var disk = new DriveInfo(mount);
-            long free = disk.AvailableFreeSpace;
-            long used = disk.TotalSize - disk.TotalFreeSpace;
-            return new() { ["mount_point"] = mount, ["used_bytes"] = used, ["free_bytes"] = free };
+            var disk = ReadPostgresDiskSpace(PostgresDataPath(), mount);
+            return new() { ["mount_point"] = mount, ["used_bytes"] = disk.Total - disk.TotalFree, ["free_bytes"] = disk.Available };
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException) { return null; }
+    }
+
+    protected virtual (long Available, long TotalFree, long Total) ReadPostgresDiskSpace(string path, string mount)
+    {
+        // On Unix DriveInfo queries the filesystem at the supplied path, including bind mounts.
+        var disk = new DriveInfo(OperatingSystem.IsWindows() ? mount : path);
+        return (disk.AvailableFreeSpace, disk.TotalFreeSpace, disk.TotalSize);
     }
     internal JsonObject RecentRawGrowth(DateTimeOffset now)
     {

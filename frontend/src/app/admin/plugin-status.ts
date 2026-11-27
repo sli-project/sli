@@ -1,5 +1,5 @@
 import type { PluginState } from "../../api/client";
-import { t, type MessageKey } from "../../i18n";
+import { plural, t, type MessageKey } from "../../i18n";
 import { formatDateTime } from "../../shared/date-time";
 import { EMPTY_VALUE, formatNumber } from "../../shared/format";
 
@@ -16,16 +16,32 @@ export const moduleRows = (items: PluginState[]) => Object.keys(moduleNames)
   .flatMap((id) => items.filter((item) => item.plugin_id === id));
 export const moduleName = (item: PluginState) => t(moduleNames[item.plugin_id as keyof typeof moduleNames]);
 export const moduleStatusId = (item: PluginState) => `module-${item.plugin_id}`;
-export const fileServersUnassigned = (item: PluginState) => item.plugin_id === "sli.file-audit" && item.source_count === 0;
-
+export function pluginNextAction(status: PluginState["status"]) {
+  return status?.next_action ? t(`plugins.next.${status.next_action}`) : undefined;
+}
 export function moduleStatusText(item: PluginState, timeZone: string) {
-  if (fileServersUnassigned(item) || !item.enabled) return t("plugins.status.disabled");
-  if (item.status?.state === "working") return t("plugins.status.active");
-  if (item.status?.state === "error") {
-    const time = item.status.error_at ? formatDateTime(item.status.error_at, timeZone) : null;
-    return [t("plugins.status.failed"), item.status.error_object, time].filter(Boolean).join(" · ");
+  const status = item.status;
+  if (!status) return t("plugins.unavailable");
+  if (status.state === "disabled") return t("plugins.status.disabled");
+  const count = item.source_count;
+  const noun = item.plugin_id === "sli.file-audit" ? "servers"
+    : item.plugin_id === "sli.workstations" ? "computers" : "sources";
+  const form = plural(count ?? 0, { one: "one", few: "few", many: "many", other: "many" }) as "one" | "few" | "many";
+  const connected = count && count > 0 ? t(`plugins.connected.${noun}.${form}`, { count: formatNumber(count) }) : null;
+  let detail: string;
+  switch (status.state) {
+    case "no_sources": detail = status.reason === "no_folders"
+      ? [connected, t("plugins.status.noFolders")].filter(Boolean).join(" · ")
+      : t("plugins.status.noSources");
+      break;
+    case "waiting": detail = [connected, t("plugins.status.waiting")].filter(Boolean).join(" · "); break;
+    case "working": detail = connected ?? t("plugins.status.working", { time: formatDateTime(status.last_data_at, timeZone) }); break;
+    case "error": detail = status.reason === "status_unavailable" ? t("plugins.unavailable")
+      : [t(status.reason === "collection_delayed" ? "plugins.status.delayed" : "plugins.status.failed"),
+        status.error_object, status.error_at && formatDateTime(status.error_at, timeZone)].filter(Boolean).join(" · ");
+      break;
   }
-  return pluginStatusText(item.status, moduleName(item), timeZone);
+  return [t("plugins.enabled"), detail, pluginNextAction(status)].filter(Boolean).join(" · ");
 }
 
 export function moduleSources(item: PluginState) {
@@ -47,15 +63,4 @@ export function moduleLastData(item: PluginState) {
     receipts?.last_snapshot_completed_at, item.last_data_at_utc]
     .filter((time): time is string => Boolean(time) && Number.isFinite(Date.parse(time!)))
     .sort((left, right) => Date.parse(right) - Date.parse(left))[0];
-}
-
-export function pluginStatusText(status: PluginState["status"], name: string, timeZone: string) {
-  switch (status?.state) {
-    case "disabled": return t("plugins.status.disabled");
-    case "no_sources": return t("plugins.status.noSources");
-    case "waiting": return t("plugins.status.waiting");
-    case "working": return t("plugins.status.working", { time: formatDateTime(status.last_data_at, timeZone) });
-    case "error": return t("plugins.status.error", { object: status.error_object || name, time: formatDateTime(status.error_at, timeZone) });
-    default: return t("plugins.unavailable");
-  }
 }

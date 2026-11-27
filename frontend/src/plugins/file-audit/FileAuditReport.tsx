@@ -165,6 +165,11 @@ export function FileAuditReport({ definition: initial }: { definition: ReportDef
     setAnchor(next);
   };
   const title = viewTitle(view);
+  const emptyMessage = result?.state === "not_collected" ? "file-audit.screen.empty_setup"
+    : view === "permissions" ? "file-audit.screen.empty_permissions"
+    : view === "overview" ? "file-audit.screen.empty_resources"
+    : result?.coverage.reason === "full_activity_not_collected" ? "file-audit.screen.empty_activity_not_collected"
+    : pageIndex > 0 ? "file-audit.screen.empty_page" : "file-audit.screen.empty_actions";
   const tabItems = FILE_SERVER_VIEWS.map(key => ({ key, label: viewTitle(key) }));
   return <div className="sli-file-audit">
     <Tabs items={tabItems} active={view} onChange={switchView}>
@@ -190,6 +195,7 @@ export function FileAuditReport({ definition: initial }: { definition: ReportDef
         {definition && result ? <div ref={list}>
           <DataTable caption={title} compact density="compact" columns={fileServerColumns(view, definition.columns, rows, baseParams, canPermissions, open, hrefFor)}
             rows={rows} rowKey={row => String(row[definition.row_key])} selectedKey={selectedId}
+            emptyContent={<p role="status">{t(emptyMessage)}</p>}
             onRowClick={view === "actions" ? open : undefined}
             renderExpandedRow={view === "actions" ? row => <FactList facts={[
               { label: t("file-audit.workspace.interval"), value: <FileAuditInterval row={row}/> },

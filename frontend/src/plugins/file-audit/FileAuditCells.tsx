@@ -124,13 +124,16 @@ export function fileServerColumns(view: FileServerView, declared: ReportColumnDt
 
 function FileAuditReceipt({ row }: { row: FileAuditRow }) {
   const { formatCell } = useDateFormatters();
-  const receipt = row.audit_receipt as { state?: string; reason_code?: string; observed_at?: string } | undefined;
+  const receipt = row.audit_receipt as { state?: string; reason_code?: string; observed_at?: string;
+    check_agent_requirement?: { agent_version: string; minimum_version: string } } | undefined;
   if (receipt?.observed_at && (receipt.state === "failed" || receipt.state === "blocked") &&
       Date.parse(receipt.observed_at) >= (Date.parse(String(row.audit_received_at)) || 0)) {
     const reason = receipt.reason_code === "native_unavailable" ? "file-audit.screen.audit_unreadable"
       : receipt.reason_code === "sacl_missing" ? "file-audit.screen.sacl_missing"
       : receipt.reason_code === "policy_missing" ? "file-audit.screen.audit_policy_missing" : "file-audit.screen.audit_failed";
-    return <>{t(reason)} · {formatCell(receipt.observed_at, "datetime")}</>;
+    const requirement = receipt.check_agent_requirement;
+    return <>{requirement ? t("file-audit.screen.update_agent", { version: requirement.agent_version, minimum: requirement.minimum_version })
+      : t(reason)} · {formatCell(receipt.observed_at, "datetime")}</>;
   }
   return <>{row.audit_received_at ? formatCell(row.audit_received_at, "datetime") : t("file-audit.screen.no_batch")}</>;
 }

@@ -9,14 +9,15 @@ internal static class ProblemCohorts
     internal static string PasswordFacts(string alias) =>
         $"case when {alias}.rule_code in ('semantic.qw.password-brute-force','semantic.qw.password-spray') " +
         $"then public.password_problem_facts395({alias}.id,{alias}.rule_code) end";
-    internal static string Queue(string population, string where, string status, string accepted, string partition = "", bool owners = false, bool usePasswordProjection = false) => Sql("queue-groups")
+    internal static string Queue(string population, string where, string status, string accepted, string partition = "", bool owners = false, bool usePasswordProjection = false, bool useQueueRead = false) => Sql(useQueueRead ? "queue-stored-groups" : "queue-groups")
         .Replace("__POPULATION__", population).Replace("__WHERE__", where).Replace("__STATUS__", status).Replace("__ACCEPTED__", accepted)
-        .Replace("__PARTITION__", partition).Replace("__ASSIGNEE__", owners ? "findings.assigned_to" : "null::text").Replace("__COHORT__", Sql("queue-cohort", usePasswordProjection));
+        .Replace("__PARTITION__", partition).Replace("__ASSIGNEE__", owners ? "findings.assigned_to" : "null::text")
+        .Replace("__COHORT__", Sql(useQueueRead ? "queue-stored-cohort" : "queue-cohort", usePasswordProjection));
     internal static string Sql(string name, bool usePasswordProjection = false) {
         using var stream = typeof(ProblemCohorts).Assembly.GetManifestResourceStream($"Sli.Server.Problems.{name}.sql")!;
         using var reader = new StreamReader(stream);
         string sql = reader.ReadToEnd().Replace("__RETAINED_COHORT__", name == "legacy-queue-cohort" ? Sql("cohort") : "");
-        if (name == "queue-cohort") sql = sql.Replace("__PASSWORD_EVIDENCE__", usePasswordProjection
+        if (name is "queue-cohort" or "queue-stored-cohort") sql = sql.Replace("__PASSWORD_EVIDENCE__", usePasswordProjection
             ? "select facts,aliases from public.password_queue_presentation399(findings.id,findings.rule_code)"
             : "select public.password_problem_facts395(findings.id,findings.rule_code) as facts,null::jsonb as aliases");
         return sql;

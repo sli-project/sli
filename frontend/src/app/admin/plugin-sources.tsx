@@ -2,8 +2,8 @@ import { Select } from "../../design-system/Select";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiResponseError, type AgentCollectionHealth, type SetupStatus } from "../../api/client";
-import { StateView } from "../../design-system";
-import { t, type MessageKey } from "../../i18n";
+import { Button, StateView } from "../../design-system";
+import { t } from "../../i18n";
 import { formatDateTime } from "../../shared/date-time";
 import { useTimeZone } from "../App";
 import { setupSourceName } from "./setup-source-labels";
@@ -13,17 +13,20 @@ import { PluginFileAuditControls } from "./plugin-file-audit-controls";
 const packs: Record<string, string[]> = {
   "sli.ad": ["sli.windows.ad-context", "sli.windows.ad-dc"], "sli.gpo": ["sli.windows.ad-context"],
   "sli.workstations": ["sli.windows.workstations"], "sli.file-audit": [],
-  "sli.sigma": [],
+  "sli.sigma": ["sli.windows.ad-context", "sli.windows.ad-dc"],
 };
 const modules: Record<string, string[]> = {
   "sli.ad": ["sli.windows.ad-dc", "sli.windows.ad-dc-history", "sli.ad-snapshot"], "sli.gpo": ["sli.gpo-snapshot"],
   "sli.workstations": ["sli.workstations"], "sli.file-audit": ["sli.file-audit"],
-  "sli.sigma": [],
+  "sli.sigma": ["sli.windows.ad-dc"],
 };
 
-export function PluginReadState({ loading, error, retry }: { loading: boolean; error: Error | null; retry: () => void }) {
+export function PluginReadState({ loading, error, retry, message = t("plugins.unavailable") }: {
+  loading: boolean; error: Error | null; retry: () => void; message?: string;
+}) {
   if (loading) return <StateView state="loading" compact/>;
-  if (error) return <StateView state={error instanceof ApiResponseError && error.status === 403 ? "denied" : "unavailable"} compact onRetry={retry}/>;
+  if (error instanceof ApiResponseError && [401, 403].includes(error.status)) return <p role="status">{t("state.denied.title")}</p>;
+  if (error) return <p role="alert">{message} <Button onClick={retry}>{t("state.retry")}</Button></p>;
   return null;
 }
 
@@ -32,22 +35,22 @@ const lastImport = (agent: AgentCollectionHealth["items"][number], pluginId: str
   .map((channel) => channel.last_import_at).filter((stamp): stamp is string => !!stamp && Number.isFinite(Date.parse(stamp)))
   .sort((left, right) => Date.parse(right) - Date.parse(left))[0];
 
-export function PluginSources({ pluginId, connection, canEdit }: { pluginId: string; connection: boolean; canEdit: boolean }) {
+export function PluginSources({ pluginId, connection, canEdit, nextAction }: {
+  pluginId: string; connection: boolean; canEdit: boolean; nextAction?: string;
+}) {
   const status = useQuery({ queryKey: ["setup-status"], queryFn: api.setupStatus });
-  const agents = useQuery({ queryKey: ["admin-agents"], queryFn: () => api.agents(), enabled: pluginId === "sli.file-audit" && canEdit });
+  const manageFiles = pluginId === "sli.file-audit" && canEdit && connection;
+  const agents = useQuery({ queryKey: ["admin-agents"], queryFn: () => api.agents(), enabled: manageFiles });
+  const fileServers = agents.data?.items.filter((agent) => agent.assigned_modules.some((module) =>
+    typeof module === "string" ? module === "sli.file-audit" : module.module_id === "sli.file-audit")) ?? [];
   return <>
-    {connection ? <><p>{t(({
-      "sli.ad": "pluginPage.needAd", "sli.gpo": "pluginPage.needAd", "sli.file-audit": "pluginPage.needFiles",
-      "sli.workstations": "pluginPage.needAgents", "sli.sigma": "pluginPage.needSigma",
-    } as Record<string, MessageKey>)[pluginId])}</p><a href="/app/agents">{t("pluginPage.computers")}</a>
-      {pluginId === "sli.ad" || pluginId === "sli.gpo" ? <p><a href="/app/setup#setup-domains">{t("pluginPage.manageDomains")}</a></p> : null}
-    </> : null}
-    <PluginReadState loading={status.isLoading} error={status.error} retry={() => void status.refetch()}/>
-    {status.data ? <SourceObjects pluginId={pluginId} data={status.data}/> : null}
-    {pluginId === "sli.file-audit" && canEdit ? <>
-      <PluginReadState loading={agents.isLoading} error={agents.error} retry={() => void agents.refetch()}/>
-      {connection && agents.data && !agents.isError ? <PluginFileAuditControls agents={agents.data.items}/> : null}
-      {agents.data && !agents.isError ? <><h2>{t("pluginPage.serversFolders")}</h2>{agents.data.items.filter((agent) => agent.assigned_modules.some((module) => typeof module === "string" ? module === "sli.file-audit" : module.module_id === "sli.file-audit")).map((agent) => {
+    {connection && (pluginId === "sli.ad" || pluginId === "sli.gpo") ? <p><a href="/app/setup#setup-domains">{t("pluginPage.manageDomains")}</a></p> : null}
+    <PluginReadState loading={status.isLoading} error={status.error} message={t("pluginPage.sourcesFailed")} retry={() => void status.refetch()}/>
+    {status.data && !status.isError ? <SourceObjects pluginId={pluginId} data={status.data} nextAction={nextAction}/> : null}
+    {manageFiles ? <>
+      <PluginReadState loading={agents.isLoading} error={agents.error} message={t("pluginPage.sourcesFailed")} retry={() => void agents.refetch()}/>
+      {agents.data?.items.some((agent) => agent.status === "active") && !agents.isError ? <PluginFileAuditControls agents={agents.data.items}/> : null}
+      {fileServers.length > 0 && !agents.isError ? <><h2>{t("pluginPage.serversFolders")}</h2>{fileServers.map((agent) => {
         const module = agent.assigned_modules.find((item) => typeof item !== "string" && item.module_id === "sli.file-audit");
         const roots: unknown[] = module && typeof module !== "string" && Array.isArray(module.config.roots) ? module.config.roots : [];
         return <details key={agent.id} className="sli-ds-filters__additional"><summary>{agentHostName(agent)}</summary>
@@ -59,7 +62,7 @@ export function PluginSources({ pluginId, connection, canEdit }: { pluginId: str
   </>;
 }
 
-function SourceObjects({ pluginId, data }: { pluginId: string; data: SetupStatus }) {
+function SourceObjects({ pluginId, data, nextAction }: { pluginId: string; data: SetupStatus; nextAction?: string }) {
   const { timeZone } = useTimeZone();
   const [selected, setSelected] = useState("");
   const domainPlugin = pluginId === "sli.ad" || pluginId === "sli.gpo";
@@ -72,8 +75,11 @@ function SourceObjects({ pluginId, data }: { pluginId: string; data: SetupStatus
   const agentRow = (agent: AgentCollectionHealth["items"][number]) => <li key={agent.id}>
     <a href={`/app/agents?agent_id=${encodeURIComponent(agent.id)}`}>{agent.name}</a> · {last(lastImport(agent, pluginId))}
   </li>;
+  const sourcesUnavailable = health?.state === "unavailable" || health?.diagnostics?.state === "unavailable";
+  const emptyAction = nextAction ?? t(pluginId === "sli.file-audit" ? "plugins.next.connect_file_server"
+    : pluginId === "sli.workstations" ? "plugins.next.install_workstation_agent" : "plugins.next.connect_sigma_events");
   return <>
-    {health?.state === "unavailable" || health?.diagnostics?.state === "unavailable" ? <StateView state="unavailable" compact detail={t("pluginPage.coverageUnavailable")}/> : null}
+    {sourcesUnavailable ? <p role="status">{t("pluginPage.sourcesFailed")}</p> : null}
     {domainPlugin ? <>
       {domains.length ? <div className="sli-ds-field"><label htmlFor="plugin-domain">{t("pluginPage.object")}</label><Select label={t("pluginPage.object")} id="plugin-domain" value={selected} onChange={(selectedValue) => setSelected(selectedValue)}
         options={[{ value: "", label: t("pluginPage.allDomains") }, ...(domains.map((domain) => ({ value: domain, label: domain })) ?? [])]}/></div> : <p>{t("pluginPage.noDomains")}</p>}
@@ -92,8 +98,7 @@ function SourceObjects({ pluginId, data }: { pluginId: string; data: SetupStatus
       {data.domain_controllers.some((controller) => !controller.domain) ? <><h2>{t("pluginPage.unknownDomain")}</h2><ul>{data.domain_controllers.filter((controller) => !controller.domain).map((controller) => <li key={controller.hostname}>{controller.hostname} · {t("pluginPage.coverageUnavailable")}</li>)}</ul></> : null}
     </> : <>
       {agents.length ? <ul>{agents.map(agentRow)}</ul> : null}
-      {pluginId !== "sli.file-audit" && !agents.length && !sources.some((source) => source.instances?.length)
-        ? <p>{t(pluginId === "sli.sigma" ? "pluginPage.sigmaSources" : "pluginPage.noSources")}</p> : null}
+      {!sourcesUnavailable && !agents.length && !sources.length ? <p><a href="/app/agents">{emptyAction}</a></p> : null}
     </>}
     {sources.map((source) => <details key={source.pack_id} open className="sli-ds-filters__additional"><summary>{setupSourceName(source)}</summary>
       {!source.enabled ? <p>{t("plugins.disabled")}</p> : null}

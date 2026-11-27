@@ -1,13 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiResponseError } from "../api/client";
 import type { SigmaLiveRule } from "../api/sigma-types";
-import { DataTable, SeverityBadge, StateView, type TableColumn } from "../design-system";
+import { Button, DataTable, SeverityBadge, StateView, type TableColumn } from "../design-system";
 import { Checkbox } from "../design-system/Checkbox";
 import { t } from "../i18n";
 
 const queryKey = ["sigma-live-rules"];
 
-export function SigmaLiveRules() {
+export function SigmaLiveRules({ sourceAction }: { sourceAction?: string }) {
   const client = useQueryClient();
   const rules = useQuery({ queryKey, queryFn: api.sigmaLiveRules, retry: false });
   const change = useMutation({
@@ -19,10 +19,10 @@ export function SigmaLiveRules() {
   if (rules.isPending) return <StateView state="loading"/>;
   if (rules.isError) {
     const denied = rules.error instanceof ApiResponseError && [401, 403].includes(rules.error.status);
-    return <StateView state={denied ? "denied" : "unavailable"}
-      detail={t("security.sigma.live.read_failed")} onRetry={denied ? undefined : () => void rules.refetch()}/>;
+    if (denied) return <p role="status">{t("state.denied.title")}</p>;
+    return <p role="alert">{t("security.sigma.live.read_failed")} <Button onClick={() => void rules.refetch()}>{t("state.retry")}</Button></p>;
   }
-  if (!rules.data.rules.length) return <StateView state="empty" detail={t("security.sigma.no_rules")}/>;
+  if (!rules.data.rules.length) return <p role="status">{sourceAction ?? t("security.sigma.live.catalog_empty")}</p>;
   const columns: TableColumn<SigmaLiveRule>[] = [
     { key: "rule", label: t("security.sigma.live.rule"), render: (row) => <>
       <a href={row.source_uri} target="_blank" rel="noreferrer">{row.title}</a>

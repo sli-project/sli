@@ -101,7 +101,7 @@ public sealed class AgentUpdateAdministration(IAgentControlAudit audit,IConfigur
         await AgentClientControlService.LockUpdateWavesAsync(db,tx,ct);List<JsonObject> waves;
         if(id is not null)waves=[await Wave(db,tx,id.Value,ct)];
         else waves=(await Rows(db,tx,"select to_jsonb(w)::text from sli_agent_update_waves w order by created_at desc,id limit 100",ct)).Select(n=>n!.AsObject()).ToList();
-        foreach(var wave in waves)if(wave["status"]!.GetValue<string>()=="running" && wave["created_by"]!.GetValue<string>()!=ShippedAgentUpdate.Actor && (await AgentUpdateWaves.MembersAsync(db,tx,Guid.Parse(wave["id"]!.GetValue<string>()),ct)).Any(m=>m.AgentStatus!="active"))await Finish(db,tx,wave,"agent_update_agent_inactive",actor,ct);
+        foreach(var wave in waves)if(wave["status"]!.GetValue<string>()=="running" && (await AgentUpdateWaves.MembersAsync(db,tx,Guid.Parse(wave["id"]!.GetValue<string>()),ct)).Any(m=>m.AgentStatus!="active"))await Finish(db,tx,wave,"agent_update_agent_inactive",actor,ct);
         await audit.AppendAsync(db,tx,"update_wave_list",actor,id?.ToString("D")??"agent-update-waves",new { },ct);
         var items=new JsonArray();foreach(var wave in waves)items.Add(await View(db,tx,wave,ct));return AgentControlJson.Element(new JsonObject { ["items"]=items });
     }
