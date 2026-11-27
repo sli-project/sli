@@ -1,10 +1,10 @@
 begin;
-select pg_advisory_xact_lock(hashtext('sli_file_audit_check_receipt_retention431'));
+select pg_advisory_xact_lock(hashtext('sli_file_audit_check_receipt_retention445'));
 do $$ begin
     if not pg_has_role(session_user,'adlog_storage_owner','MEMBER')
-       or not exists(select 1 from public.schema_migrations where version=424 and name='home_read_indexes')
-       or exists(select 1 from public.schema_migrations where version>=431) then
-        raise exception 'file_audit_check_receipt_retention431_preflight' using errcode='55000';
+       or not exists(select 1 from public.schema_migrations where version=444 and name='detection_campaigns')
+       or exists(select 1 from public.schema_migrations where version>=445) then
+        raise exception 'file_audit_check_receipt_retention445_preflight' using errcode='55000';
     end if;
 end $$;
 set local role adlog_storage_owner;
@@ -41,5 +41,5 @@ end $$;
 revoke all on function public.prune_file_audit_check_receipts431(integer) from public;
 grant execute on function public.prune_file_audit_check_receipts431(integer) to adlog_storage_lifecycle_delete;
 
-insert into public.schema_migrations(version,name) values(431,'file_audit_check_receipt_retention');
+insert into public.schema_migrations(version,name) values(445,'file_audit_check_receipt_retention');
 commit;

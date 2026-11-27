@@ -2,12 +2,12 @@
 -- YAML literals are the exact bytes in config/sigma/starter, pinned to the SHA below.
 begin;
 set local lock_timeout='5s';
-select pg_advisory_xact_lock(hashtext('sli_sigma_live433_migration'));
+select pg_advisory_xact_lock(hashtext('sli_sigma_live447_migration'));
 do $$ begin
     if not pg_has_role(session_user,'adlog_storage_owner','MEMBER')
-        or not exists(select 1 from public.schema_migrations where version=426 and name='semantic_outbox_retention')
-        or exists(select 1 from public.schema_migrations where version>=433) then
-        raise exception 'sigma_live433_preflight' using errcode='55000';
+        or not exists(select 1 from public.schema_migrations where version=445 and name='file_audit_check_receipt_retention')
+        or exists(select 1 from public.schema_migrations where version>=447) then
+        raise exception 'sigma_live447_preflight' using errcode='55000';
     end if;
 end $$;
 set local role adlog_storage_owner;
@@ -731,6 +731,6 @@ with check (public.resolve_finding_evidence_ref(
     document_json#>>'{evidence,storage_kind}',document_json#>>'{evidence,native_id}',
     document_json#>>'{evidence,sha256}'));
 
-insert into public.schema_migrations(version,name) values(433,'sigma_live');
+insert into public.schema_migrations(version,name) values(447,'sigma_live');
 reset role;
 commit;
