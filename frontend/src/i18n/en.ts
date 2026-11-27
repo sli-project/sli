@@ -7929,7 +7929,7 @@ export const en: Record<MessageKey, string> = {
   "file-audit.resources.overlap": "A selected folder overlaps another audited folder",
   "file-audit.resources.commandFailed": "Could not change audit on {server}: {reason}",
   "file-audit.resources.changed": "The share list or the agent settings changed. Select the shares again.",
-  "file-audit.resources.notCollected": "Not collected",
+  "file-audit.resources.permissionsAsOf": "Permissions as of",
   "file-audit.resources.summary": "{status} · Servers: {servers} · Audited shares: {audited} of {shares}",
   "plugins.sli.file-audit.settings.excluded_accounts.label": "Exclude accounts",
   "plugins.sli.file-audit.settings.excluded_accounts.help": "Omit these users and group members from permission-change counts.",

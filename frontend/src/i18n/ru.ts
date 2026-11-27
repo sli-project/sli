@@ -7923,7 +7923,7 @@ export const ru = {
   "file-audit.resources.overlap": "Выбранная папка пересекается с другой папкой под аудитом",
   "file-audit.resources.commandFailed": "Не удалось изменить аудит на {server}: {reason}",
   "file-audit.resources.changed": "Список ресурсов или настройки агента изменились. Выберите ресурсы снова.",
-  "file-audit.resources.notCollected": "Не собрано",
+  "file-audit.resources.permissionsAsOf": "Права на дату",
   "file-audit.resources.summary": "{status} · Серверов: {servers} · Аудит на {audited} из {shares} шар",
   "plugins.sli.file-audit.settings.excluded_accounts.label": "Не учитывать учётные записи",
   "plugins.sli.file-audit.settings.excluded_accounts.help": "Исключает этих пользователей и участников групп из подсчёта изменений прав.",

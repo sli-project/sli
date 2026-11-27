@@ -137,6 +137,12 @@ it("shows all catalog shares and applies audit to the two confirmed selections",
   expect(table.getAllByRole("row").slice(1)).toHaveLength(6);
   expect(table.getByRole("row", { name: /Finance/ }).textContent).toContain(t("file-audit.resources.enabled"));
   expect(table.getByRole("row", { name: /Projects/ }).textContent).toContain(t("file-audit.resources.disabled"));
+  const headings = table.getAllByRole("columnheader");
+  const projectCells = within(table.getByRole("row", { name: /Projects/ })).getAllByRole("cell");
+  for (const heading of [t("file-audit.workspace.permission_changes"), "Права на дату"]) {
+    const columnIndex = headings.indexOf(table.getByRole("columnheader", { name: heading }));
+    expect(projectCells[columnIndex].textContent).toBe("—");
+  }
   for (const share of ["Projects", "Archive"]) await userEvent.click(within(table.getByRole("row", { name: new RegExp(share) })).getByRole("checkbox"));
   expect(table.getByRole("checkbox", { name: t("file-audit.resources.selectPage") })).toHaveProperty("indeterminate", true);
   await userEvent.click(screen.getByRole("button", { name: t("file-audit.resources.enable") }));
