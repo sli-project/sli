@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.Versioning;
+using System.Security.Cryptography;
 using System.Security.Principal;
 using System.ServiceProcess;
 using System.Text;
@@ -94,8 +95,21 @@ public sealed class MsiLifecycleWindowsTests(ITestOutputHelper output)
                 oldProduct = Assert.IsType<string>(product.GetValue("ProductCode"));
                 oldVersion = Version.Parse(Assert.IsType<string>(product.GetValue("Version")));
             }
-            // Starts while the old service is running; no registration inputs are supplied.
-            await Msi("upgrade", "/i", upgrade, "/qn", "/norestart");
+            // Exercise the same out-of-process handoff used by check-in. It runs
+            // while the baseline service is active and receives no registration inputs.
+            var updateDirectory = Path.Combine(options.StateDir, "update");
+            AgentRuntime.CreateFiles().EnsureDirectory(updateDirectory);
+            string badPackage = Path.Combine(updateDirectory, "invalid.msi");
+            File.WriteAllBytes(badPackage, "synthetic invalid MSI"u8.ToArray());
+            await RunUpdate(badPackage, "failed");
+            using (var unchanged = registry.OpenSubKey(MsiConfiguration.RegistryPath + @"\Product"))
+                Assert.Equal(oldProduct, unchanged?.GetValue("ProductCode"));
+            AssertServiceRunning();
+            AssertState();
+
+            string staged = Path.Combine(updateDirectory, "upgrade.msi");
+            File.Copy(upgrade, staged);
+            await RunUpdate(staged, "success");
             using (var updated = registry.OpenSubKey(MsiConfiguration.RegistryPath + @"\Product"))
             {
                 Assert.NotNull(updated);
@@ -143,6 +157,18 @@ public sealed class MsiLifecycleWindowsTests(ITestOutputHelper output)
             // All three paths were absent before this test. Keep the MSI logs on failure.
             if (Directory.Exists(dataRoot)) Directory.Delete(dataRoot, recursive: true);
             registry.DeleteSubKeyTree(MsiConfiguration.RegistryPath, throwOnMissingSubKey: false);
+        }
+
+        async Task RunUpdate(string package, string expectedResult)
+        {
+            string digest;
+            await using (var bytes = File.OpenRead(package))
+                digest = Convert.ToHexStringLower(await SHA256.HashDataAsync(bytes));
+            using var process = MsiAgentUpdate.StartInstaller(package, digest);
+            await process.WaitForExitAsync();
+            Assert.Equal(0, process.ExitCode);
+            Assert.Equal(expectedResult, File.ReadAllText(Path.ChangeExtension(package, ".result")));
+            Assert.False(File.Exists(package));
         }
 
         async Task Msi(string step, string operation, string package, string quiet, string restart,

@@ -639,6 +639,8 @@
     "config/postgres_migrations/426_semantic_outbox_retention.sql": "415ad119bc2052ac95b95d4027286dfa04f1a1b1c7301017cebb5b78ba379111",
     "config/postgres_migrations/428_detection_read_checkpoints.rollback.sql": "04084afb826e80c19f07342ad7c4f019ede87a44dc240f9135473d4714a05489",
     "config/postgres_migrations/428_detection_read_checkpoints.sql": "4aaabe16a988b5169f64c9d3ede5a776c491cb3b6a1d839713af4f9e4899294c",
+    "config/postgres_migrations/431_file_audit_check_receipt_retention.rollback.sql": "920b2f9752b2639ebafba8d80073099c90202885e310e861337645e5b0471783",
+    "config/postgres_migrations/431_file_audit_check_receipt_retention.sql": "ac9f2d832004af027e20c9fefe6216edc7d2fbc2dbc8072778f03f5e85db2b2f",
     "config/postgres_migrations/435_user_activity_indexes.rollback.sql": "925e35526b524c98cc55496eff1109c65f0c17bfe5ba8694f053ed679195280b",
     "config/postgres_migrations/435_user_activity_indexes.sql": "952ea66b5e559a1f457c171e13740958ac2653a40f2cec331836441dd07a5416",
     "config/postgres_migrations/442_agent_unicode_host_names.rollback.sql": "6cb56e445aaeeb4198a84ee5a90f2bd1b37636b3832393abccfb0e876f853352",
