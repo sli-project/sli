@@ -41,8 +41,8 @@ public sealed class AgentWorker(AgentRuntime runtime, ILogger<AgentWorker> logge
                 if (status.ErrorDetail is not null)
                 {
                     if (previous != (status.ErrorCode, status.ErrorDetail))
-                        logger.LogWarning("agent cycle: {Code}, pending {Pending}, active {Active}. {Detail}",
-                            status.ErrorCode, status.Pending, status.CollectionActive, status.ErrorDetail);
+                        logger.LogWarning("agent cycle: {Code} {Detail}, pending {Pending}, active {Active}",
+                            status.ErrorCode, status.ErrorDetail, status.Pending, status.CollectionActive);
                 }
                 else if (status.ErrorCode is not null)
                     logger.LogWarning("agent cycle: {Code}, pending {Pending}, active {Active}", status.ErrorCode, status.Pending, status.CollectionActive);

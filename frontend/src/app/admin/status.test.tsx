@@ -40,7 +40,8 @@ it("shows the PostgreSQL mount and omits the backup line until a copy exists", a
     footprint: { components: [], backups: { last_backup_at_utc: null } },
   } });
   renderPage();
-  const table = await screen.findByRole("table", { name: "Диск" });
+  const table = await screen.findByRole("table", { name: "Том PostgreSQL" });
+  expect(screen.getAllByText("Том PostgreSQL")).toHaveLength(1);
   const row = within(table).getByText("/srv/sli-db").closest("tr")!;
   expect(within(row).getByText("98 ГБ")).toBeTruthy();
   expect(within(row).getByText("2 ГБ")).toBeTruthy();
@@ -113,17 +114,18 @@ it.each(["ru", "en"] as const)("shows a declared data gap as one plain line in %
   setLocale(locale);
   const data = setup([{ ...agent }]);
   data.agent_collection!.items[0].data_gaps = [
-    { from_utc: "2026-11-01T01:16:00Z", to_utc: "2026-11-15T01:16:00Z" },
-    { from_utc: "2026-11-01T01:16:00Z", to_utc: "2026-11-15T01:16:00Z" },
+    ...Array.from({ length: 2 }, () => ({ module_id: "sli.windows.ad-dc", from_utc: "2026-11-01T01:16:00Z", to_utc: "2026-11-15T01:16:00Z" })),
   ];
   vi.mocked(api.setupStatus).mockResolvedValue(data);
   renderPage();
-  const line = await screen.findByText(locale === "ru" ? /^нет данных с LAB-DC01 за / : /^No data from LAB-DC01 for /);
+  const line = await screen.findByText(locale === "ru" ? /^LAB-DC01 · Пропуск в сборе событий Windows/ : /^LAB-DC01 · Gap in Windows event collection/);
   expect(line.tagName).toBe("P");
   expect(line.textContent).toContain(locale === "ru" ? "01.11.2026" : "Nov 1, 2026");
   expect(line.textContent).toContain(locale === "ru" ? "15.11.2026" : "Nov 15, 2026");
   expect(line.closest(".sli-ds-state--banner, details")).toBeNull();
-  expect(screen.queryAllByText(locale === "ru" ? /^нет данных с / : /^No data from /)).toHaveLength(1);
+  expect(screen.getAllByText(locale === "ru" ? /^LAB-DC01 · Пропуск/ : /^LAB-DC01 · Gap/)).toHaveLength(1);
+  expect(screen.getAllByText(t("systemStatus.sources"))).toHaveLength(1);
+  expect(screen.getAllByText(t("systemStatus.services"))).toHaveLength(1);
 });
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
@@ -311,7 +313,7 @@ it("keeps table skeletons visible until slow sources and services finish", async
   vi.mocked(api.setupStatus).mockImplementation(() => new Promise((resolve) => { resolveSetup = resolve; }));
   vi.mocked(api.operationsWorkers).mockImplementation(() => new Promise((resolve) => { resolveWorkers = resolve; }));
   renderPage();
-  await screen.findByRole("table", { name: "Диск" });
+  await screen.findByRole("table", { name: "Том PostgreSQL" });
   expect(screen.getAllByRole("status").filter((element) => element.getAttribute("aria-busy") === "true")).toHaveLength(2);
   expect(screen.queryByText(/Не загрузились/)).toBeNull();
   resolveSetup(setup([agent])); resolveWorkers({ workers: operations.workers });
@@ -340,7 +342,7 @@ it("hides onboarding when an agent has sent data and a channel is configured", a
   await waitFor(() => expect(api.telegramSetup).toHaveBeenCalledWith("status"));
   await waitFor(() => expect(screen.queryByRole("list", { name: "Первый запуск" })).toBeNull());
   expect(await screen.findByText("LAB-DC01 присылает данные")).toBeTruthy();
-  expect(screen.getByRole("table", { name: "Диск" }).textContent).toContain("3 ГБ");
+  expect(screen.getByRole("table", { name: "Том PostgreSQL" }).textContent).toContain("3 ГБ");
 });
 
 it("counts a connected controller before its first import and without a legacy target", async () => {
@@ -413,7 +415,7 @@ it("keeps services and disk visible when the sources request fails", async () =>
   vi.mocked(api.setupStatus).mockRejectedValue(new Error("fixture failure"));
   renderPage();
   expect(await screen.findByRole("table", { name: "Службы сервера" })).toBeTruthy();
-  expect(screen.getByRole("table", { name: "Диск" })).toBeTruthy();
+  expect(screen.getByRole("table", { name: "Том PostgreSQL" })).toBeTruthy();
   expect(screen.getByText("Не загрузились Источники")).toBeTruthy();
   expect(screen.queryByRole("table", { name: "Источники" })).toBeNull();
 });
@@ -427,7 +429,7 @@ it("shows source data while the server request is still pending, then handles it
   reject(new Error("fixture failure"));
   expect(await screen.findByText("Не загрузились Службы сервера")).toBeTruthy();
   expect(screen.getByRole("table", { name: "Источники" })).toBeTruthy();
-  expect(screen.getByRole("table", { name: "Диск" })).toBeTruthy();
+  expect(screen.getByRole("table", { name: "Том PostgreSQL" })).toBeTruthy();
   expect(api.operations).not.toHaveBeenCalled();
 });
 
@@ -606,7 +608,7 @@ it.each(["en", "ru"] as const)("shows live and historical password backlogs inde
   expect(row.textContent).toContain(formatDateTime(observed, "UTC", { withYear: false, seconds: true }));
   expect(within(table).getByText(t("systemStatus.passwordDetection.historyPending"))).toBeTruthy();
   expect(within(table).queryByText(t("systemStatus.passwordDetection.stalled"))).toBeNull();
-  expect(screen.getByText(t("systemStatus.service.processRunning"))).toBeTruthy();
+  expect(screen.getByRole("row", { name: new RegExp(t("systemStatus.service.detection")) }).textContent).toContain(t("systemStatus.service.running"));
 
   vi.mocked(api.operationsWorkers).mockResolvedValue({ workers: { ...workers, password_detection: { status: "ok", items: [
     { rule_id: "qw.password-brute-force", state: "recovered", observed_at: "2026-11-22T21:25:08Z" },
@@ -653,8 +655,8 @@ it("shows failed and stalled rules with their own observed time while the proces
   expect(failure.textContent).toContain(formatDateTime(failedAt, "UTC", { withYear: false, seconds: true }));
   expect(stalled.textContent).toContain(formatDateTime(stalledAt, "UTC", { withYear: false, seconds: true }));
   const services = screen.getByRole("table", { name: t("systemStatus.services") });
-  expect(within(services).getByText(t("systemStatus.service.processRunning"))).toBeTruthy();
-  expect(within(services).queryByText(t("systemStatus.service.running"))).toBeNull();
+  expect(within(services).getByRole("row", { name: new RegExp(t("systemStatus.service.detection")) }).textContent).toContain(t("systemStatus.service.running"));
+  expect(within(services).queryByText(/Процесс запущен|Process is running/)).toBeNull();
 });
 
 it("reports missing password telemetry without a healthy rule result", async () => {
