@@ -20,10 +20,10 @@ internal sealed class KnownBundleNormalizer(string root,string? runtimeRoot,stri
         ["config/source_packs/file_audit.json"]="6d2697a8b6a17896d485dbf66d3ce51facbe1f1e0219d0cedea37e18ad690019",
         ["config/source_packs/radius.json"]="a1ea9bb4690ca9344ee8c3b4f022b60b5fbecdf5b445c6b43e4def061f11f301",
         ["config/source_packs/workstations.json"]="a09e4e087061ea112d4d37b8e4b910e345978a387802812a05354d46adb2849d",
-        ["config/event_catalog.json"]="c7402512674993e4f7b8002e81ac3d955c6e43848825bdd75b6da9665d9c28ca",
+        ["config/event_catalog.json"]="4df026e1f2d99729ac668bb778ec44c4c71c6a6112766a175954a3f3bcea860f",
         ["config/file_audit_event_catalog.json"]="9b7964bad0975948ca9ff8d75843e687248807d986b09b63678f43665bce8bb3",
         ["config/radius_event_catalog.json"]="6ff6ceb44bfe84c70f6ae4d9356cc94ca9de9c82f1acc16de166a730d9bacb6c",
-        ["config/workstations_event_catalog.json"]="312a10d9a1f7d1f1b8a666de0cfbea6b3ea4e6682857d79e934df896160cd25c"
+        ["config/workstations_event_catalog.json"]="9d5d8f354f9dbc463bbd85b59e521fa90dde630a7dd8a082ac6518a6e1d00524"
     };
     static InvalidOperationException Unsupported() => new("source_normalizer_bundle_unsupported");
     internal Task<IReadOnlyList<int>> ResolveAsync(JsonObject row,CancellationToken ct)

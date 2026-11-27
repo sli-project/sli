@@ -46,6 +46,7 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
         : OperatingSystem.IsWindows() ? new(NativeFileAuditApi.ListLocalShares, clock) : null;
     private DateTimeOffset? _lastFileCapture;
     private string? _lastFilePolicy;
+    private FileAuditModule? _fileModule;
     private readonly Dictionary<string, (DateTimeOffset At, string Policy)> _lastNpsCapture = new();
     public int IntervalSeconds { get; private set; } = 60;
     public bool ContinueImmediately { get; private set; }
@@ -306,27 +307,11 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
                 if (policy.FileAudit is { } filePolicy)
                 {
                     bool permissionsOnly = !filePolicy.Workstation && !policy.FileAuditActivity;
-                    var signature = CanonicalJson.Serialize(filePolicy.Value) + ":" + permissionsOnly;
+                    var signature = sourceHostId + ":" + CanonicalJson.Serialize(filePolicy.Value) + ":" + permissionsOnly;
                     if (_lastFileCapture is null || signature != _lastFilePolicy || clock.GetUtcNow()-_lastFileCapture >= TimeSpan.FromSeconds(IntervalSeconds))
                     {
-                        IFileAuditEventSource? fileSource=fileEventSource;
-                        Action<string,string>? pathCheck=filePathCheck;
-                        Func<string,bool>? accountCheck=fileAccountCheck;
-                        Func<string,string,string?>? pathKind = null;
-                        if (OperatingSystem.IsWindows())
-                        {
-                            fileSource ??= new FileAuditEventSource();
-                            if (pathCheck is null)
-                            {
-                                var nativeFileAudit = new NativeFileAuditApi();
-                                pathCheck = nativeFileAudit.CheckPath;
-                                if (policy.FileAuditActivity) pathKind = nativeFileAudit.CheckPathKind;
-                            }
-                            accountCheck ??= new FileAuditAccounts().IsUser;
-                        }
-                        if (fileSource is null || pathCheck is null) throw new AgentException("file_audit_native_unavailable");
-                        var module=new FileAuditModule(sourceHostId,filePolicy,fileSource,pathCheck,accountCheck,
-                            permissionsOnly:permissionsOnly,pathKind:pathKind);
+                        if (_fileModule is null || signature != _lastFilePolicy || filePolicy.Workstation)
+                            _fileModule = CreateFileAuditModule(sourceHostId,filePolicy,permissionsOnly,policy.FileAuditActivity);
                         var budget=Math.Min(16,policy.Control.BatchSize)-_queue.Pending().Count(p => p.Envelope.ModuleId == FileAuditModule.ModuleId);
                         var deadline=Stopwatch.StartNew();
                         var savedLimit=_queue.MaxBytes; _queue.MaxBytes=Math.Min(savedLimit,filePolicy.Number("spool_bytes"));
@@ -336,7 +321,7 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
                             for (var step=0; step<budget && deadline.Elapsed < TimeSpan.FromSeconds(filePolicy.Number("wall_seconds")); step++)
                             {
                                 cancellationToken.ThrowIfCancellationRequested();
-                                var position=Position(FileAuditModule.ModuleId); var sample=module.Collect(position,clock.GetUtcNow());
+                                var position=Position(FileAuditModule.ModuleId); var sample=_fileModule.Collect(position,clock.GetUtcNow());
                                 _queue.Capture(_identity.Signer,_identity.AgentId,sample,clock.GetUtcNow()); captured++;
                                 if (sample.CursorAfter == sample.CursorBefore || position is not null && sample.Generation != position.Generation || sample.Payload["context"]?["read_error"] is not null
                                     || sample.Payload["records"]!.AsArray().Count == 0 && sample.FilteredCount == 0 && !(sample.LostCount > 0))
@@ -351,6 +336,7 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
                         finally { _queue.MaxBytes=savedLimit; }
                     }
                 }
+                else _fileModule = null;
                 try
                 {
                     var snapshotResult = _snapshots.Tick(policy.Snapshots, _queue, _identity.Signer, _identity.AgentId, clock.GetUtcNow(), policy.Control.BatchSize, cancellationToken);
@@ -440,6 +426,7 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
         _snapshots?.Cancel(clearFailures: true);
         _lastCapture = null;
         _lastFileCapture = null;
+        _fileModule = null;
         _lastNpsCapture.Clear();
         _attempts.Clear();
         try { Directory.Move(QueuePath, Path.Combine(stage, "queue")); }
@@ -534,6 +521,7 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
     private CycleStatus Finish(string? error, bool active, int captured, bool failed, string? detail = null)
     {
         var pending = _queue?.Pending().Count ?? 0;
+        var quarantine = _queue?.FileAuditQuarantine();
         var observed = Iso8601.Format(clock.GetUtcNow());
         var snapshotFailures = _snapshots?.Failures.ToDictionary();
         var catalogDiagnostic = _fileAuditCatalog?.Diagnostic;
@@ -545,6 +533,9 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
                 { ["observed_at_utc"] = observed, ["collection_active"] = active, ["error_code"] = error, ["pending_packets"] = pending };
                 if (name == "status.json" && detail is not null) status["error_detail"] = detail;
                 if (_fileAuditReport.Error is { } fileReportError) status["file_audit_report_error"] = fileReportError;
+                if (quarantine is { Count: > 0 } rejected)
+                    status["file_audit_quarantine"] = new JsonObject
+                    { ["count"] = rejected.Count, ["last_rejection_reason"] = rejected.Reason };
                 if (catalogDiagnostic is { } catalog)
                     status["file_audit_catalog"] = new JsonObject
                     {
@@ -562,6 +553,27 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
         if (error is not null || failed) ContinueImmediately = false;
         return new(error, active, captured, pending, failed)
         { ErrorDetail = detail, SnapshotFailures = snapshotFailures, FileAuditCatalog = catalogDiagnostic };
+    }
+
+    private FileAuditModule CreateFileAuditModule(string host, FileAuditPolicy policy, bool permissionsOnly, bool activity)
+    {
+        var source = fileEventSource;
+        var checkPath = filePathCheck;
+        var checkAccount = fileAccountCheck;
+        Func<string,string,string?>? pathKind = null;
+        if (OperatingSystem.IsWindows())
+        {
+            source ??= new FileAuditEventSource(policy);
+            if (checkPath is null)
+            {
+                var native = new NativeFileAuditApi();
+                checkPath = native.CheckPath;
+                if (activity) pathKind = native.CheckPathKind;
+            }
+            checkAccount ??= new FileAuditAccounts().IsUser;
+        }
+        if (source is null || checkPath is null) throw new AgentException("file_audit_native_unavailable");
+        return new FileAuditModule(host,policy,source,checkPath,checkAccount,permissionsOnly:permissionsOnly,pathKind:pathKind);
     }
 
     public void Dispose()

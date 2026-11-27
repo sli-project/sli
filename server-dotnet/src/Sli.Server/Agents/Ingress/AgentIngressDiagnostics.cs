@@ -76,9 +76,10 @@ public sealed partial class AgentIngressDiagnostics(string dataDirectory, ILogge
             var valid=Envelope.Parse(envelope.ToJson());
             if (!JsonRead.TryString(receipt["status"],out var status) || status is not ("rejected" or "retry_later")) return false;
             string code=JsonRead.TryString(receipt["error_code"],out var input) && SafeCodes.Contains(input) ? input : "agent_delivery_rejected";
-            if (!Allow((identity.Id,valid.ModuleId,code))) return false;
-            logger.LogWarning("agent_packet_delivery_rejected agent_id={AgentId} module_id={ModuleId} packet_id={PacketId} sequence={Sequence} receipt_status={ReceiptStatus} error_code={ErrorCode}",
-                identity.Id.ToString("D"),valid.ModuleId,valid.PacketId,valid.Sequence,status,code);
+            var reason=Receipt.FileAuditRejectionReason(receipt);
+            if (!Allow((identity.Id,valid.ModuleId,reason ?? code))) return false;
+            logger.LogWarning("agent_packet_delivery_rejected agent_id={AgentId} module_id={ModuleId} packet_id={PacketId} sequence={Sequence} receipt_status={ReceiptStatus} error_code={ErrorCode} error_reason={ErrorReason}",
+                identity.Id.ToString("D"),valid.ModuleId,valid.PacketId,valid.Sequence,status,code,reason);
             return true;
         }
         catch (Exception) { return false; }

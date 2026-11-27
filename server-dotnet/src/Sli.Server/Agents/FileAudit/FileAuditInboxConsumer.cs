@@ -55,9 +55,11 @@ public static class FileAuditInboxConsumer
         if(assigned.OfType<JsonObject>().Any(m=>m["module_id"]?.ToString()=="sli.file-audit" && m["enabled"]?.ToJsonString()=="false"))
             throw new FileAuditPending("module_disabled");
         var current=AgentPolicyAssignments.FindCurrent(assigned,"sli.file-audit") ?? throw new FileAuditPending("agent_module_not_assigned");
-        await using(var command=new NpgsqlCommand("select envelope::text,envelope_sha256 from sli_agent_receipts where packet_id=@packet and agent_id=@agent and module_id='sli.file-audit'",db,tx)) {
+        bool transportGap;
+        await using(var command=new NpgsqlCommand("select envelope::text,envelope_sha256,coalesce(receipt->'transport_gap'='true'::jsonb,false) from sli_agent_receipts where packet_id=@packet and agent_id=@agent and module_id='sli.file-audit'",db,tx)) {
             command.Parameters.AddWithValue("packet",packet);command.Parameters.AddWithValue("agent",agent);await using var reader=await command.ExecuteReaderAsync(ct);
             if(!await reader.ReadAsync(ct) || !PythonMetadataEquality.Equal(JsonNode.Parse(reader.GetString(0)),data) || reader.GetString(1)!=Packets.Digest(data) || envelope.PayloadSha256!=Packets.Digest(body)) throw new FileAuditPending("agent_packet_attestation_invalid");
+            transportGap=reader.GetBoolean(2);
         }
         var captured=await AgentPolicyAssignments.ResolveAsync(db,tx,assigned,agent,"sli.file-audit",envelope.PolicyRevision,ct) ?? throw new FileAuditPending("file_audit_policy_not_retained");
         var config=AgentFileAuditPolicy.Parse(captured["config"] as JsonObject ?? new JsonObject());var currentConfig=current["config"] as JsonObject ?? new JsonObject();
@@ -66,7 +68,7 @@ public static class FileAuditInboxConsumer
             if(!assigned.OfType<JsonObject>().Any(x=>x["module_id"]?.GetValue<string>()=="sli.workstations" && x["enabled"] is JsonValue flag && flag.TryGetValue<bool>(out var enabled) && enabled)) throw new FileAuditPending("file_audit_workstation_not_assigned");
         }
         JsonArray verified;
-        try { verified=AgentFileAuditValidator.Validate(envelope,body,config,host); }
+        try { verified=AgentFileAuditValidator.Validate(envelope,body,config,host,transportGap:transportGap); }
         catch(ProtocolException) { throw new FileAuditPending("agent_packet_attestation_invalid"); }
         if(!PythonMetadataEquality.Equal(verified,rows)) throw new FileAuditPending("agent_packet_attestation_invalid");
         bool filePermissions=await AgentPolicyAssignments.FilePermissionsAvailableAsync(db,tx,ct);

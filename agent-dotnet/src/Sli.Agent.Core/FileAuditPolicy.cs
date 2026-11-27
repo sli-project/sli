@@ -15,6 +15,9 @@ public sealed record FileAuditPolicy(JsonObject Value)
     public int Number(string key) => Value[key]!.GetValue<int>();
     public static readonly int[] Events = [4656,4659,4660,4663,4670,4907,5140,5142,5143,5144,5145,5168];
     public static readonly int[] ContextEvents = [4608,4624,4625,4634,4719,1102];
+    public static readonly int[] ServerFileEvents = [4656,4660,4663,4670,5145];
+    public bool OptionalEvents => Value["optional_events"]!.GetValue<bool>();
+    public bool IsServerFileEvent(int id) => ServerFileEvents.Contains(id) || id == 1102 || id == 4658 && OptionalEvents;
     public const string Provider = "Microsoft-Windows-Security-Auditing";
 
     public static string LocalPath(string value)

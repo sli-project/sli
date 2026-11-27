@@ -11,11 +11,20 @@ namespace Sli.Agent.Windows;
 
 /// <summary>Only a proved missing/replaced anchor permits a new file-audit generation.</summary>
 [SupportedOSPlatform("windows")]
-public sealed class FileAuditEventSource : IFileAuditEventSource
+public sealed class FileAuditEventSource(FileAuditPolicy policy) : IFileAuditEventSource
 {
-    private static readonly string Filter="(Provider[@Name='"+FileAuditPolicy.Provider+"'] and ("+
-        string.Join(" or ",FileAuditPolicy.Events.Concat([4658,4664]).Concat(FileAuditPolicy.ContextEvents.Where(e => e != 1102)).Select(e => $"EventID={e}"))+
-        ")) or (Provider[@Name='Microsoft-Windows-Eventlog'] and EventID=1102)";
+    private readonly string _filter = Filter(policy);
+
+    internal static string Filter(FileAuditPolicy policy)
+    {
+        var ids = policy.Workstation
+            ? FileAuditPolicy.Events.Concat(FileAuditPolicy.ContextEvents.Where(id => id != 1102))
+                .Concat([4658,4664])
+            : FileAuditPolicy.ServerFileEvents.Concat(policy.OptionalEvents ? [4658] : Array.Empty<int>());
+        return "(Provider[@Name='" + FileAuditPolicy.Provider + "'] and (" +
+            string.Join(" or ",ids.Select(id => $"EventID={id}")) +
+            ")) or (Provider[@Name='Microsoft-Windows-Eventlog'] and EventID=1102)";
+    }
     public SourceBatch Read(JsonObject progress,int limit)
     {
         try { return ReadCore(progress,limit); }
@@ -25,13 +34,13 @@ public sealed class FileAuditEventSource : IFileAuditEventSource
             throw new EventLogReadException(code:"file_audit_read_failed");
         }
     }
-    private static SourceBatch ReadCore(JsonObject progress,int limit)
+    private SourceBatch ReadCore(JsonObject progress,int limit)
     {
         var after=progress["record_id"]?.GetValue<long>(); var bookmark=progress["bookmark"]!.ToString();
         var bound=after is null ? "" : $" and EventRecordID {(bookmark.Length>0 ? ">=" : ">")} {after.Value.ToString(CultureInfo.InvariantCulture)}";
         var time=bookmark.Length == 0 && progress["since_utc"] is not null ? $" and TimeCreated[@SystemTime >= '{Iso8601.Format(Iso8601.ParseUtc(progress["since_utc"]!.ToString())).Replace("+00:00","Z",StringComparison.Ordinal)}']" : "";
         // Keep an old anchor queryable even when it predates this selector.
-        var filter=bookmark.Length>0 && after is not null ? $"({Filter}) or EventRecordID={after.Value.ToString(CultureInfo.InvariantCulture)}" : Filter;
+        var filter=bookmark.Length>0 && after is not null ? $"({_filter}) or EventRecordID={after.Value.ToString(CultureInfo.InvariantCulture)}" : _filter;
         using var reader=new EventLogReader(new EventLogQuery("Security",PathType.LogName,$"*[System[({filter}){bound}{time}]]")) {BatchSize=limit};
         if (bookmark.Length>0)
         {
