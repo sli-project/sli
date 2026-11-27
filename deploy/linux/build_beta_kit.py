@@ -373,7 +373,8 @@ def observe_migrations(checkout, connection, password, work, env, actual_version
 
     env.update(SLI_PG_HOST='127.0.0.1', SLI_PG_PORT=str(connection['port']), SLI_PG_ADMIN_USER='postgres',
                SLI_INSTALL_DOMAIN='example.test', SLI_INSTALL_SEED_REPORT_DOMAIN='0', SLI_NATIVE_OWNER_SETUP='1',
-               SLI_BACKUP_ROOT=str(work), SLI_PG_ADMIN_PASSWORD_FILE=str(password))
+               SLI_BACKUP_ROOT=str(work), SLI_PG_ADMIN_PASSWORD_FILE=str(password),
+               ADLOG_HISTORY_READ_MODE='disabled')
     settings = ('SLI_PLATFORM_OWNER_PASSWORD', 'SLI_NOTIFICATION_DB_PASSWORD', 'SLI_REPORT_PRODUCER_PG_PASSWORD',
                 'ADLOG_SEMANTIC_WORKER_PASSWORD', 'ADLOG_STORAGE_V2_WORKER_PASSWORD', 'ADLOG_AD_CONTEXT_WORKER_PASSWORD',
                 'ADLOG_STORAGE_LIFECYCLE_PASSWORD', 'ADLOG_STORAGE_LIFECYCLE_DELETE_PASSWORD',

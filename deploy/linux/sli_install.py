@@ -80,7 +80,9 @@ def main(argv=None):
         print(json.dumps(result))
         return 0
     except Exception as exc:  # noqa: BLE001 - fixed public diagnostics only
-        reason = str(exc) if isinstance(exc, UpdateError) else 'install_failed'
+        from deploy.linux.sli_secrets import SecretError
+
+        reason = str(exc) if isinstance(exc, (UpdateError, SecretError)) else 'install_failed'
         result = {'status': 'failed', 'reason_code': reason, 'installed': False}
         if reason == 'install_backups_require_separate_volume':
             result['message'] = ('Копии требуют отдельный том — укажите каталог на HDD / '

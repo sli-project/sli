@@ -14,11 +14,17 @@ import json
 import re
 from pathlib import Path
 
-from scripts.maintenance.existing_postgres_bootstrap import (
+from deploy.linux.existing_postgres_bootstrap import (
     BootstrapError,
     base_schema_markers,
     forward_migration_inventory,
 )
+
+
+def migration_checksum_variants(body: bytes) -> set[str]:
+    """Accept only LF and CRLF bytes; preserve all other bytes, including lone CR."""
+    lf = body.replace(b"\r\n", b"\n")
+    return {hashlib.sha256(variant).hexdigest() for variant in (lf, lf.replace(b"\n", b"\r\n"))}
 
 
 def _checksum(path: Path) -> str:
@@ -47,7 +53,7 @@ def verify_manifest(root: Path, manifest: dict) -> None:
 
 
 def expected_ledger(root: Path) -> list[dict]:
-    """Use the Docker bootstrap's marker parser and forward admission rules."""
+    """Use the bootstrap marker parser and forward admission rules."""
     schema = root / "config/postgres_schema_v8.sql"
     rows = {
         version: {"version": version, "name": name, "sha256": _checksum(schema)}
@@ -75,8 +81,6 @@ def verify_ledger(actual: list[dict], expected: list[dict], *, root: Path | None
     digests must be proven against the SAME file and marker in that release;
     no historical digest, NULL attestation or schema guess is trusted.
     """
-    from deploy.linux.installed_state import migration_checksum_variants
-
     for rows in (expected, actual):
         if not isinstance(rows, list) or any(
             not isinstance(row, dict) or set(row) != {"version", "name", "sha256"}
