@@ -59,6 +59,15 @@ it("uses the available last logon in the computer card when the replicated times
   expect(container.textContent).not.toContain("lastLogonTimestamp");
 });
 
+it("labels the computer card shortcut by the tab it opens", () => {
+  render(<QueryClientProvider client={new QueryClient()}>
+    <ComputerPanel row={{ ...workstation, object_guid: "test-computer-guid" }} logons={false}
+      logonParams="" changes={[]} canCompare onClose={() => {}} timeZone="UTC"/>
+  </QueryClientProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "Посмотреть изменения" }));
+  expect(screen.getByRole("tab", { name: t("reports.computers.changes"), selected: true })).toBeTruthy();
+});
+
 it("keeps individual observations selected by row ID through paging and resets on a new result", async () => {
   const first = observation("101", "53");
   const second = observation("102", "37");

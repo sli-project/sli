@@ -79,8 +79,8 @@ export function GpoSnapshotComparison({ reportKey, domain, policyId, revision }:
       if (selected.before && selected.after && canCompare) setSubmitted({ before: selected.before, after: selected.after });
     }}>
       {(["before", "after"] as const).map((side) => <div className="sli-ds-field" key={side}>
-        <span>{t(`reports.gpo.snapshot_${side}`)}</span>
-        <Select label={t(`reports.gpo.snapshot_${side}`)} value={selected[side]} onChange={(selectedValue) => {
+        <span>{t(`reports.gpo.version_${side}`)}</span>
+        <Select label={t(`reports.gpo.version_${side}`)} value={selected[side]} onChange={(selectedValue) => {
           setSelection({ ...selected, [side]: selectedValue });
           setSubmitted(undefined);
         }}
