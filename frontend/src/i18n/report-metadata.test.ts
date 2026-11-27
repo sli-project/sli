@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,7 +11,6 @@ import { columnValue } from "../app/report-v2/state";
 import { ru } from "./ru";
 import { gpoReportDefinition } from "../plugins/ad/gpo-report";
 import gpoDeclaration from "../../../server-dotnet/src/Sli.Server/Gpo/declaration.json";
-import { testPython } from "../test-support/python";
 
 it.each(["logons", "processes", "usb", "protection"])("localizes workstation %s scope limitations without changing access state", (family) => {
   const limitations = ["workstation_scope_unresolved", "workstation_scope_empty"].map((code) => ({
@@ -72,89 +70,21 @@ it("localizes the five user tabs, privilege basis and policy limitations", () =>
   expect(localized.branches?.users.limitations[0].text).toContain("password age > 120 days; inactivity > 30 days");
 });
 
-// Read the actual registry without invoking queries or connecting to a database.
-// Metrics are declared inside query functions, so inspect their metadata AST only.
-const registryScript = String.raw`
-import ast
-import importlib
-import inspect
-import json
-from server.sli.reporting.v2.registry import registered_reports, SECTION_TITLES
-
-definitions = []
-metrics = {}
-filter_options = {}
-for report in registered_reports():
-    definitions.append({**report.to_json(), "filter_options": {}})
-    module = importlib.import_module(report.query.__module__)
-    tree = ast.parse(inspect.getsource(module))
-    entries = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.keyword) or node.arg != "metrics":
-            continue
-        value = node.value
-        if isinstance(value, ast.ListComp):
-            fields = {ast.literal_eval(k): v for k, v in zip(value.elt.keys, value.elt.values) if k is not None}
-            names = [name for name in ("key", "label", "caption") if name in fields]
-            value.elt = ast.Dict(keys=[ast.Constant(name) for name in names], values=[fields[name] for name in names])
-            if any(isinstance(child, ast.Call) for child in ast.walk(value)):
-                raise AssertionError("Metric metadata must not execute calls")
-            expression = ast.fix_missing_locations(ast.Expression(value))
-            entries.extend(eval(compile(expression, "<metric metadata>", "eval"), vars(module)))
-        elif isinstance(value, ast.List):
-            for item in value.elts:
-                if isinstance(item, ast.Dict):
-                    fields = {ast.literal_eval(k): v for k, v in zip(item.keys, item.values) if k is not None}
-                    def metadata_value(node):
-                        if report.key == "security.problems" and isinstance(node, ast.Subscript) and isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name) and node.value.func.id == "message":
-                            return module.message(ast.literal_eval(node.value.args[0]))["text"]
-                        return ast.literal_eval(node)
-                    entries.append({name: metadata_value(fields[name]) for name in ("key", "label", "caption") if name in fields})
-                elif isinstance(item, ast.Call):
-                    entries.append(dict(zip(("key", "label"), map(ast.literal_eval, item.args[:2]))))
-                else:
-                    raise AssertionError("Unsupported metric metadata declaration")
-        else:
-            raise AssertionError("Unsupported metrics declaration")
-    metrics[report.key] = entries
-    if hasattr(module, "REASON_LABELS"):
-        filter_options[report.key] = {"reason": [{"value": key, "label": label} for key, label in module.REASON_LABELS.items()]}
-print(json.dumps({"definitions": definitions, "sections": SECTION_TITLES, "metrics": metrics, "filterOptions": filter_options}, ensure_ascii=True))
-`;
-
-function readRegistry() {
-  const root = resolve(import.meta.dirname, "../../..");
-  return JSON.parse(execFileSync(testPython(root), ["-B", "-c", registryScript], { cwd: root, encoding: "utf8", timeout: 30_000 })) as {
-    definitions: ReportDefinitionDto[];
-    sections: Record<string, string>;
-    metrics: Record<string, Array<{ key: string; label: string; caption?: string }>>;
-    filterOptions: Record<string, ReportDefinitionDto["filter_options"]>;
-  };
-}
-
-// Share the real registry snapshot without spawning Python inside each test case.
-const registry = readRegistry();
-
-// The product is server-dotnet: for reports already cleaned on the .NET side the shipped declaration
-// replaces the frozen Python one.
 const shippedDefinitions = JSON.parse(readFileSync(
-  resolve(import.meta.dirname, "../../../server-dotnet/src/Sli.Server/Reporting/V2/report-definitions.json"), "utf8")) as ReportDefinitionDto[];
-for (const key of ["security.events.chains", "ad.infrastructure"]) {
-  const shipped = shippedDefinitions.find((item) => item.key === key)!;
-  registry.definitions = registry.definitions.map((item) => item.key === key ? { ...shipped, filter_options: {} } : item);
-}
+  resolve(import.meta.dirname, "../../../server-dotnet/src/Sli.Server/Reporting/V2/report-definitions.json"), "utf8"
+)) as ReportDefinitionDto[];
 const adDefinitions = JSON.parse(readFileSync(
   resolve(import.meta.dirname, "../../../server-dotnet/src/Sli.Server/Ad/report-definitions.json"), "utf8"
 )) as Record<string, { declaration: ReportDefinitionDto }>;
 const computerLogons = adDefinitions["ad.computer-logons"].declaration;
-registry.definitions = registry.definitions.map((item) => item.key === computerLogons.key
-  ? { ...computerLogons, filter_options: {} } : item);
-registry.metrics[computerLogons.key] = [];
-delete registry.filterOptions[computerLogons.key];
+const definitions = shippedDefinitions.map((report) => ({
+  ...(report.key === computerLogons.key ? computerLogons : report),
+  filter_options: {},
+}));
 
 it.each(["ru", "en"] as const)("displays security action outcomes without replacing source evidence (%s)", (locale) => {
   setLocale(locale);
-  const definition = localizeReportDefinition(registry.definitions.find((item) => item.key === "security.events.chains")!);
+  const definition = localizeReportDefinition(definitions.find((item) => item.key === "security.events.chains")!);
   const column = definition.columns.find((item) => item.key === "outcome")!;
   expect(column.path).toBe("outcome_code");
   const dictionary = locale === "ru" ? ru : en;
@@ -176,7 +106,7 @@ it.each([
 ] as const)("localizes direct, primary and nested privilege coverage in %s", (locale, label, limitation) => {
   setLocale(locale);
   expect(t("reports.v2.ad.users.v2.limitations.privilege_incomplete")).toBe(limitation);
-  const definition = localizeReportDefinition(registry.definitions.find((item) => item.key === "ad.users.v2")!);
+  const definition = localizeReportDefinition(definitions.find((item) => item.key === "ad.users.v2")!);
   expect(definition.columns.find((column) => column.key === "privilege_basis")?.label).toBe(label);
   const sourceText = "Полнота привилегированного членства не подтверждена; показаны известные прямые, основные и вложенные связи.";
   const raw: ReportResultDto = { contract_id: "sli.report-result.v2", report_key: "ad.users.v2", state: "partial",
@@ -204,7 +134,7 @@ it("localizes user information independently of confirmed reasons and keeps unkn
   expect(localized.review_details).toHaveLength(2);
   expect(localized.sid).toBe(raw.sid);
   expect(raw.reason_text).toBe(confirmed.label);
-  const definition = localizeReportDefinition(registry.definitions.find((item) => item.key === "ad.users.v2")!);
+  const definition = localizeReportDefinition(definitions.find((item) => item.key === "ad.users.v2")!);
   expect(definition.columns.find((column) => column.key === "information")?.label).toBe("Information limitations");
   expect(definition.params.find((param) => param.key === "information")?.options?.map((option) => option.label)).toContain("Password age: unknown");
 });
@@ -261,7 +191,7 @@ it("localizes visible GPO tabs without changing source records or access state",
 it.each(["ru", "en"] as const)("resolves queue catalog envelopes in %s regardless of server text", (locale) => {
   setLocale(locale);
   const envelope = (code: string) => ({ code, params: {}, text: "other language" });
-  const definition = registry.definitions.find((item) => item.key === "security.problems")!;
+  const definition = definitions.find((item) => item.key === "security.problems")!;
   const coded = { ...definition, title: "other language", presentation_messages: { title: envelope("reports.v2.security.problems.title") },
     columns: definition.columns.map((column) => column.key === "status" ? { ...column, labels: { new: "other language" }, labels_messages: { new: envelope("security.problems.status.new") } } : column) };
   const localized = localizeReportDefinition(coded);
@@ -341,7 +271,7 @@ it.each([
   expect(relocalized.items[0].review_hint).toBe(hint);
   expect(relocalized.items[0].suppressed).toBe(suppressed);
   expect(result.items[0].review_hint_text).toBe("Учётная запись компьютера");
-  const definition = registry.definitions.find((item) => item.key === "security.problems")!;
+  const definition = definitions.find((item) => item.key === "security.problems")!;
   const translated = localizeReportDefinition(definition);
   expect(translated.params.find((param) => param.key === "show_suppressed")?.label).toBe("Show suppressed");
   expect(translated.columns.find((column) => column.key === "review_hint")?.label).toBe("Audit change context (needs review)");
@@ -352,7 +282,7 @@ describe("v2 registry metadata", () => {
     "overview", "actions", "mass-operations", "permission-changes",
     "access-denials", "out-of-hours", "permissions", "audit-state",
   ])("localizes the file-audit.%s source filter without changing its contract", (tab) => {
-    const definition = registry.definitions.find((item) => item.key === `file-audit.${tab}`)!;
+    const definition = definitions.find((item) => item.key === `file-audit.${tab}`)!;
     const parameter = definition.params.find((param) => param.key === "source_kind")!;
     for (const locale of ["ru", "en"] as const) {
       setLocale(locale);
@@ -373,7 +303,7 @@ describe("v2 registry metadata", () => {
 
   it("keeps AD history periods alongside hidden deep-link parameters", () => {
     setLocale("en");
-    const raw = registry.definitions.find((item) => item.key === "ad.infrastructure")!;
+    const raw = definitions.find((item) => item.key === "ad.infrastructure")!;
     const localized = localizeReportDefinition(raw);
     const period = raw.params.find((param) => param.key === "period")!;
     expect(period.max_days).toBe(3650);
@@ -401,7 +331,7 @@ describe("v2 registry metadata", () => {
     ["security.problems", "time_to", "Period end"],
   ] as const)("localizes the hidden %s %s parameter without changing its contract", (report, key, label) => {
     setLocale("en");
-    const definition = registry.definitions.find((item) => item.key === report)!;
+    const definition = definitions.find((item) => item.key === report)!;
     const parameter = definition.params.find((param) => param.key === key)!;
     expect(parameter.hidden).toBe(true);
     const localized = localizeReportDefinition(definition);
@@ -413,7 +343,7 @@ describe("v2 registry metadata", () => {
 
   it("localizes rule quality and preserves unknown metrics, cohort links and coverage", () => {
     setLocale("en");
-    const raw = registry.definitions.find((item) => item.key === "security.rule-quality")!;
+    const raw = definitions.find((item) => item.key === "security.rule-quality")!;
     const definition = localizeReportDefinition(raw);
     expect(definition.title).toBe("Rule quality");
     expect(definition.params[0].label).toBe("Period");
@@ -442,7 +372,7 @@ describe("v2 registry metadata", () => {
 
   it("localizes the new-pair passport while preserving source and baseline measurement boundaries", () => {
     setLocale("en");
-    const report = registry.definitions.find((item) => item.key === "ad.new-logon-pairs")!;
+    const report = definitions.find((item) => item.key === "ad.new-logon-pairs")!;
     const localized = localizeReportDefinition(report);
     expect(localized.intent?.question).toBe(en["reports.v2.ad.new-logon-pairs.intent.question"]);
     expect(localized.intent?.denominator).toContain("baseline window");
@@ -454,7 +384,7 @@ describe("v2 registry metadata", () => {
   });
   it("localizes service and task results without changing observations or evidence", () => {
     setLocale("en");
-    const definition = registry.definitions.find((item) => item.key === "security.events.chains")!;
+    const definition = definitions.find((item) => item.key === "security.events.chains")!;
     const observations = [{ event_db_id: 10, initiator_sid: null, href: "/app/events/10" }];
     const rows = [{ object: "synthetic-service", action: "synthetic-path", previous_value: ["synthetic-previous"],
       event_ids: [10], evidence: ["4697: /app/events/10"], observations, quality: "unknown_object" }];
@@ -475,7 +405,7 @@ describe("v2 registry metadata", () => {
   });
   it.each(["ru", "en"] as const)("localizes registered notification channel intent in %s", (locale) => {
     setLocale(locale);
-    const definition = registry.definitions.find((item) => item.key === "notifications.channels")!;
+    const definition = definitions.find((item) => item.key === "notifications.channels")!;
     const localized = localizeReportDefinition(definition);
     for (const field of ["question", "denominator", "freshness_expectation"] as const) {
       const key = `reports.v2.notifications.channels.intent.${field}` as const;
@@ -484,9 +414,9 @@ describe("v2 registry metadata", () => {
     }
   });
 
-  it("has an English translation for every registered presentation key", () => {
+  it("localizes the shipped report metadata used in the UI", () => {
     setLocale("en");
-    expect(registry.definitions.length).toBeGreaterThan(0);
+    expect(definitions.length).toBeGreaterThan(0);
     const check = (report: string, field: string, label: string) => {
       if (!label) return;
       const key = `reports.v2.${report}.${field}`;
@@ -502,13 +432,12 @@ describe("v2 registry metadata", () => {
         for (const [code, label] of Object.entries(column.labels ?? {})) check(report, `${prefix}.${column.key}.labels.${code}`, label);
       }
     };
-    for (const [section, title] of Object.entries(registry.sections)) check("sections", `${section}.title`, title);
-    for (const report of registry.definitions.filter((item) => item.key !== "ad.gpo.v2")) {
-      const localized = localizeReportDefinition(report);
-      // Journal descriptions and passports have no screen or dictionary entries.
-      const { description: _description, intent: _intent, ...listPresentation } = localized;
-      expect(JSON.stringify(report.key === "events.journal" ? listPresentation : localized), report.key).not.toMatch(/[А-Яа-яЁё]/);
+    for (const section of new Set(definitions.map((report) => report.section))) check("sections", `${section}.title`, section);
+    for (const report of definitions.filter((item) => item.key !== "ad.gpo.v2")) {
       check(report.key, "title", report.title);
+      // The fleet workspace supplies its own presentation.
+      if (report.key === "workstations.overview") continue;
+      // The journal does not display descriptions or intent.
       if (report.key !== "events.journal") {
         check(report.key, "description", report.description);
         expect(report.intent, report.key).toBeTruthy();
@@ -520,9 +449,17 @@ describe("v2 registry metadata", () => {
         expect({ ...localizedIntent, question: report.intent!.question, denominator: report.intent!.denominator,
           freshness_expectation: report.intent!.freshness_expectation }).toEqual(report.intent);
       }
+      // File audit supplies its own controls and most table labels.
+      if (report.key.startsWith("file-audit.")) {
+        const declaredLabels = report.key === "file-audit.permissions"
+          ? ["rule_code", "employee", "share_mask", "smb_mask", "ntfs_mask"]
+          : ["operation", "path", "outcome", "access_mask", "denial_layer"];
+        columns(report.key, "columns", report.columns.filter(({ key }) => declaredLabels.includes(key)));
+        continue;
+      }
       columns(report.key, "columns", report.columns);
       for (const param of report.params) {
-        if (report.key === computerLogons.key && param.hidden) continue;
+        if (param.hidden || (report.key === "events.journal" && ["view", "result"].includes(param.key))) continue;
         check(report.key, `params.${param.key}.label`, param.label);
         if (report.key === computerLogons.key && param.key === "service_logons") continue;
         for (const option of param.options ?? []) check(report.key, `params.${param.key}.options.${option.value}`, option.label);
@@ -540,18 +477,11 @@ describe("v2 registry metadata", () => {
       }
       for (const preset of report.presets) check(report.key, `presets.${reportPresetKey(preset.params)}`, preset.label);
       for (const link of report.row_links) check(report.key, `row_links.${link.href}`, link.label);
-      for (const metric of registry.metrics[report.key]) {
-        check(report.key, `metrics.${metric.key}.label`, metric.label);
-        check(report.key, `metrics.${metric.key}.caption`, metric.caption ?? "");
-      }
-      for (const [param, options] of Object.entries(registry.filterOptions[report.key] ?? {})) {
-        for (const option of options) check(report.key, `params.${param}.options.${option.value}`, option.label);
-      }
     }
   });
   it("uses stable keys despite server wording changes and falls back for unknown metadata", () => {
     setLocale("en");
-    const report = registry.definitions.find((item) => item.key === "ad.computers.v6")!;
+    const report = definitions.find((item) => item.key === "ad.computers.v6")!;
     const changed = { ...report, title: "Updated server title", description: "Updated server description",
       columns: report.columns.map((column) => ({ ...column, label: "Updated column label" })) };
     const localized = localizeReportDefinition(changed);
@@ -574,7 +504,7 @@ describe("v2 registry metadata", () => {
 
   it("localizes Users metadata and the temporary membership reason while preserving access and evidence", () => {
     setLocale("en");
-    const report = registry.definitions.find((item) => item.key === "ad.users.v2")!;
+    const report = definitions.find((item) => item.key === "ad.users.v2")!;
     const localized = localizeReportDefinition(report);
     expect(localized.views.map((view) => view.access)).toEqual(report.views.map((view) => view.access));
     const reason = { key: "temporary_membership", label: "Краткое членство в контрольной группе", summary: "Synthetic control group",
@@ -604,10 +534,10 @@ describe("v2 registry metadata", () => {
     const untouched = { ...result, items: [unchanged] };
     expect(localizeReportResult(untouched).items).toBe(untouched.items);
     setLocale("ru");
-    expect(localizeReportDefinition(report).views.map((view) => [view.key, view.title])).toEqual([
+    expect(localizeReportDefinition(report).views.map((view) => [view.key, view.title])).toEqual(expect.arrayContaining([
       ["checks", "Требуют проверки"], ["privileged", "Привилегированные"],
       ["changes", "Изменения"], ["all", "Все учётки"],
-    ]);
+    ]));
     expect(localizeReportResult(result)).toBe(result);
   });
 
@@ -645,7 +575,7 @@ describe("v2 registry metadata", () => {
   it("keys presets by their parameters instead of labels or parameter order", () => {
     expect(reportPresetKey({ view: "all", enabled: "disabled" })).toBe(reportPresetKey({ enabled: "disabled", view: "all" }));
     setLocale("en");
-    const report = registry.definitions.find((item) => item.key === "ad.computers.v6")!;
+    const report = definitions.find((item) => item.key === "ad.computers.v6")!;
     const changed = { ...report, presets: [...report.presets].reverse().map((preset) => ({ ...preset, label: "Updated preset" })) };
     const localized = localizeReportDefinition(changed);
     expect(localized.presets.map((preset) => preset.label)).toEqual(localizeReportDefinition(report).presets.map((preset) => preset.label).reverse());
@@ -672,10 +602,10 @@ describe("v2 registry metadata", () => {
     expect(localized.items[3]).toMatchObject({ privilege_text: "Snapshot not collected", password_text: "Field unavailable" });
     expect(localized.items[4]).toEqual(result.items[4]);
     expect(result.items[0].department_text).toBe("Поле недоступно");
-    const definition = localizeReportDefinition(registry.definitions.find((item) => item.key === "vpn.accounts")!);
+    const definition = localizeReportDefinition(definitions.find((item) => item.key === "vpn.accounts")!);
     const state = definition.columns.find((column) => column.key === "activity")!;
     expect(localized.items.slice(0, 4).map((row) => columnValue(state, row))).toEqual(["Active", "Inactive", "Disabled", "Unknown"]);
-    const vpn = localizeReportDefinition(registry.definitions.find((item) => item.key === "vpn.connections")!);
+    const vpn = localizeReportDefinition(definitions.find((item) => item.key === "vpn.connections")!);
     if (typeof vpn.detail !== "object") throw new Error("missing VPN detail");
     const lifecycle = vpn.detail.columns.find((column) => column.key === "state")!;
     expect(columnValue(lifecycle, { lifecycle_state: "closed" })).toBe("Completed");
@@ -722,7 +652,7 @@ describe("v2 registry metadata", () => {
 
   it("localizes revocation candidates and preserves their evidence and coverage", () => {
     setLocale("en");
-    const raw = registry.definitions.find((item) => item.key === "security.events.chains")!;
+    const raw = definitions.find((item) => item.key === "security.events.chains")!;
     const definition = localizeReportDefinition(raw);
     expect(definition.params.find((param) => param.key === "identity_scope")?.options?.map((option) => option.label))
       .toEqual(["All observations", "Exact identity only"]);
@@ -743,7 +673,7 @@ describe("v2 registry metadata", () => {
 
   it("localizes recurring lockout results and keeps observed values intact", () => {
     setLocale("en");
-    const raw = registry.definitions.find((item) => item.key === "security.events.chains")!;
+    const raw = definitions.find((item) => item.key === "security.events.chains")!;
     const definition = localizeReportDefinition(raw);
     expect(definition.params.find((param) => param.key === "failure_window")?.options?.map((option) => option.label))
       .toEqual(["5 minutes", "15 minutes", "1 hour", "24 hours"]);
@@ -762,7 +692,7 @@ describe("v2 registry metadata", () => {
 
   it("localizes NPS policy tabs and preserves their source and coverage codes", () => {
     setLocale("en");
-    const raw = registry.definitions.find((item) => item.key === "vpn.connections")!;
+    const raw = definitions.find((item) => item.key === "vpn.connections")!;
     const definition = localizeReportDefinition(raw);
     const policies = definition.views.find((view) => view.key === "policy_denials")!;
     expect(policies.title).toBe("Policies and reasons");

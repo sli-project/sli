@@ -116,13 +116,19 @@ internal static class AdAccountEvents
         target_user_sid,target_user_name,target_domain_name,logon_type,logon_id,read_representation
         """;
 
+    private const string LogonComparisonColumns = """
+        id,event_id,time_created_utc,source,computer,day,event_count,summary_key,
+        target_user_sid,target_user_name,target_domain_name,logon_type,read_representation
+        """;
+
     internal static Task<List<JsonObject>> ReadAsync(NpgsqlConnection db,long[]? domains,int[] codes,
         AdPeriod period,CancellationToken ct,IConfiguration? config=null,long[]? servers=null,bool daily=true)
         => ReadRowsAsync(db, domains, codes, period, ct, config, servers, daily, columns: null);
 
     internal static Task<List<JsonObject>> ReadLogonsAsync(NpgsqlConnection db, long domain, long[] servers,
-        AdPeriod period, CancellationToken ct, IConfiguration? config)
-        => ReadRowsAsync(db, [domain], [4624], period, ct, config, servers, daily: true, columns: LogonColumns);
+        AdPeriod period, CancellationToken ct, IConfiguration? config, bool forComparison)
+        => ReadRowsAsync(db, [domain], [4624], period, ct, config, servers, daily: true,
+            columns: forComparison ? LogonComparisonColumns : LogonColumns);
 
     internal static Task<List<JsonObject>> ReadWorkplaceLogonsAsync(NpgsqlConnection db, long[] domains, string[] sids,
         AdPeriod period, CancellationToken ct, IConfiguration? config)
@@ -166,7 +172,19 @@ internal static class AdAccountEvents
         var rows=new List<JsonObject>();await using var reader=await command.ExecuteReaderAsync(ct);
         while(await reader.ReadAsync(ct)){
             var row=new JsonObject();
-            for(int i=0;i<reader.FieldCount;i++)row[reader.GetName(i)]=reader.IsDBNull(i)?null:System.Text.Json.JsonSerializer.SerializeToNode(reader.GetValue(i));
+            for (int i = 0; i < reader.FieldCount; i++)
+            {
+                // Create scalar nodes directly to limit allocations for large history reads.
+                row[reader.GetName(i)] = reader.GetValue(i) switch
+                {
+                    DBNull => null,
+                    string text => JsonValue.Create(text),
+                    int number => JsonValue.Create(number),
+                    long number => JsonValue.Create(number),
+                    DateTime time => JsonValue.Create(time.ToString("yyyy-MM-dd'T'HH:mm:ss.FFFFFFFK", CultureInfo.InvariantCulture)),
+                    var value => System.Text.Json.JsonSerializer.SerializeToNode(value)
+                };
+            }
             if(columns is null)row["facts_json"]=JsonNode.Parse(row.Text("facts_json")??"{}");
             string? source=row.Text("source");
             row["ip_address"]=System.Net.IPAddress.TryParse(source,out _)?source:null;
