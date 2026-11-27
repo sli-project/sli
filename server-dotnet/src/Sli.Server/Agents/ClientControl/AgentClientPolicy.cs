@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using System.Globalization;
 using System.Text.Json;
+using Sli.Agent.Core;
 using Sli.Agent.Protocol;
 using Sli.Server.Agents.Control;
 using Sli.Server.Agents.FileAudit;
@@ -38,7 +39,7 @@ internal static class AgentClientPolicy
             probe["delivery_diagnostics"]=diagnostics;
             return new(new JsonObject { ["delivery_diagnostics"]=diagnostics.DeepClone() },probe,null,null,false,null);
         }
-        string[] allowed=["applied_policy_revision","rights_probe","collection_state","eventlog_diagnostics","runtime_handoff_supported","agent_version"];
+        string[] allowed=["applied_policy_revision","rights_probe","collection_state","eventlog_diagnostics","runtime_handoff_supported","agent_version","windows_product_type"];
         if(body is not JsonObject report || report.Any(x=>!allowed.Contains(x.Key)) ||
             report.ContainsKey("runtime_handoff_supported") && !IsTrue(report["runtime_handoff_supported"])) throw Error("invalid_agent_policy_report");
         long current=agent["policy_revision"]!.GetValue<long>(),previous=agent["applied_policy_revision"]!.GetValue<long>();
@@ -49,6 +50,12 @@ internal static class AgentClientPolicy
         if(agent.ContainsKey("collection_policy") && stateNode is null || stateNode is not null &&
             (state is not ("active" or "paused") || revision==current && state!=(desired=="active"?"active":"paused"))) throw Error("invalid_agent_collection_state");
         if(IsTrue(report["runtime_handoff_supported"]))probe["runtime_handoff_supported"]=true;
+        if (report.ContainsKey("windows_product_type"))
+        {
+            if (!JsonRead.TryString(report["windows_product_type"], out var productType) || Enrollment.RoleForProductType(productType) is null)
+                throw Error("invalid_agent_policy_report");
+            probe["windows_product_type"] = productType;
+        }
         if(report.ContainsKey("agent_version"))
         {
             if(!JsonRead.TryString(report["agent_version"],out var version) || !Version.TryParse(version,out var parsed) || parsed.Build<0 || parsed.Revision>=0 || version.Length>32)

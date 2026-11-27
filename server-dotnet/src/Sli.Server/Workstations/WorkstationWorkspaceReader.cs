@@ -29,6 +29,7 @@ public sealed class WorkstationWorkspaceReader(IPostgresConnectionFactory connec
                    coalesce(a.source_host_id,a.host_id)::text as source_instance_id,
                    a.status as agent_status,a.last_seen,a.policy_revision,a.applied_policy_revision,
                    a.registration_host_name,assignment.module,b.entity_id,
+                   (a.rights_probe->>'windows_product_type'='WinNT') is true as reported_workstation,
                    coalesce(nullif(a.rights_probe->>'agent_version',''),version.version,
                             (select v.details->>'agent_version' from sli_agent_audit v
                              where v.target=a.id::text and v.action='issue' order by v.id desc limit 1)) as agent_version
@@ -43,7 +44,8 @@ public sealed class WorkstationWorkspaceReader(IPostgresConnectionFactory connec
                 select v.version from sli_agent_update_results v where v.agent_id=a.id and v.status='updated'
                 order by v.observed_at desc,v.package_sha256 limit 1
             ) version on true
-            where a.status<>'replaced' and not exists(
+            where a.status<>'replaced' and coalesce(a.rights_probe->>'windows_product_type','WinNT')='WinNT'
+                and not exists(
                 select 1 from sli_agents other where other.status<>'replaced' and other.id<>a.id
                     and coalesce(other.source_agent_id,other.id)=coalesce(a.source_agent_id,a.id))
                 and not exists(select 1 from sli_agent_removals r where r.agent_id=a.id and r.state='state_cleaned')
@@ -91,8 +93,10 @@ public sealed class WorkstationWorkspaceReader(IPostgresConnectionFactory connec
                    a.agent_status,a.last_seen,a.policy_revision,a.applied_policy_revision,a.collection_state,
                    a.display_name,a.host_name,a.operating_system,a.operating_system_version,a.metadata_observed_at,null,null
             from agents a
-            where a.module is not null and not exists(select 1 from sli_plugin_workstations.ad_inventory_checkpoints436 c
-                             where a.domain_id is null or c.domain_id=a.domain_id)
+            where not exists(select 1 from matched m where m.agent_key=a.agent_key)
+                and (a.reported_workstation or a.module is not null and not exists(
+                    select 1 from sli_plugin_workstations.ad_inventory_checkpoints436 c
+                    where a.domain_id is null or c.domain_id=a.domain_id))
         ), resources as (
             select a.station_id,a.agent_key,'sli.workstations'::text as plugin_id,a.source_instance_id,a.entity_id,
                    case when a.server_id is not null then 'server:'||a.server_id::text end as device_id,

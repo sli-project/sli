@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using Npgsql;
 using NpgsqlTypes;
+using Sli.Agent.Core;
 using Sli.Server.Access;
 using Sli.Server.Agents.Control;
 using Sli.Server.Agents.Ingress;
@@ -23,12 +24,16 @@ public sealed class AgentClientControlService(IAgentControlAudit audit,TimeProvi
     {
         var agent=await ReadAsync(db,tx,identity.Id,ct);bool fileHook=true;
         await AgentPolicyAssignments.DisableUnavailableAsync(db,tx,agent,ct);
+        if (WorkstationDefaultAssignment.IsCandidate(agent)
+            && await WorkstationDefaultAssignment.ReconcileAsync(db, tx, identity.Id, audit, ct))
+            agent = await ReadAsync(db, tx, identity.Id, ct);
         await SnapshotPublication.AdSnapshotSchedule.RefreshAsync(db,tx,agent,ct);
         // Bundled file-audit is present in this native build. An activated Python
         // generation's hook inventory awaits M5; never silently assume its hooks.
         if(agent["file_audit"]?["request"] is JsonObject request && request.Count>0 && new PluginGenerationReader().Read("sli.file-audit").Generation is not null)
             throw new InvalidOperationException("agent_plugin_generation_unavailable");
         var result=AgentClientPolicy.CheckIn(agent,fileHook);
+        if (agent["rights_probe"]?["windows_product_type"] is null) result["windows_product_type_required"] = true;
         // The management command runs while the server verifies coverage. Until then the agent cannot capture events.
         if(agent["file_audit"]?["permissions_scope"] is not null
             && AgentPolicyAssignments.FindCurrent(result["assigned_modules"]!.AsArray(),"sli.file-audit") is { } fileAssignment
@@ -60,6 +65,22 @@ public sealed class AgentClientControlService(IAgentControlAudit audit,TimeProvi
             command.Parameters.AddWithValue("probe",NpgsqlDbType.Jsonb,change.Probe.ToJsonString());
             if(change.AppliedRevision is not null)command.Parameters.AddWithValue("revision",change.AppliedRevision.Value);
             command.Parameters.AddWithValue("id",identity.Id);await command.ExecuteNonQueryAsync(ct);
+        }
+        if (body is JsonObject { } policyReport && policyReport.ContainsKey("windows_product_type")
+            && Enrollment.RoleForProductType(change.Probe["windows_product_type"]?.ToString()) is "workstation" or "file_server" &&
+            agent["machine_role"]?.ToString() != "domain_controller")
+        {
+            // An authenticated OS report can correct the legacy SMB-based hint.
+            // DC registration and its directory scope use their own admission.
+            await using var role = new NpgsqlCommand("""
+                update sli_agents set machine_role=@role
+                where id=@id and machine_role is distinct from @role
+                and not exists(select 1 from sli_agent_module_bindings b
+                    where b.agent_id=@id and b.module_id='sli.windows.ad-dc')
+                """, db, tx);
+            role.Parameters.AddWithValue("id", identity.Id);
+            role.Parameters.AddWithValue("role", Enrollment.RoleForProductType(change.Probe["windows_product_type"]!.ToString())!);
+            await role.ExecuteNonQueryAsync(ct);
         }
         if(change.AppliedState is not null) {
             await using var state=new NpgsqlCommand("update sli_agents set applied_collection_state=@state where id=@id",db,tx);

@@ -136,6 +136,8 @@ public sealed partial class AgentManagementService
                 await Registry.AgentEnrollmentService.ResolveDcAsync(db,tx,source,ct,id) is {} dc)
             { agent["host_name"]=dc.Name; agent["server_id"]=dc.Server; }
             var probe = agent["rights_probe"]!.AsObject();
+            agent["windows_product_type"] = probe["windows_product_type"]?.DeepClone();
+            probe.Remove("windows_product_type");
             agent["eventlog_diagnostics"] = probe["eventlog_diagnostics"]?.DeepClone(); probe.Remove("eventlog_diagnostics");
             agent["certificate_reissue_required"] = probe["certificate_reissue_required"]?.DeepClone();
             agent["delivery_diagnostics"] = probe["delivery_diagnostics"]?.DeepClone(); probe.Remove("delivery_diagnostics");

@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Npgsql;
+using Sli.Server.Access;
 using Sli.Server.Auth;
 using Sli.Server.Auth.Lifecycle;
 using Sli.Server.Compatibility;
@@ -20,7 +21,8 @@ public sealed partial class InstallationService(IInstallationDatabase database, 
     static long Number(JsonNode? n) => n is JsonValue v && v.TryGetValue<long>(out long l) ? l
         : n is JsonValue i && i.TryGetValue<int>(out int number) ? number : 0;
     static JsonObject Item(JsonObject value) => new() { ["item"] = value };
-    public async Task<JsonNode> DispatchAsync(string method, string path, JsonObject body, Principal actor, string? address, bool canManage, CancellationToken ct)
+    public async Task<JsonNode> DispatchAsync(string method, string path, JsonObject body, Principal actor, string? address, bool canManage, CancellationToken ct,
+        AccessFacts? facts = null)
     {
         bool get = method == "GET";
         if (path == "/api/v1/setup/status" && get) return await SetupStatusAsync(ct);
@@ -56,7 +58,7 @@ public sealed partial class InstallationService(IInstallationDatabase database, 
             catch (InstallationException e) when (e.Status == 400) { throw new InstallationException("invalid_plugin_setting_value"); }
         }
         if (path == "/api/v1/plugins" && get)
-            return new JsonObject { ["items"] = await PluginStatesAsync(NavigationRegistry.PreviewEnabled(configuration), ct),
+            return new JsonObject { ["items"] = await PluginStatesAsync(NavigationRegistry.PreviewEnabled(configuration), facts, ct),
                 ["can_manage"] = canManage, ["mutation_api_enabled"] = true };
         if (path.StartsWith("/api/v1/plugins/", StringComparison.Ordinal) && !get)
             return Item(await ToggleAsync(Uri.UnescapeDataString(path["/api/v1/plugins/".Length..]), body, actor, ct));

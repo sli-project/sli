@@ -123,6 +123,7 @@ export type AgentItem = {
     connection: "online" | "offline" | "never_seen"; requested_at: string; reported_at: string | null } | null;
   id: string; host_id: string; status: "active" | "disabled" | "replaced"; last_seen: string | null;
   machine_role?: AgentMachineRole | null;
+  windows_product_type?: "WinNT" | "ServerNT" | "LanmanNT" | null;
   certificate_reissue_required?: boolean; server_id?: number | null; agent_version?: string | null; replacement_version?: string | null; replaced_by?: string | null;
   update?: { status: "updating" | "updated" | "failed"; version: string; reason: string | null } | null;
   created_at?: string;
@@ -154,7 +155,7 @@ export type PluginState = {
   source_names?: string[];
   status?: {
     state: "disabled" | "no_sources" | "waiting" | "working" | "error";
-    reason?: "disabled" | "no_sources" | "no_folders" | "waiting" | "working" | "status_unavailable" | "collection_delayed" | "collection_failed" | "outdated_agent";
+    reason?: "disabled" | "no_sources" | "no_folders" | "no_collection" | "waiting" | "working" | "status_unavailable" | "collection_delayed" | "collection_failed" | "outdated_agent";
     next_action?: "select_file_folders" | "connect_file_server" | "install_workstation_agent" | "connect_nps" | "connect_sigma_events"
       | "connect_domain_controller" | "check_first_delivery" | "check_collection" | "reload_status" | null;
     last_data_at: string | null;

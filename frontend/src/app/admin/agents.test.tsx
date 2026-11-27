@@ -121,6 +121,17 @@ it("denies before loading inventory without owner or access.manage", () => {
   expect(screen.queryByRole("button", { name: t("agents.addComputer") })).toBeNull();
 });
 
+it("links a connected workstation with no assigned collection to its plugin", async () => {
+  state.list.mockResolvedValue({ items: [{ ...agent, machine_role: "workstation",
+    last_seen: new Date().toISOString(), assigned_modules: [] }] });
+  mount();
+  const row = within((await screen.findByText("fixture-host")).closest("tr")!);
+  expect(row.getByRole("cell", { name: "Рабочая станция" })).toBeTruthy();
+  expect(row.getByRole("cell", { name: "На связи · сбор не назначен" })).toBeTruthy();
+  expect(row.getByRole("link", { name: "Включить сбор" }).getAttribute("href")).toBe("/app/admin/plugins/sli.workstations");
+  expect(row.queryByText(t("systemStatus.action.agent"))).toBeNull();
+});
+
 it.each([
   ["updating", null, "Обновляется до 26.0.185"],
   ["updated", null, "Обновлён"],

@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
 using Sli.Agent.Core;
+using Sli.Server.Agents.ClientControl;
 using Sli.Server.Agents.Control;
 using Sli.Server.Agents.Ingress;
 using Sli.Server.Agents.Registry;
@@ -14,6 +15,89 @@ namespace Sli.Server.Tests.Agents;
 
 public sealed class WorkstationEnrollmentAssignmentPostgresTests
 {
+    [Theory]
+    [InlineData(false, true, true)]
+    [InlineData(true, true, true)]
+    [InlineData(false, false, true)]
+    [InlineData(false, true, false)]
+    public async Task PluginAssignsTheSupportedJournalPolicyToAnApprovedWorkstation(bool upgrade, bool pluginEnabled, bool approvedName)
+    {
+        const string machine = "ws-auto-fixture.example.test";
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct);
+        await using (var owner = await fixture.Pg.OpenAsync(ct))
+        {
+            await PostCollectionPostgres.Sql(owner, """
+                insert into servers(domain_id,hostname,fqdn,role)
+                    select id,'ws-auto-fixture','ws-auto-fixture.example.test','workstation'
+                    from domains where fqdn='example.test';
+                """, ct);
+            await PostCollectionPostgres.Sql(owner, pluginEnabled ? """
+                update plugin_installations_v1 set desired_activation='enabled_manual',component_runtime='running'
+                where plugin_id='sli.workstations';
+                """ : """
+                update plugin_installations_v1 set desired_activation='disabled',component_runtime='stopped'
+                where plugin_id='sli.workstations';
+                """, ct);
+        }
+
+        await using var db = new NpgsqlConnection(fixture.Dsn("adlog_user"));
+        await db.OpenAsync(ct);
+        using var certificates = new WriteSqlPostgresTests.Certificates();
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var audit = new AgentControlAudit();
+        var host = Guid.NewGuid();
+        var auth = new AgentIdentityService(certificates.Ca);
+        var service = new AgentClientControlService(audit, TimeProvider.System);
+        await using var tx = await db.BeginTransactionAsync(ct);
+        var issued = await new AgentManagementService(audit).CreateTokenAsync(db, tx, JsonSerializer.SerializeToElement(new
+        {
+            host_id = host,
+            registration_host_name = approvedName ? machine : null,
+            key_fingerprint = Convert.ToHexStringLower(SHA256.HashData(key.ExportSubjectPublicKeyInfo())),
+        }), "session:1", ct);
+        var request = new JsonObject
+        {
+            ["token"] = issued.GetProperty("token").GetString(),
+            ["csr_pem"] = new CertificateRequest($"CN={host}", key, HashAlgorithmName.SHA256).CreateSigningRequestPem(),
+            ["machine_role"] = upgrade ? "file_server" : "workstation",
+            ["reported_hostname"] = machine,
+        };
+        if (!upgrade) request["windows_product_type"] = "WinNT";
+        var enrolled = await new AgentEnrollmentService(certificates.Ca, auth).EnrollAsync(db, tx, request, ct);
+        var agentId = Guid.Parse(enrolled["agent_id"]!.GetValue<string>());
+        using var cert = X509Certificate2.CreateFromPem(enrolled["certificate_pem"]!.GetValue<string>());
+        var identity = await auth.AuthenticateAsync(db, tx, cert, false, ct);
+        if (upgrade)
+        {
+            Assert.Null(await WorkstationJournalAdmission.ReadAsync(db, tx, agentId, null, null, ct));
+            var before = await service.CheckInAsync(db, tx, identity, ct);
+            Assert.True(before["windows_product_type_required"]!.GetValue<bool>());
+            await service.ReportAsync(db, tx, identity, new JsonObject
+            {
+                ["applied_policy_revision"] = before["policy_revision"]!.DeepClone(),
+                ["collection_state"] = "active",
+                ["windows_product_type"] = "WinNT",
+            }, ct);
+        }
+        else if (pluginEnabled && approvedName)
+            Assert.NotNull(await WorkstationJournalAdmission.ReadAsync(db, tx, agentId, host.ToString("D"), "2", ct));
+
+        var policy = await service.CheckInAsync(db, tx, identity, ct);
+        if (pluginEnabled && approvedName)
+        {
+            var assignment = Assert.Single(policy["assigned_modules"]!.AsArray())!;
+            Assert.Equal(WorkstationsModule.ModuleId, assignment["module_id"]!.GetValue<string>());
+            Assert.True(assignment["enabled"]!.GetValue<bool>());
+            Assert.Equal(2L, policy["policy_revision"]!.GetValue<long>());
+            Assert.NotNull(await WorkstationJournalAdmission.ReadAsync(db, tx, agentId, host.ToString("D"), "2", ct));
+        }
+        else
+            Assert.Empty(policy["assigned_modules"]!.AsArray());
+        await tx.CommitAsync(ct);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

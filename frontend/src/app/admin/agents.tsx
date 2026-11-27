@@ -53,6 +53,14 @@ function computerRole(agent: AgentItem): AgentMachineRole | undefined {
     : agent.assigned_modules.some((module) => moduleId(module) === "sli.workstations") ? "workstation" : undefined);
 }
 
+function roleLabel(agent: AgentItem) {
+  const role = computerRole(agent);
+  if (role === "file_server" && agent.windows_product_type === "ServerNT") return t("agents.roleServer");
+  return role ? t(machineRoles[role]) : EMPTY_VALUE;
+}
+
+const rolePlugins = { domain_controller: "sli.ad", file_server: "sli.file-audit", workstation: "sli.workstations" } as const;
+
 const certificateRejectionActions = {
   untrusted_root: "agents.certificateRejection.untrustedRoot",
   unexpected_chain_length: "agents.certificateRejection.chainLength",
@@ -89,21 +97,34 @@ function agentUpdateState(update: NonNullable<AgentItem["update"]>): string {
 const silent = (agent: AgentItem) => agent.status === "active" && (!agent.last_seen
   || Date.now() - Date.parse(agent.last_seen) > Math.max(300, (agent.collection_policy?.interval_seconds ?? 60) * 3) * 1000);
 
-function agentCollectionState(agent: AgentItem, timeZone: string, source?: ReturnType<typeof statusSources>[number]) {
+function agentCollectionState(agent: AgentItem, timeZone: string, source?: ReturnType<typeof statusSources>[number]):
+  { state: string; action: string; href?: string } {
   if (agent.status !== "active") return { state: t("agents.disabled"), action: EMPTY_VALUE };
   if (silent(agent)) {
     const state = agent.last_seen ? t("agents.silentSince", { date: formatDateTime(agent.last_seen, timeZone, { withYear: false }) }) : t("agents.notConnected");
     return { state, action: t("systemStatus.action.agent") };
   }
+  if (!agent.assigned_modules.some((module) => typeof module === "string" || module.enabled)) {
+    const role = computerRole(agent);
+    return { state: t("agents.connectedWithoutCollection"), action: t("agents.enableCollection"),
+      href: role ? `/app/admin/plugins/${rolePlugins[role]}` : "/app/admin/plugins" };
+  }
   if (agent.collection_policy && agent.collection_policy.state !== "active") {
     return { state: t("collectionDiagnosis.paused"), action: t("collectionDiagnosis.resume") };
   }
   const issue = collectionDiagnosis(agent, timeZone, agent.collection_policy?.interval_seconds);
-  if (issue) return issue;
-  if (source?.href) return source;
+  const checkService = t("systemStatus.action.agent");
+  if (issue) return { ...issue, action: issue.action === checkService ? t("agents.checkCollection") : issue.action };
+  if (source?.href && source.action !== checkService) return { state: source.state, action: source.action };
+  if (source?.href && computerRole(agent) !== "workstation")
+    return { state: source.state, action: t("agents.checkCollection") };
   const count = auditDisabled(agent);
   if (count && !dcAuditFailure(agent)) return { state: t("agents.auditOffStatus", { count }), action: t("collectionDiagnosis.auditAction") };
   return { state: t("agents.working"), action: EMPTY_VALUE };
+}
+
+function collectionAction(status: ReturnType<typeof agentCollectionState>) {
+  return status.href ? <a href={status.href} onClick={(event) => event.stopPropagation()}>{status.action}</a> : status.action;
 }
 function auditDisabled(agent: AgentItem): number | null {
   const report = agent.windows_audit;
@@ -213,8 +234,7 @@ function AgentsContent() {
       return row.update ? `${version} · ${agentUpdateState(row.update)}` : version;
     } },
     { key: "role", label: t("agents.computerRole"), render: (row) => {
-      const role = "reason" in row ? undefined : computerRole(row);
-      return role ? t(machineRoles[role]) : EMPTY_VALUE;
+      return "reason" in row ? EMPTY_VALUE : roleLabel(row);
     } },
     { key: "status", label: t("agents.status"), render: (row) => "reason" in row ? t("agents.notConnected") : collectionState(row).state },
     { key: "action", label: t("systemStatus.action"), render: (agent) => {
@@ -222,7 +242,7 @@ function AgentsContent() {
         ? enrollmentReasons[agent.reason as keyof typeof enrollmentReasons] : "agents.enrollmentReason.rejected");
       const reason = agent.certificate_rejection_reason;
       return reason && Object.hasOwn(certificateRejectionActions, reason)
-        ? t(certificateRejectionActions[reason]) : collectionState(agent).action;
+        ? t(certificateRejectionActions[reason]) : collectionAction(collectionState(agent));
     } },
     { key: "last_seen", label: t("agents.lastData"), kind: "datetime", render: (row) => {
       const time = "reason" in row ? row.occurred_at : row.last_seen;
@@ -263,14 +283,14 @@ function AgentsContent() {
     {consoleSession === sessionKey && <AgentConsoleEnrollment onClose={() => setConsoleSession(undefined)}/>}
     {keysSession === sessionKey && <AgentConsoleKeys sessionKey={sessionKey} timeZone={timeZone} onClose={() => setKeysSession(undefined)}/>}
     {selected ? <DetailDrawer open title={agentHostName(selected)} onClose={() => setSelectedId(null)}>
-      {selectedState ? <p>{selectedState.state}{selectedState.action === EMPTY_VALUE ? "" : `. ${selectedState.action}`}</p> : null}
-      <div className="sli-ds-field">
+      {selectedState ? <p>{selectedState.state}{selectedState.action === EMPTY_VALUE ? null : <>. {collectionAction(selectedState)}</>}</p> : null}
+      {selected.windows_product_type ? <FactList facts={[{ label: t("agents.computerRole"), value: roleLabel(selected) }]}/> : <div className="sli-ds-field">
         <label htmlFor="agent-machine-role">{t("agents.computerRole")}</label>
         <Select id="agent-machine-role" label={t("agents.computerRole")} value={computerRole(selected)}
           options={Object.entries(machineRoles).map(([value, label]) => ({ value, label: t(label) }))}
           disabled={selected.status !== "active" || action.isPending}
           onChange={(role) => { if (role && role !== computerRole(selected)) action.mutate({ kind: "role", body: { agent_id: selected.id, machine_role: role } }); }}/>
-      </div>
+      </div>}
       <AgentFileServerCard key={selected.id} agent={selected} busy={action.isPending} timeZone={timeZone}
         canManage={Boolean(access?.platform_owner || access?.subject.coarse_role === "admin" && access.capabilities.includes("access.manage"))}/>
       {selected.collection_policy || modules.length || selected.eventlog_diagnostics?.items.length || selected.delivery_diagnostics ? <section>

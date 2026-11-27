@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Npgsql;
+using Sli.Server.Access;
 using Sli.Server.Auth;
 using Sli.Server.Agents.Radius;
 using Sli.Server.Workspace;
@@ -50,7 +51,7 @@ public sealed partial class InstallationService
             throw new InstallationException(allowed.Contains(reason, StringComparer.Ordinal) ? reason : "plugin_state_conflict", 409);
         }
     }
-    async Task<JsonArray> PluginStatesAsync(bool preview, CancellationToken ct)
+    async Task<JsonArray> PluginStatesAsync(bool preview, AccessFacts? facts, CancellationToken ct)
     {
         var rows = await database.ReadAsync(s => s.QueryAsync("select * from read_plugin_states_v1()", ct), ct);
         var items = new JsonArray(rows.OfType<JsonObject>()
@@ -59,6 +60,8 @@ public sealed partial class InstallationService
         var moduleReceipts = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
         var receipts = await ReceiptsAsync(items.OfType<JsonObject>().Select(i => Text(i["plugin_id"])).ToArray(), ct, moduleReceipts);
         var sources = await PluginSourcesAsync(items, ct);
+        var workstationSources = facts is not null && items.OfType<JsonObject>().Any(i => Text(i["plugin_id"]) == "sli.workstations")
+            ? await WorkstationStatusSourcesAsync(facts, ct) : sources;
         var now = DateTimeOffset.UtcNow;
         foreach (var item in items.OfType<JsonObject>())
         {
@@ -67,7 +70,7 @@ public sealed partial class InstallationService
             if (id == "sli.remote-access") item["configured"] = RemoteConfigured();
             var sigma = id == "sli.sigma" && Bool(item["enabled"]) ? await SigmaStatusAsync(ct) : null;
             var radius = id == "sli.remote-access" && Bool(item["enabled"]) ? await RadiusStatusSourcesAsync(ct) : null;
-            item["status"] = PluginPresentation(item, receipts[id], moduleReceipts, sources, radius, sigma, now);
+            item["status"] = PluginPresentation(item, receipts[id], moduleReceipts, id == "sli.workstations" ? workstationSources : sources, radius, sigma, now);
         }
         return items;
     }

@@ -62,6 +62,9 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
             throw new AgentCertificateException("invalid_agent_registration_name");
         var role = body.ContainsKey("machine_role") ? StringValue(body, "machine_role") : "workstation";
         if (role is not ("workstation" or "domain_controller" or "file_server")) throw new AgentCertificateException("invalid_agent_module_config");
+        var productType = StringValue(body, "windows_product_type");
+        if (body.ContainsKey("windows_product_type") && Enrollment.RoleForProductType(productType) != role)
+            throw new AgentCertificateException("invalid_agent_module_config");
         var dc=role=="domain_controller" && hostName is not null ? await ResolveDcAsync(connection,transaction,hostName,ct) : null;
         if(dc is {} configuredDc && configuredDc.Name.Length>128)throw new AgentCertificateException("invalid_agent_module_config");
         if (consoleToken is { } grant)
@@ -152,18 +155,23 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
             ["manage_windows_audit"] = role != "domain_controller" || consoleGrant?.ManageWindowsAudit != false,
             ["audit_process_command_line"] = false,
         }.ToJsonString();
-        await using (var q = new NpgsqlCommand("insert into sli_agents(id,host_id,key_fingerprint,instance_name,registration_host_name,machine_role,collection_policy,last_seen) values(@id,@host,@key,@instance,@name,@role,@control::jsonb,clock_timestamp())", connection, transaction))
+        await using (var q = new NpgsqlCommand("""
+            insert into sli_agents(id,host_id,key_fingerprint,instance_name,registration_host_name,machine_role,collection_policy,last_seen,rights_probe)
+            values(@id,@host,@key,@instance,@name,@role,@control::jsonb,clock_timestamp(),
+                jsonb_strip_nulls(jsonb_build_object('windows_product_type',@product_type::text)))
+            """, connection, transaction))
         {
             q.Parameters.AddWithValue("id", agentId); q.Parameters.AddWithValue("host", hostId); q.Parameters.AddWithValue("key", keyFingerprint);
             q.Parameters.Add("instance", NpgsqlDbType.Text).Value = (object?)instance ?? DBNull.Value;
             q.Parameters.Add("name", NpgsqlDbType.Text).Value = (object?)hostName ?? DBNull.Value;
             q.Parameters.AddWithValue("role", role);
+            q.Parameters.Add("product_type", NpgsqlDbType.Text).Value = (object?)productType ?? DBNull.Value;
             q.Parameters.AddWithValue("control", control); await q.ExecuteNonQueryAsync(ct);
         }
         Guid? newer=null;
         if ((approved is not null || consoleToken is not null) && replacement is null)
             newer=await ReplaceRegistrationAsync(connection,transaction,agentId,hostName!,instance,tokenId,ct,dc?.Server,agentVersion,consoleToken is not null);
-        if (replacement is null && !await CopyTemplateAsync(connection, transaction, tokenId, agentId, ct))
+        if (replacement is null && !await CopyTemplateAsync(connection, transaction, tokenId, agentId, ct) && productType != "WinNT")
             await AssignDefaultAsync(connection, transaction, tokenId, agentId, hostId,dc?.Name ?? hostName, role!, control, ct,
                 approved is not null ? dc?.Server : null, bootstrapDomain, consoleGrant?.Packaged == true);
         var serial = await StoreCertificateAsync(connection, transaction, agentId, cert, ct);
@@ -199,6 +207,8 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         }
         if (replacement is null && (consoleToken is not null || approved is not null))
             await ReconcileDcSourceAsync(connection, transaction, agentId, configuration, ct);
+        if (replacement is null && productType == "WinNT")
+            await WorkstationDefaultAssignment.ReconcileAsync(connection, transaction, agentId, new AgentControlAudit(), ct);
         await AgentModuleAssignmentService.ReconcilePasswordDomainAsync(connection,transaction,agentId,ct);
         return CertificateResponse(cert, agentId, serial);
     }

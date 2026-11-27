@@ -19,6 +19,7 @@ const tabIds = ["overview", "connection", "settings", "rules", "reports"] as con
 export function PluginPage({ pluginId, title }: { pluginId: string; title: string }) {
   const access = useEffectiveAccess();
   const sigmaPlugin = pluginId === "sli.sigma";
+  const workstationPlugin = pluginId === "sli.workstations";
   const [tab, setTab] = useState<string>(() => {
     if (sigmaPlugin) return "rules";
     return pluginId === "sli.file-audit" && new URLSearchParams(window.location.search).has(fileAuditAgentParameter)
@@ -50,6 +51,7 @@ export function PluginPage({ pluginId, title }: { pluginId: string; title: strin
     || !!settings.data.schema["x-core-settings"]?.length);
   const availableTabs = tabIds.filter((key) => {
     switch (key) {
+      case "connection": return !workstationPlugin;
       case "settings": return hasSettings || settings.isError;
       case "rules": return sigmaPlugin || pluginRules.length > 0 || settings.isError;
       case "reports": return pluginReports.length > 0 || reports.isError;
@@ -61,7 +63,7 @@ export function PluginPage({ pluginId, title }: { pluginId: string; title: strin
   const overview = activeTab === "overview";
   const domainPlugin = pluginId === "sli.ad" || pluginId === "sli.gpo";
   const radiusPlugin = pluginId === "sli.remote-access";
-  const agentPlugin = pluginId === "sli.workstations" || pluginId === "sli.file-audit";
+  const agentPlugin = pluginId === "sli.file-audit";
   const statusText = item ? moduleStatusText(item, timeZone) : undefined;
   const nextAction = pluginNextAction(item?.status);
   const openAgents = item?.status?.next_action === "connect_file_server" || item?.status?.next_action === "install_workstation_agent"
@@ -84,7 +86,9 @@ export function PluginPage({ pluginId, title }: { pluginId: string; title: strin
             sourceCount={item?.source_count ?? item?.source_names?.length}/> : null}
         {overview && !domainPlugin && !radiusPlugin && item ? item.source_names?.length
           ? <ul>{item.source_names.map((name, index) => <li key={`${name}:${index}`}>{name}</li>)}</ul>
-          : <p>{sigmaPlugin ? rulesButton : connectionButton}</p> : null}
+          : workstationPlugin
+            ? item.status?.next_action === "install_workstation_agent" && nextAction ? <p><a href="/app/agents">{nextAction}</a></p> : null
+            : <p>{sigmaPlugin ? rulesButton : connectionButton}</p> : null}
         {activeTab === "settings" || activeTab === "rules" && !sigmaPlugin ? <PluginReadState loading={settings.isLoading} error={settings.error}
           message={t(activeTab === "settings" ? "pluginPage.settingsFailed" : "pluginPage.rulesFailed")} retry={() => void settings.refetch()}/> : null}
         {hasSettings && settings.data ? <div hidden={activeTab !== "settings" || settings.isError}><PluginSettingsForm key={pluginId} data={settings.data}

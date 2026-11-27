@@ -5,6 +5,7 @@ using Sli.Server.Access;
 using AdJobPlugin = Sli.Server.Ad.AdJobPlugin;
 using Sli.Server.Agents.SnapshotPublication;
 using Sli.Server.Infrastructure;
+using Sli.Server.InstallationSetup;
 using Sli.Server.Reporting;
 using Sli.Server.Reporting.V2;
 using SemanticDatabase = Sli.Server.Semantic.SemanticDatabase;
@@ -106,6 +107,12 @@ public sealed class NativeWorkstationsReportPostgresTests
         var linked = Assert.Single(rows, row => row.Text("station_id") == stationId);
         Assert.Equal("1.2.3", linked.Text("agent_version"));
         Assert.Equal(agent.ToString("D"), linked.Text("agent_key"));
+        var pluginSources = await new InstallationService(new InstallationDatabase(connections), null!)
+            .WorkstationStatusSourcesAsync(facts.Value, ct);
+        var source = Assert.Single(Assert.IsType<JsonArray>(pluginSources));
+        Assert.Equal(linked.Text("transport_agent_id"), source.Text("agent_id"));
+        Assert.Equal(linked.Text("display_name"), source.Text("source_name"));
+        Assert.False(source!["collects"]!.GetValue<bool>());
         var detail = (await Read("/rows/" + stationId + "/detail?period=7d"))["detail"]!;
         Assert.Equal("not_collected", detail["events"].Text("state"));
         Assert.False(detail["station"]!["journal_available"]!.GetValue<bool>());
