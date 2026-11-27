@@ -5,7 +5,10 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider, useLocation } from "@tanstack/react-router";
 import fixture from "../../../config/navigation_v3.json";
+import workstationSettings from "../../../config/plugin_settings_schema/sli.workstations.settings.json";
+import workspaceDeclarations from "../../../server-dotnet/src/Sli.Server/Workspace/declarations.json";
 import type { AgentCollectionHealth } from "../api/client";
+import type { SettingsSchema } from "../api/plugin-settings-types";
 import type { NavigationEntryDto } from "../api/report-v2-types";
 
 const registryState = vi.hoisted(() => ({ disabled: [] as string[], preview: false }));
@@ -27,12 +30,14 @@ vi.mock("../api/client", async (importOriginal) => {
       bootstrap: vi.fn().mockResolvedValue({ capabilities: [], principal: { username: "test.operator" } }),
       v4Access: vi.fn().mockImplementation(async () => state.access),
       reportsV2Catalog: vi.fn().mockImplementation(async () => ({
-        contract_id: "sli.report-catalog.v2", items: [],
+        contract_id: "sli.report-catalog.v2",
+        items: workspaceDeclarations.reports.filter(({ key }) => key === "workstations.overview"),
         navigation: { ...fixture, modules_preview: registryState.preview,
           enabled_plugins: fixture.enabled_plugins.filter((id) => !registryState.disabled.includes(id)) },
       })),
       agentCollection: vi.fn(),
       plugins: vi.fn().mockResolvedValue({ items: [], can_manage: false }),
+      pluginSettings: vi.fn(),
       setupStatus: vi.fn().mockResolvedValue({ sources: [], domains: [], domain_controllers: [] }),
       agents: vi.fn().mockResolvedValue({ items: [] }),
       logout: vi.fn().mockResolvedValue({}),
@@ -195,11 +200,30 @@ describe("AppShell", () => {
     expect(screen.queryByRole("tab")).toBeNull();
     cleanup();
     state.access = adminAccess;
+    if (id === "sli.workstations") {
+      vi.mocked(api.plugins).mockResolvedValueOnce({ items: [{
+        plugin_id: id, package_version: "1.0.0", installed: true, configured: true, enabled: true,
+        receiving_data: false, component_runtime: "running", queue_state: "idle", revision: 1,
+        last_data_at_utc: null,
+      }], can_manage: false });
+      vi.mocked(api.pluginSettings).mockResolvedValueOnce({
+        plugin_id: id, schema: workstationSettings.settings as unknown as SettingsSchema,
+        rules: workstationSettings.rules, values: {}, sources: {},
+      });
+    }
     await renderShell(path);
     const main = within(screen.getByRole("main"));
     expect(await main.findByRole("heading", { name: title })).toBeTruthy();
-    await userEvent.click(main.getByRole("tab", { name: "Подключение" }));
-    expect(main.getByRole("tab", { name: "Подключение", selected: true })).toBeTruthy();
+    if (id === "sli.workstations") {
+      expect(main.getByRole("tab", { name: "Обзор", selected: true })).toBeTruthy();
+      for (const name of ["Настройки", "Правила", "Отчёты"]) {
+        expect(await main.findByRole("tab", { name })).toBeTruthy();
+      }
+      expect(main.queryByRole("tab", { name: "Подключение" })).toBeNull();
+    } else {
+      await userEvent.click(main.getByRole("tab", { name: "Подключение" }));
+      expect(main.getByRole("tab", { name: "Подключение", selected: true })).toBeTruthy();
+    }
     expect(main.queryByText("В разработке")).toBeNull();
   });
 
