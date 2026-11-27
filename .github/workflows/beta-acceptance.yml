@@ -1,0 +1,100 @@
+name: Clean Debian beta acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Published beta release tag (beta-<12 hex>)'
+        required: true
+        type: string
+  schedule:
+    - cron: '17 20 * * *' # 03:17 in Bangkok
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    if: github.repository == 'sli-project/sli'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    env:
+      BETA_RESULTS: ${{ runner.temp }}/sli-beta-acceptance
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Select the published beta release
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_RELEASE: ${{ inputs.release }}
+        run: |
+          set -euo pipefail
+          tag=$REQUESTED_RELEASE
+          if [[ $GITHUB_EVENT_NAME == schedule ]]; then
+            tag=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" |
+              jq -er 'add | map(select(.prerelease and (.draft | not) and .published_at
+                and (.tag_name | test("^beta-[0-9a-f]{12}$")))) | max_by(.published_at) | .tag_name')
+          fi
+          if [[ ! $tag =~ ^beta-[0-9a-f]{12}$ ]]; then
+            echo 'Expected a release tag matching beta-<12 lowercase hex digits>.' >&2
+            exit 1
+          fi
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+          commit=$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .sha)
+          [[ $commit =~ ^[0-9a-f]{40}$ && $commit == "${tag#beta-}"* ]]
+          printf 'commit=%s\n' "$commit" >> "$GITHUB_OUTPUT"
+      - name: Download and verify the public release kit
+        id: kit
+        shell: bash
+        env:
+          RELEASE: ${{ steps.release.outputs.tag }}
+          COMMIT: ${{ steps.release.outputs.commit }}
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/beta-release-kit"
+          cd "$RUNNER_TEMP/beta-release-kit"
+          base="https://github.com/sli-project/sli/releases/download/$RELEASE"
+          for asset in sli-debian-beta-kit.tar.gz SHA256SUMS; do
+            curl -fsSL --proto '=https' --proto-redir '=https' --retry 2 "$base/$asset" -o "$asset"
+          done
+          sha256sum sli-debian-beta-kit.tar.gz | cmp - SHA256SUMS
+          PYTHONPATH="$GITHUB_WORKSPACE" python3 -B -c \
+            'import sys; from pathlib import Path; from deploy.linux.build_beta_kit import verify_offline_kit; verify_offline_kit(Path(sys.argv[1]), sys.argv[2])' \
+            sli-debian-beta-kit.tar.gz "$COMMIT"
+          read -r digest _ < SHA256SUMS
+          printf 'sha256=%s\n' "$digest" >> "$GITHUB_OUTPUT"
+      - name: Run the public installation guide on a clean Debian 13 VM
+        id: vm
+        shell: bash
+        env:
+          COMMIT: ${{ steps.release.outputs.commit }}
+        run: bash scripts/ci/beta_acceptance_vm.sh "$RUNNER_TEMP/beta-release-kit" "$COMMIT" "$BETA_RESULTS"
+      - name: Publish checks 1, 2 and 6
+        id: report
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          RELEASE: ${{ steps.release.outputs.tag }}
+          COMMIT: ${{ steps.release.outputs.commit }}
+          KIT_SHA256: ${{ steps.kit.outputs.sha256 }}
+          RELEASE_OUTCOME: ${{ steps.release.outcome }}
+          KIT_OUTCOME: ${{ steps.kit.outcome }}
+          VM_OUTCOME: ${{ steps.vm.outcome }}
+        run: python3 -B scripts/ci/beta_acceptance.py report
+      - name: Upload the acceptance results
+        if: ${{ !cancelled() && steps.report.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: beta-acceptance-${{ steps.release.outputs.tag || 'unresolved' }}
+          path: ${{ env.BETA_RESULTS }}/beta-acceptance.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Require all three checks to pass
+        if: ${{ !cancelled() && steps.report.outcome == 'success' }}
+        shell: bash
+        env:
+          PASSED: ${{ steps.report.outputs.passed }}
+        run: test "$PASSED" = true

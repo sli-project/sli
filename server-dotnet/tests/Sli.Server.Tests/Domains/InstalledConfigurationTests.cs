@@ -123,6 +123,8 @@ public sealed class InstalledConfigurationTests
     public async Task InstalledApiEnvironmentStartsHostAndHealthWithoutExposingSecrets(bool explicitSettings)
     {
         using var fixture = new InstalledApi();
+        // A fenced upgrade candidate serves health before publishing the shipped MSI.
+        fixture.Settings["SLI_NATIVE_UPGRADE_TESTING"] = "1";
         // Keep startup's optional warmup on an isolated, unused loopback port.
         using var unusedDatabase = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
         unusedDatabase.Bind(new IPEndPoint(IPAddress.Loopback, 0));
