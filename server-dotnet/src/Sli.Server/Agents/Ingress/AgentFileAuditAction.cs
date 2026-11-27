@@ -19,13 +19,16 @@ internal static class AgentFileAuditAction
         Require(!policy.Workstation && JsonRead.HasExactly(row,"contract","record_id","event_id","computer_name","channel","provider_name",
             "collection_scope_id","path","old_path","operation","subject_user_sid","client_ip","minute_utc","time_created",
             "first_seen_utc","last_seen_utc","count","outcome"));
-        Require(Text("contract")==FileAuditPolicy.ActionContract && Text("computer_name")==source
+        if (Text("computer_name")!=source) throw new ProtocolException(Receipt.FileAuditInvalid,Receipt.FileAuditHostMismatch);
+        Require(Text("contract")==FileAuditPolicy.ActionContract
             && Text("channel")=="Security" && Text("provider_name")==FileAuditPolicy.Provider);
         Require(JsonRead.TryInteger(row["event_id"],out var id) && id>0 && id<=int.MaxValue);
         Require(JsonRead.TryInteger(row["record_id"],out var record) && record>0 && record<=long.MaxValue);
         string operation=Text("operation");
         var meaning=EventStorageMeaning.Current.Events.SingleOrDefault(e=>e.EventId==(int)id && e.Channel=="Security" && e.Provider==FileAuditPolicy.Provider);
-        Require(meaning?.Operations.ContainsKey(operation)==true);
+        if (meaning is null || meaning.Operations.Count==0)
+            throw new ProtocolException(Receipt.FileAuditInvalid,Receipt.FileAuditWrongEvent);
+        Require(meaning.Operations.ContainsKey(operation));
         Require(JsonRead.TryInteger(row["count"],out var count) && row["count"] is JsonValue value && !value.TryGetValue<bool>(out _)
             && count>0 && count<=long.MaxValue);
         var minute=AgentAdDcUtc.Parse(Text("minute_utc")); var first=AgentAdDcUtc.Parse(Text("first_seen_utc")); var last=AgentAdDcUtc.Parse(Text("last_seen_utc"));
@@ -36,11 +39,16 @@ internal static class AgentFileAuditAction
         if(row["client_ip"] is not null) Require(Text("client_ip").Length<=45 && IPAddress.TryParse(Text("client_ip"),out _));
         Require(Text("outcome")== (operation=="access_denied" ? "failure" : "success"));
         var root=policy.Roots.OfType<JsonObject>().SingleOrDefault(r=>r["collection_scope_id"]!.GetValue<string>()==Text("collection_scope_id"));
-        Require(root is not null);
+        if (root is null) throw new ProtocolException(Receipt.FileAuditInvalid,Receipt.FileAuditScopeMismatch);
         void Path(string path) {
-            Require(AgentFileAuditPolicy.NormalizePath(path)==path);
-            string boundary=UnicodeLower.Lower(root!["path"]!.GetValue<string>()), candidate=UnicodeLower.Lower(path);
-            Require(candidate==boundary || candidate.StartsWith(boundary.TrimEnd('\\')+"\\",StringComparison.Ordinal));
+            try
+            {
+                string boundary=UnicodeLower.Lower(root["path"]!.GetValue<string>()), candidate=UnicodeLower.Lower(path);
+                if (AgentFileAuditPolicy.NormalizePath(path)==path
+                    && (candidate==boundary || candidate.StartsWith(boundary.TrimEnd('\\')+"\\",StringComparison.Ordinal))) return;
+            }
+            catch (AgentException) { }
+            throw new ProtocolException(Receipt.FileAuditInvalid,Receipt.FileAuditScopeMismatch);
         }
         Path(Text("path"));
         Require((operation=="rename")== (row["old_path"] is not null));

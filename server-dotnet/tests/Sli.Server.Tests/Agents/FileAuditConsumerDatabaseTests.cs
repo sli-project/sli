@@ -553,32 +553,56 @@ public class FileAuditConsumerDatabaseTests
                 <Provider Name="{{FileAuditPolicy.Provider}}"/><EventID>{{eventId}}</EventID><Keywords>{{(failure ? "0x8010000000000000" : "0x8020000000000000")}}</Keywords>
                 <EventRecordID>{{record}}</EventRecordID><TimeCreated SystemTime="{{now.UtcDateTime:O}}"/><Channel>Security</Channel></System>
                 <EventData><Data Name="SubjectUserSid">{{sid}}</Data><Data Name="SubjectLogonId">0x12</Data>
-                <Data Name="ProcessId">0x10</Data><Data Name="HandleId">0x{{(eventId == 4660 ? 110 : record):x}}</Data>{{fields}}</EventData></Event>
+                <Data Name="ProcessId">0x10</Data><Data Name="HandleId">0x{{(eventId == 4660 ? record - 1 : record):x}}</Data>{{fields}}</EventData></Event>
                 """;
             return new PacketRecord("event_xml", record, EventXml.Parse(xml,source,"localhost","Security"));
         }
-        var rows = Enumerable.Range(0,110).Select(index => Row(index+1,4663,
+        var rows = Enumerable.Range(0,110).Select(index => Row(index+30,4663,
             $"<Data Name=\"ObjectName\">{(index < 70 ? PathOf(index) : $@"{root}\new-{index}.txt")}</Data><Data Name=\"ObjectType\">File</Data><Data Name=\"AccessMask\">0x2</Data>")).ToList();
-        rows.Add(Row(111,4660,""));
-        rows.Add(Row(112,5145,$"<Data Name=\"ShareLocalPath\">{root}</Data><Data Name=\"RelativeTargetName\">item-0.txt</Data>", failure:true));
-        rows.Add(Row(113,4670,$"<Data Name=\"ObjectName\">{PathOf(0)}</Data><Data Name=\"ObjectType\">File</Data>"));
-        Cursor cursor = Cursor.Start("bookmark");
-        long? previous = null;
-        long sequence = 0;
+        rows.Add(Row(140,4660,""));
+        rows.Add(Row(141,5145,$"<Data Name=\"ShareLocalPath\">{root}</Data><Data Name=\"RelativeTargetName\">item-0.txt</Data>", failure:true));
+        rows.Add(Row(142,4670,$"<Data Name=\"ObjectName\">{PathOf(0)}</Data><Data Name=\"ObjectType\">File</Data>"));
+        Cursor Bookmark(long last) => new("bookmark",CanonicalJson.Serialize(new JsonObject
+            { ["record_id"] = last, ["bookmark"] = $"fixture-{last}", ["generation"] = host.ToString() }));
+        JsonObject Context() => new() { ["policy_revision"] = "2", ["filtered_count"] = 0, ["lost_count"] = 0, ["read_error"] = null };
+        // The rejected queue head contained 29 native Security records, all failed logons.
+        var wrongEvents = CollectionPacket.Make(source,"Security",host.ToString(),
+            new JsonObject { ["after_record_id"] = null, ["last_record_id"] = 29 },
+            Enumerable.Range(1,29).Select(record => Row(record,4625,"",failure:true)).ToArray(),"not_proven",Context(),now);
+        var cursor = Bookmark(29);
+        var badSample = new Sample(FileAuditPolicy.ModuleId,host.ToString(),"Security",host.ToString(),Cursor.Start("bookmark"),cursor,wrongEvents,
+            PolicyRevision:"2",ContinuityState:"not_proven",FilteredCount:0,LostCount:0);
+        var badPacket = Packets.Make(signer,Agent.ToString(),1,badSample,now);
+        JsonObject? originalRejection = null;
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            await using var tx = await app.BeginTransactionAsync(ct);
+            var rejection = await service.ReceiveAsync(app,tx,identity,cert,badPacket.ToJson(),ct);
+            Assert.Equal("rejected",rejection["status"]?.GetValue<string>());
+            Assert.Equal("event_id_not_file_audit",rejection["error_reason"]?.GetValue<string>());
+            Assert.True(rejection["transport_advanced"]?.GetValue<bool>());
+            if (originalRejection is not null) Assert.True(JsonNode.DeepEquals(originalRejection,rejection));
+            originalRejection = rejection;
+            await tx.CommitAsync(ct);
+        }
+        Assert.Equal(0,await Number(owner,"select count(*) from sli_agent_packet_inbox",ct));
+        Assert.Equal(0,await Number(owner,"select count(*) from sli_agent_receipts",ct));
+        long? previous = 29;
+        long sequence = 1;
         foreach (var batch in rows.Chunk(25))
         {
             long last = (long)batch[^1].RecordId!.Value;
-            var next = new Cursor("bookmark",CanonicalJson.Serialize(new JsonObject { ["record_id"] = last, ["bookmark"] = $"fixture-{last}", ["generation"] = host.ToString() }));
-            var context = new JsonObject { ["policy_revision"] = "2", ["filtered_count"] = 0, ["lost_count"] = 0, ["read_error"] = null };
+            var next = Bookmark(last);
+            var context = Context();
             // The last 40 files were created after the inventory. The signed
             // readback distinguishes them from directory writes.
-            var kinds = new JsonObject(batch.Where(row => row.RecordId > 70 && row.RecordId <= 110)
+            var kinds = new JsonObject(batch.Where(row => row.RecordId >= 100 && row.RecordId <= 139)
                 .Select(row => KeyValuePair.Create(row.RecordId!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture), (JsonNode?)JsonValue.Create("file"))));
             if (kinds.Count != 0) context["object_kinds"] = kinds;
             var payload = CollectionPacket.Make(source,"Security",host.ToString(),new JsonObject { ["after_record_id"] = previous, ["last_record_id"] = last },
                 batch,"not_proven",context,now);
             var sample = new Sample("sli.file-audit",host.ToString(),"Security",host.ToString(),cursor,next,payload,
-                PolicyRevision:"2",ContinuityState:"not_proven",FilteredCount:0,LostCount:0);
+                PolicyRevision:"2",ContinuityState:sequence == 1 ? "gap" : "not_proven",FilteredCount:0,LostCount:0);
             await using var tx = await app.BeginTransactionAsync(ct);
             var receipt = await service.ReceiveAsync(app,tx,identity,cert,Packets.Make(signer,Agent.ToString(),++sequence,sample,now).ToJson(),ct);
             Assert.True(receipt["status"]?.ToString() == "committed", receipt["error_code"]?.ToString());
@@ -588,7 +612,7 @@ public class FileAuditConsumerDatabaseTests
             cursor = next;
             previous = last;
         }
-        Assert.Equal(sequence, await Number(owner,"select count(*) from sli_agent_packet_inbox where imported_at is not null and envelope->>'module_id'='sli.file-audit'",ct));
+        Assert.Equal(sequence - 1, await Number(owner,"select count(*) from sli_agent_packet_inbox where imported_at is not null and envelope->>'module_id'='sli.file-audit'",ct));
         Assert.Equal(4, await Number(owner,"select count(distinct event_id) from sli_plugin_file_audit.observations where event_id in (4663,4660,5145,4670)",ct));
         Assert.Equal(110, await Number(owner,"select count(*) from sli_plugin_file_audit.actions where operation='write'",ct));
         Assert.Equal(3, await Number(owner,"select count(*) from sli_plugin_file_audit.actions where operation in ('delete','permissions') or outcome='failure'",ct));

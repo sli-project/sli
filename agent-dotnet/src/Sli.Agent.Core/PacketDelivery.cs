@@ -54,6 +54,7 @@ public sealed class PacketDelivery(IPacketQueue queue, IPacketTransport transpor
                 var prepared = queue.PrepareDelivery(packet, signer);
                 var receipt=await transport.PostPacketAsync(prepared, cancellationToken).ConfigureAwait(false);
                 accepted = queue.Acknowledge(prepared,receipt);
+                if (accepted && Receipt.IsFinalFileAuditRejection(prepared.Envelope,receipt)) continue;
                 if(accepted && Receipt.IsModuleDisabled(prepared.Envelope,receipt)) {
                     disabled.Add(module); blocked.Add(module);
                     continue;

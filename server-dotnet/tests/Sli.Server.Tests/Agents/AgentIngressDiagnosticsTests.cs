@@ -51,6 +51,21 @@ public sealed class AgentIngressDiagnosticsTests
     }
 
     [Fact]
+    public void FileAuditRejectionLogsOnlyAllowlistedReasons()
+    {
+        var log=new MemoryLogger(); var clock=new Clock();
+        var diagnostics=new AgentIngressDiagnostics(Path.GetTempPath(),log,clock);
+        var identity=new AgentIdentity(Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),Guid.NewGuid(),new string('a',64),"active");
+        var receipt=new JsonObject { ["status"]="rejected",["error_code"]=Receipt.FileAuditInvalid,
+            ["error_reason"]=Receipt.FileAuditWrongEvent };
+        Assert.True(diagnostics.RejectionAfterCommit(identity,Envelope("sli.file-audit"),receipt));
+        Assert.Contains("error_reason=event_id_not_file_audit",Assert.Single(log.Messages));
+        receipt["error_reason"]="untrusted-data";
+        Assert.True(diagnostics.RejectionAfterCommit(identity,Envelope("sli.file-audit"),receipt));
+        Assert.DoesNotContain("untrusted-data",log.Messages[1]);
+    }
+
+    [Fact]
     public void RejectionLimiterCapsGlobalWindowAndRecoversAfterInterval()
     {
         var log=new MemoryLogger(); var clock=new Clock();

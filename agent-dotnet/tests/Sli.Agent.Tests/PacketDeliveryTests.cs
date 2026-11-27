@@ -38,6 +38,64 @@ public sealed class FakeServer : IPacketTransport
 public sealed class PacketDeliveryTests : IDisposable
 {
     [Fact]
+    public async Task FinalFileAuditRejectionQuarantinesOnlyTheHeadAndContinuesWithAGap()
+    {
+        var first = Capture("","1",FileAuditPolicy.ModuleId);
+        var next = Capture("1","2",FileAuditPolicy.ModuleId);
+        var server = new FakeServer
+        {
+            Override = (packet,_) =>
+            {
+                if (packet.Envelope.PacketId == next.Envelope.PacketId)
+                {
+                    Assert.Equal("gap",packet.Envelope.ContinuityState);
+                    return null;
+                }
+                var refusal = Helpers.ExpiredReceipt(packet);
+                refusal["error_code"] = "agent_file_audit_packet_invalid";
+                refusal["error_reason"] = "event_id_not_file_audit";
+                refusal["transport_advanced"] = true;
+                return refusal;
+            }
+        };
+        var result = await new PacketDelivery(_queue,server,Helpers.Signer(_key)).DeliverOnceAsync();
+        Assert.True(result.Success);
+        Assert.Equal(1,result.Acknowledged);
+        Assert.Equal([1L,2L],server.Posted.Select(item => item.Sequence));
+        Assert.Empty(_queue.Pending());
+        _queue.Dispose();
+        using var restarted = Helpers.Queue(_directory);
+        Assert.Empty(restarted.Pending());
+        Assert.Equal((1L,"event_id_not_file_audit"),restarted.FileAuditQuarantine());
+        var quarantined = Assert.Single(Directory.GetFiles(_directory,"*.rejected"));
+        Assert.Equal(first.ToCanonical(),File.ReadAllText(quarantined));
+    }
+
+    [Theory]
+    [InlineData("transport_advanced")]
+    [InlineData("status")]
+    [InlineData("payload_sha256")]
+    public async Task UnconfirmedOrMismatchedFileAuditRejectionKeepsThePacketPending(string field)
+    {
+        var head = Capture("","1",FileAuditPolicy.ModuleId);
+        var server = new FakeServer
+        {
+            Override = (packet,_) =>
+            {
+                var refusal = Helpers.ExpiredReceipt(packet);
+                refusal["error_code"] = Receipt.FileAuditInvalid;
+                refusal["error_reason"] = Receipt.FileAuditWrongEvent;
+                refusal["transport_advanced"] = true;
+                refusal[field] = field == "status" ? "retry_later" : "wrong";
+                return refusal;
+            }
+        };
+        Assert.False((await new PacketDelivery(_queue,server).DeliverOnceAsync()).Success);
+        Assert.Equal(head.Envelope.PacketId,Assert.Single(_queue.Pending()).Envelope.PacketId);
+        Assert.Empty(Directory.GetFiles(_directory,"*.rejected"));
+    }
+
+    [Fact]
     public async Task DisabledModuleStopsDeliveryAcrossRestartAndPreservesOtherModules()
     {
         var first=Capture("","1"); Capture("1","2");

@@ -25,19 +25,37 @@ public sealed class AgentPacketService(TimeProvider clock, AgentInboxLimits limi
         var payload=packet!["payload"]!.AsObject(); var ledger=new AgentPacketLedger(connection,transaction);
         var now=Iso8601.Truncate(clock.GetUtcNow());
         JsonObject Reject(string code,string status="rejected") => AgentReceipt.Make(envelope,status,code,null);
+        JsonObject FileReject(string reason,bool advanced=false,string status="rejected")
+        {
+            var receipt=Reject(Receipt.FileAuditInvalid,status);
+            receipt["error_reason"]=reason;
+            receipt["transport_advanced"]=advanced;
+            return receipt;
+        }
         if (envelope.AgentId != identity.Id.ToString("D")) return Reject("agent_identity_mismatch");
         bool accounting=envelope.ModuleId==NpsPolicy.Accounting;
+        bool fileAudit=envelope.ModuleId==FileAuditPolicy.ModuleId;
+        var summary=fileAudit ? await ledger.SummaryAsync(envelope,ct) : null;
+        if (summary?["expired_envelope"] is JsonObject rejected && rejected["sequence"]?.GetValue<long>()==envelope.Sequence
+            && JsonRead.TryString(summary["expired_envelope_rejection"],out var priorReason) && Receipt.IsFileAuditRejectionReason(priorReason))
+            return Packets.Digest(rejected)==Packets.Digest(envelope.ToJson()) ? FileReject(priorReason,true) : Reject("agent_sequence_conflict");
         var existing=accounting ? await ledger.ExistingAsync(envelope,ct) : null;
-        bool filePermissions=envelope.ModuleId==FileAuditPolicy.ModuleId &&
+        bool filePermissions=fileAudit &&
             await AgentPolicyAssignments.FilePermissionsAvailableAsync(connection,transaction,ct);
+        bool fileActivity=filePermissions && await AgentPolicyAssignments.FileActivityAvailableAsync(connection,transaction,ct);
         using var fileAdmission=filePermissions ? AgentPolicyAssignments.HoldFilePermissions() : null;
         WorkstationJournalScope? workstationScope=null;
+        bool fileRevisionMismatch=false;
+        bool nativeActivity=filePermissions && !AgentFileAuditValidator.PermissionsOnly(payload);
+        bool invalidFileFormat=nativeActivity && !AgentFileAuditValidator.NativeEventsOnly(payload);
         if (existing is null && envelope.ModuleId!="sli.heartbeat")
         {
             bool enabled=filePermissions
                 ? await AgentPolicyAssignments.FilePermissionsAllowedAsync(connection,transaction,
                     identity.Id,envelope.PolicyRevision,true,ct)
                 : await AgentPolicyAssignments.ModuleEnabledAsync(connection,transaction,envelope.ModuleId,ct);
+            if (fileActivity && !enabled)
+                fileRevisionMismatch=await AgentPolicyAssignments.FilePermissionsAllowedAsync(connection,transaction,identity.Id,null,true,ct);
             if (envelope.ModuleId==WorkstationsModule.ModuleId && await WorkstationJournalAdmission.AvailableAsync(connection,transaction,ct))
             {
                 if(envelope.Channel=="workstations")
@@ -45,12 +63,8 @@ public sealed class AgentPacketService(TimeProvider clock, AgentInboxLimits limi
                         envelope.SourceInstanceId,envelope.PolicyRevision,ct);
                 enabled=workstationScope is not null;
             }
-            if(!enabled && !accounting) return Reject("module_disabled");
+            if(!enabled && !accounting && !fileRevisionMismatch) return Reject("module_disabled");
             if(filePermissions && fileAdmission is null) return Reject("file_audit_plugin_unavailable","retry_later");
-            if(filePermissions && !AgentFileAuditValidator.PermissionsOnly(payload)
-                && (!AgentFileAuditValidator.NativeEventsOnly(payload)
-                    || !await AgentPolicyAssignments.FileActivityAvailableAsync(connection,transaction,ct)))
-                return Reject("agent_file_audit_packet_invalid");
             var state=await ledger.AgentStateAsync(identity.Id,ct);
             if(accounting)
             {
@@ -65,9 +79,13 @@ public sealed class AgentPacketService(TimeProvider clock, AgentInboxLimits limi
         if (existing is not null)
         {
             if (existing.Value.Hash != Packets.Digest(envelope.ToJson())) return Reject("agent_sequence_conflict");
+            if (fileRevisionMismatch) return FileReject(Receipt.FileAuditRevisionMismatch);
+            if (invalidFileFormat) return FileReject(Receipt.FileAuditInvalidFormat);
+            if (nativeActivity && !fileActivity)
+                return FileReject(Receipt.FileAuditActivityUnavailable,status:"retry_later");
             var duplicate=existing.Value.Receipt; duplicate["status"]="duplicate"; return duplicate;
         }
-        var summary=await ledger.SummaryAsync(envelope,ct);
+        if (!fileAudit) summary=await ledger.SummaryAsync(envelope,ct);
         var expired=summary?["expired_envelope"] as JsonObject;
         if (expired?["sequence"]?.GetValue<long>() == envelope.Sequence)
             return Packets.Digest(expired)==Packets.Digest(envelope.ToJson()) ? Reject("agent_packet_expired") : Reject("agent_sequence_conflict");
@@ -174,18 +192,38 @@ public sealed class AgentPacketService(TimeProvider clock, AgentInboxLimits limi
             catch (Exception e) when (e is AgentException or ProtocolException or InvalidOperationException or ArgumentException)
             { return Reject("agent_workstations_packet_invalid"); }
         }
-        else if (envelope.ModuleId == FileAuditPolicy.ModuleId)
+        else if (fileAudit)
         {
             var state=await ledger.AgentStateAsync(identity.Id,ct);
+            var host=state.SourceHost ?? identity.HostId;
+            string? reason=null;
             try
             {
+                if (!AgentFileAuditValidator.MatchesHost(envelope,host))
+                    throw new ProtocolException(Receipt.FileAuditInvalid,Receipt.FileAuditHostMismatch);
+                if (fileRevisionMismatch)
+                    throw new ProtocolException(Receipt.FileAuditInvalid,Receipt.FileAuditRevisionMismatch);
                 var assignment=await AgentPolicyAssignments.ResolveAsync(connection,transaction,state.Assignments,identity.Id,envelope.ModuleId,envelope.PolicyRevision,ct)
-                    ?? throw new AgentException("file_audit_not_assigned");
+                    ?? throw new ProtocolException(Receipt.FileAuditInvalid,Receipt.FileAuditRevisionMismatch);
                 var policy=AgentFileAuditPolicy.Parse(assignment["config"] as JsonObject ?? new JsonObject());
-                rows=AgentFileAuditValidator.Validate(envelope,payload,policy,state.SourceHost ?? identity.HostId);
+                if (invalidFileFormat)
+                    throw new ProtocolException(Receipt.FileAuditInvalid,Receipt.FileAuditInvalidFormat);
+                if (nativeActivity && !fileActivity)
+                    return FileReject(Receipt.FileAuditActivityUnavailable,status:"retry_later");
+                rows=AgentFileAuditValidator.Validate(envelope,payload,policy,host,
+                    serverFileEventsOnly:nativeActivity,transportGap:transportGap);
             }
-            catch (Exception e) when (e is AgentException or ProtocolException or InvalidOperationException or ArgumentException)
-            { return Reject("agent_file_audit_packet_invalid"); }
+            catch (ProtocolException e) { reason=e.Reason ?? Receipt.FileAuditInvalidPayload; }
+            catch (Exception e) when (e is AgentException or InvalidOperationException or ArgumentException)
+            { reason=Receipt.FileAuditInvalidPayload; }
+            if (reason is not null)
+            {
+                // Only a signed packet on the bound, contiguous stream can move the transport tip.
+                // Its events and receipt never enter the accepted inbox or evidence ledger.
+                bool advanced=fileActivity && AgentFileAuditValidator.CanAdvanceRejected(envelope,host) && Follows(envelope,previous);
+                if (advanced) await ledger.ExpireAsync(envelope,previous,summary,ct,reason);
+                return FileReject(reason,advanced);
+            }
         }
         else if (envelope.ModuleId is NpsPolicy.Nps or NpsPolicy.Accounting)
         {
@@ -238,6 +276,7 @@ public sealed class AgentPacketService(TimeProvider clock, AgentInboxLimits limi
         if (envelope.ModuleId==AgentAdDcValidator.History && await ledger.HistoryPendingAsync(identity.Id,ct))
             return Reject("agent_history_pending","retry_later");
         var receipt=AgentReceipt.Make(envelope,"committed",null,now);
+        if (fileAudit && transportGap) receipt["transport_gap"]=true;
         string? quota=snapshot is null
             ? await AgentInboxQuota.CheckAsync(connection,transaction,envelope,payload,rows,receipt,limits,diagnostics,ct)
             : await SnapshotIngress.CheckQuotaAsync(connection,transaction,snapshot,receipt,limits,ct);

@@ -10,6 +10,26 @@ namespace Sli.Agent.Protocol;
 public static class Receipt
 {
     public const string ContractId = "sli.agent-receipt.v1";
+    public const string FileAuditInvalid = "agent_file_audit_packet_invalid";
+    public const string FileAuditWrongEvent = "event_id_not_file_audit";
+    public const string FileAuditScopeMismatch = "scope_mismatch";
+    public const string FileAuditHostMismatch = "host_mismatch";
+    public const string FileAuditRevisionMismatch = "revision_mismatch";
+    public const string FileAuditInvalidPayload = "invalid_payload";
+    public const string FileAuditInvalidFormat = "invalid_record_format";
+    public const string FileAuditActivityUnavailable = "file_activity_unavailable";
+
+    public static string? FileAuditRejectionReason(JsonNode? node) =>
+        node is JsonObject receipt && ErrorCode(receipt) == FileAuditInvalid
+        && JsonRead.TryString(receipt["error_reason"],out var reason) && IsFileAuditRejectionReason(reason) ? reason : null;
+
+    public static bool IsFileAuditRejectionReason(string? reason) => reason is FileAuditWrongEvent or FileAuditScopeMismatch
+        or FileAuditHostMismatch or FileAuditRevisionMismatch or FileAuditInvalidPayload or FileAuditInvalidFormat or FileAuditActivityUnavailable;
+
+    public static bool IsFinalFileAuditRejection(Envelope envelope, JsonNode? node) =>
+        envelope.ModuleId == "sli.file-audit" && IsRefusal(envelope,node,FileAuditInvalid)
+        && FileAuditRejectionReason(node) is not null
+        && node!["transport_advanced"] is JsonValue advanced && advanced.TryGetValue<bool>(out var confirmed) && confirmed;
 
     /// <summary>An exact permanent refusal permits discarding this packet, never claiming delivery.</summary>
     public static bool IsExpired(Envelope envelope, JsonNode? node) => IsRefusal(envelope,node,"agent_packet_expired");

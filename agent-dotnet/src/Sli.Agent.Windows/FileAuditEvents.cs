@@ -33,7 +33,9 @@ internal static class FileAuditEvents
     {
         var id = row["event_id"]?.GetValue<int>() ?? -1;
         var provider = id == 1102 ? "Microsoft-Windows-Eventlog" : FileAuditPolicy.Provider;
-        var known = FileAuditPolicy.Events.Contains(id) || FileAuditPolicy.ContextEvents.Contains(id) || p.Value["optional_events"]!.GetValue<bool>() && id is 4658 or 4664;
+        var known = p.Workstation
+            ? FileAuditPolicy.Events.Contains(id) || FileAuditPolicy.ContextEvents.Contains(id) || p.OptionalEvents && id is 4658 or 4664
+            : p.IsServerFileEvent(id);
         if (row["provider_name"]?.ToString() != provider || !known) return (false, [], null);
         string? path = null;
         JsonObject[] scopes = [];
@@ -69,7 +71,7 @@ internal static class FileAuditEvents
         }
         if (FileAuditPolicy.ContextEvents.Contains(id)) return (id != 4624 || data.GetValueOrDefault("LogonType") == "3",scopes,path);
         if (id == 4660) return (true,scopes,path);
-        if (scopes.Length == 0 && id is 4656 or 4659 or 4663 or 4658 && Number(data.GetValueOrDefault("HandleId")) is > 0) return (true,[],null);
+        if (scopes.Length == 0 && p.Workstation && id is 4656 or 4659 or 4663 or 4658 && Number(data.GetValueOrDefault("HandleId")) is > 0) return (true,[],null);
         if (scopes.Length == 0) return (false,scopes,path);
         var flags = Number(row["keywords"]?.ToString()) ?? 0;
         var failure = (flags & 0x10000000000000) != 0 && (flags & 0x20000000000000) == 0;
@@ -77,6 +79,13 @@ internal static class FileAuditEvents
     }
     private static ulong? Number(string? text) => text is not null && ulong.TryParse(text.StartsWith("0x",StringComparison.OrdinalIgnoreCase) ? text[2..] : text,
         text.StartsWith("0x",StringComparison.OrdinalIgnoreCase) ? NumberStyles.HexNumber : NumberStyles.Integer,CultureInfo.InvariantCulture,out var n) ? n : null;
+
+    internal static (string Sid, ulong Logon, ulong Process, ulong Handle)? Handle(Dictionary<string,string> data) =>
+        data.GetValueOrDefault("SubjectUserSid") is { Length: > 0 } sid
+        && Number(data.GetValueOrDefault("SubjectLogonId")) is { } logon
+        && Number(data.GetValueOrDefault("ProcessId")) is { } process
+        && Number(data.GetValueOrDefault("HandleId")) is > 0 and var handle
+            ? (sid,logon,process,handle) : null;
 
     public static JsonObject? PermissionsAction(JsonObject row, Dictionary<string,string> data, JsonObject[] scopes, string? path)
     {
