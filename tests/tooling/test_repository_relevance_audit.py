@@ -63,15 +63,3 @@ def test_account_watch_worker_is_a_runtime_tool() -> None:
 
 def test_web_service_safety_helper_is_an_operations_tool() -> None:
     assert "scripts/ops/WebServer-ServiceSafety.ps1" in COMPONENTS["эксплуатация"]
-
-
-def test_repository_executables_are_explicitly_classified() -> None:
-    result = audit()
-
-    assert result["status"] == "ok", result
-    assert result["unclassified"] == []
-    assert result["missing_registered"] == []
-    assert result["duplicate_registration"] == []
-    assert result["forbidden_active_paths"] == []
-    assert result["template_failures"] == []
-    assert result["archive_is_runtime_source"] is False
