@@ -98,7 +98,7 @@ export function fileServerColumns(view: FileServerView, declared: ReportColumnDt
   ];
   const count = (row: FileAuditRow) => row.permission_changes != null ? String(row.permission_changes)
     : row.permission_change_count_min != null && row.permission_change_count_max != null
-      ? String(row.permission_change_count_min) + '–' + String(row.permission_change_count_max) : t("file-audit.resources.notCollected");
+      ? String(row.permission_change_count_min) + '–' + String(row.permission_change_count_max) : "—";
   return [
     { key: "source_name", label: t("file-audit.workspace.server"), render: row => {
       const name = hostText(row.source_name, 256);
@@ -123,8 +123,8 @@ export function fileServerColumns(view: FileServerView, declared: ReportColumnDt
       </div> },
     { key: "permission_changes", label: t("file-audit.workspace.permission_changes"), kind: "number", render: row =>
       fileAuditShare(row) && Number(row.permission_change_groups) > 0
-        ? <a href={hrefFor("permission-changes", row)} onClick={event => event.stopPropagation()}>{count(row)}</a> : count(row) },
-    { ...when("observed_at"), label: t("file-audit.workspace.snapshot"), render: row => <ResourceSnapshot row={row}/> },
+        ? <a href={hrefFor("permission-changes", row)} onClick={event => event.stopPropagation()}>{count(row)}</a> : <span>{count(row)}</span> },
+    { ...when("observed_at"), label: t("file-audit.resources.permissionsAsOf"), render: row => <ResourceSnapshot row={row}/> },
   ];
 }
 
@@ -136,7 +136,7 @@ function ResourceBatch({ receivedAt }: { receivedAt: FileAuditRow["audit_receive
 
 function ResourceSnapshot({ row }: { row: FileAuditRow }) {
   const { formatCell } = useDateFormatters();
-  return <span>{row.snapshot_id && row.observed_at ? formatCell(row.observed_at, "datetime") : t("file-audit.resources.notCollected")}</span>;
+  return <span>{row.snapshot_id && row.observed_at ? formatCell(row.observed_at, "datetime") : "—"}</span>;
 }
 
 const resourceAuditReasons: Record<string, MessageKey> = {

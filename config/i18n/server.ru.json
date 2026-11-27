@@ -1586,7 +1586,7 @@
   "events.semantic.Security:Microsoft-Windows-Security-Auditing:4672.title": "Наблюдается сессия со специальными привилегиями",
   "events.semantic.Security:Microsoft-Windows-Security-Auditing:4672.summary": "4672 подтверждает наблюдение сессии со специальными привилегиями, но не доказывает момент или факт повышения прав.",
   "events.semantic.Security:Microsoft-Windows-Security-Auditing:4688.title": "Запущен процесс",
-  "events.semantic.Security:Microsoft-Windows-Security-Auditing:6416.title": "Обнаружено внешнее устройство",
+  "events.semantic.Security:Microsoft-Windows-Security-Auditing:6416.title": "Подключено внешнее устройство",
   "events.semantic.Security:Microsoft-Windows-Security-Auditing:4688.summary": "Source-native process lifecycle evidence; an end exists only when exact compatible 4689 is observed before PID reuse.",
   "events.semantic.Security:Microsoft-Windows-Security-Auditing:4689.title": "Process ended",
   "events.semantic.Security:Microsoft-Windows-Security-Auditing:4689.summary": "Source-native process lifecycle evidence; an end exists only when exact compatible 4689 is observed before PID reuse.",
