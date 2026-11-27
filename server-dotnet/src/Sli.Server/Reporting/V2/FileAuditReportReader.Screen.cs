@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
+using Sli.Server.Agents.FileAudit;
 using Sli.Server.Problems;
 using Sli.Server.Semantic;
 
@@ -26,9 +27,9 @@ public sealed partial class FileAuditReportReader
     {
         if (rows.Count == 0) return;
         var receipts = await session.QueryAsync("""
-            select root->>'id' as id, accepted.received_at
+            select root->>'id' as id, accepted.received_at, agent.current_version, agent.check_version
             from jsonb_array_elements($1::jsonb) as r(root)
-            cross join lateral (
+            left join lateral (
                 select receipt.received_at
                 from public.sli_agent_receipts receipt
                 join public.sli_agent_packet_inbox inbox using(packet_id)
@@ -40,11 +41,29 @@ public sealed partial class FileAuditReportReader
                         and (lower(observation->>'path')=lower(root->>'path')
                             or starts_with(lower(observation->>'path'),rtrim(lower(root->>'path'),chr(92))||chr(92))))
                 order by receipt.sequence desc limit 1
-            ) accepted
+            ) accepted on true
+            left join lateral (
+                select a.rights_probe->>'agent_version' as current_version, scope->>'agent_version' as check_version
+                from public.sli_agents a
+                cross join lateral (select a.file_audit->'scopes'->(root->>'collection_scope_id') as scope) s
+                where a.id=(root->>'agent_id')::uuid and a.status='active'
+                  and a.file_audit#>>'{request,command,action}'='check'
+                  and a.file_audit#>>'{request,command,command_id}'=root#>>'{audit_receipt,command_id}'
+                  and scope->>'receipt_id'=root#>>'{audit_receipt,receipt_id}'
+                  and root#>>'{audit_receipt,state}'='failed'
+                  and root#>>'{audit_receipt,reason_code}'='native_unavailable'
+            ) agent on true
             """, ct, rows);
         var byId = receipts.OfType<JsonObject>().ToDictionary(row => Text(row, "id")!);
         foreach (var row in rows.OfType<JsonObject>())
-            if (byId.TryGetValue(Text(row, "id")!, out var accepted)) row["audit_received_at"] = accepted["received_at"]?.DeepClone();
+        {
+            if (!byId.TryGetValue(Text(row, "id")!, out var detail)) continue;
+            if (detail["received_at"] is { } stamp) row["audit_received_at"] = stamp.DeepClone();
+            var current = FileAuditResult.ReportedAgentVersion(Text(detail, "current_version"));
+            var checkedWith = FileAuditResult.ReportedAgentVersion(Text(detail, "check_version")) ?? current;
+            if (current >= FileAuditResult.MinimumNativeCheckVersion || row["audit_receipt"] is not JsonObject receipt) continue;
+            receipt["check_agent_requirement"] = FileAuditResult.CheckAgentRequirement(checkedWith);
+        }
     }
 
     private static async Task<JsonObject> ReadScreenActions(ISemanticSession session, ReportQueryContext context, string tab,

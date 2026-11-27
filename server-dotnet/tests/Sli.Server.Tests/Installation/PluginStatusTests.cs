@@ -56,6 +56,30 @@ public sealed class PluginStatusTests
         Assert.Equal(1, item["source_count"]!.GetValue<int>());
         Assert.Equal("FS01", Assert.Single(item["source_names"]!.AsArray())!.GetValue<string>());
         Assert.Equal("no_sources", item["status"]!["state"]!.GetValue<string>());
+        Assert.Equal("no_folders", item["status"]!["reason"]!.GetValue<string>());
+        Assert.Equal("select_file_folders", item["status"]!["next_action"]!.GetValue<string>());
+    }
+
+    [Theory]
+    [InlineData("sli.file-audit", "connect_file_server")]
+    [InlineData("sli.workstations", "install_workstation_agent")]
+    [InlineData("sli.remote-access", "connect_nps")]
+    [InlineData("sli.sigma", "connect_sigma_events")]
+    public async Task Enabled_plugins_with_no_sources_have_a_product_specific_action(string id, string action)
+    {
+        var plugin = ScriptDatabase.State();
+        plugin["plugin_id"] = id;
+        var database = new ScriptDatabase { Override = (sql, _) => sql.Contains("read_plugin_states_v1")
+            ? new JsonArray(plugin) : sql.Contains("as telemetry") ? ScriptDatabase.Rows("""[{"has_source":false}]""") : null };
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            { ["modules:preview"] = "true" }).Build();
+        var service = new InstallationService(database, new InstallationPackages(configuration), configuration);
+        var response = await service.DispatchAsync("GET", "/api/v1/plugins", new(),
+            new Principal("session", 1, "admin", "fixture"), null, false, TestContext.Current.CancellationToken);
+        var item = Assert.Single(response["items"]!.AsArray())!;
+        Assert.True(item["enabled"]!.GetValue<bool>());
+        Assert.Equal("no_sources", item["status"]!["reason"]!.GetValue<string>());
+        Assert.Equal(action, item["status"]!["next_action"]!.GetValue<string>());
     }
 
     [Theory]

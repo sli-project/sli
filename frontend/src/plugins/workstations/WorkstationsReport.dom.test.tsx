@@ -18,6 +18,7 @@ const requests: URL[] = [], invalidRequests: string[] = [];
 let revision = "initial", denied = false, detailMode: "normal" | "denied" | "events_denied" | "malformed" = "normal";
 let client: QueryClient;
 let directoryOnly = false;
+let fleetEmpty = false;
 const station = (index = 0) => ({ station_id: index ? `00000000-0000-4000-8000-${String(index + 2).padStart(12, "0")}` : stationId,
   agent_key: index ? `00000000-0000-4000-8000-${String(index + 2).padStart(12, "0")}` : stationId,
   transport_agent_id: "00000000-0000-4000-8000-000000000003", source_instance_id: index ? `10000000-0000-4000-8000-${String(index).padStart(12, "0")}` : source,
@@ -50,6 +51,7 @@ const detailResult = (): StationDetailResult => ({ ...result({ items: [station()
 beforeEach(() => {
   denied = false; detailMode = "normal"; revision = "initial"; requests.length = 0; invalidRequests.length = 0;
   directoryOnly = false;
+  fleetEmpty = false;
   localStorage.clear();
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
   vi.spyOn(app, "useEffectiveAccess").mockImplementation(() => ({ subject: { type: "session", id: 7 }, evaluated_at_utc: revision,
@@ -66,6 +68,7 @@ beforeEach(() => {
     if (unknown.length) { invalidRequests.push(...unknown); return new Response(JSON.stringify({ error: "report_parameter_unknown" }), { status: 400 }); }
     if (denied) return new Response(JSON.stringify({ error: "workstation_access_denied" }), { status: 403 });
     if (url.pathname.includes("/detail")) return new Response(JSON.stringify(detailResult()));
+    if (fleetEmpty) return new Response(JSON.stringify(result({ state: "empty", items: [], filtered_count: 0 })));
     if (directoryOnly) {
       const items = Array.from({ length: 3 }, (_, index) => ({
         station_id: `ws:ad:${index + 1}`, display_name: `WS-AD-${index + 1}`, operating_system: "Windows 11",
@@ -90,6 +93,13 @@ function mount() {
   const view = render(page());
   return { ...view, refresh: () => view.rerender(page()) };
 }
+
+it.each([false, true])("gives the applicable action for an empty fleet with filters=%s", async (filtered) => {
+  fleetEmpty = true;
+  if (!filtered) window.history.replaceState(null, "", "/app/report/workstations.overview");
+  mount();
+  expect(await screen.findByText(t(filtered ? "workstations.workspace.fleet_empty_filtered" : "workstations.workspace.fleet_empty"))).toBeTruthy();
+});
 
 it("shows all three AD workstations before an agent is installed", async () => {
   setLocale("ru"); directoryOnly = true;
