@@ -8,7 +8,7 @@ import { FieldError } from "./gate";
 import { formatDateTime } from "../../shared/date-time";
 import { useEffectiveAccess, useTimeZone } from "../App";
 import { AccessRequestStateView, useAccessRequest } from "../access-request-state";
-import { fileServersUnassigned, moduleLastData, moduleName, moduleRows, moduleSources, moduleStatusId, moduleStatusText } from "./plugin-status";
+import { moduleLastData, moduleName, moduleRows, moduleSources, moduleStatusId, moduleStatusText } from "./plugin-status";
 
 export function PluginsRoute() {
   const access = useEffectiveAccess();
@@ -75,12 +75,11 @@ function PluginActions({ item, canManage }: { item: PluginState; canManage: bool
       default: return t("plugins.changeFailed");
     }
   })();
-  const agentSetup = canManage && fileServersUnassigned(item);
   return <>
-    <a className="sli-ds-button" href={agentSetup ? "/app/agents" : `/app/admin/plugins/${item.plugin_id}`}>
-      {t(agentSetup ? "plugins.enable" : "plugins.open")}
+    <a className="sli-ds-button" href={`/app/admin/plugins/${item.plugin_id}`}>
+      {t("plugins.open")}
     </a>
-    {canManage && !agentSetup ? <>{" "}<Button
+    {canManage ? <>{" "}<Button
       disabled={change.isPending || !item.installed || (!item.enabled && (!item.configured || item.component_runtime !== "stopped"))}
       onClick={() => {
         if (item.enabled) setConfirming(item);

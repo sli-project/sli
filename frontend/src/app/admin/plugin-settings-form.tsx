@@ -1,6 +1,6 @@
 import { Checkbox } from "../../design-system/Checkbox";
 import { Select } from "../../design-system/Select";
-import { useId, useState } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, ApiResponseError } from "../../api/client";
 import type { PluginSettings, SettingsSchema } from "../../api/plugin-settings-types";
@@ -62,7 +62,7 @@ function ValueEditor({ node, value, onChange, label, id, describedBy }: {
     onChange={(event) => onChange(numeric ? event.target.value === "" ? "" : Number(event.target.value) : event.target.value === "" && types.includes("null") && !node["x-secret"] ? null : event.target.value)}/></>;
 }
 
-export function PluginSettingsForm({ data, canEdit }: { data: PluginSettings; canEdit: boolean }) {
+export function PluginSettingsForm({ data, canEdit, emptyAction }: { data: PluginSettings; canEdit: boolean; emptyAction: ReactNode }) {
   const client = useQueryClient();
   const prefix = useId();
   const properties = Object.entries(data.schema.properties ?? {});
@@ -113,14 +113,15 @@ export function PluginSettingsForm({ data, canEdit }: { data: PluginSettings; ca
       if (saved) setMessage(t("pluginPage.partialSave", { count: saved }));
     } finally { setBusy(false); }
   }}>
-    {!properties.length ? <p>{t("pluginPage.noSettings")}</p> : <fieldset disabled={!canEdit || busy}>
+    {!properties.length ? <p>{t("pluginPage.noSettings")} {data.schema["x-core-settings"]?.length
+      ? <a href="/app/platform-settings">{t("pluginPage.coreSettings")}</a> : emptyAction}</p> : <fieldset disabled={!canEdit || busy}>
       <legend>{t(data.plugin_id === "sli.ad" ? "pluginPage.sharedDomains" : "pluginPage.basic")}</legend>
       {fields(false)}
       {properties.some(([, node]) => node["x-group"] === "advanced") ? <details className="sli-ds-filters__additional"><summary>{t("pluginPage.advanced")}</summary>{fields(true)}</details> : null}
       <Button type="submit" disabled={!changed.length}>{t(busy ? "plugins.saving" : "platformSettings.save")}</Button>
     </fieldset>}
     {data.plugin_id === "sli.ad" ? <p>{t("pluginPage.noOverrides")}</p> : null}
-    {data.schema["x-core-settings"]?.length ? <a href="/app/platform-settings">{t("pluginPage.coreSettings")}</a> : null}
+    {properties.length > 0 && data.schema["x-core-settings"]?.length ? <a href="/app/platform-settings">{t("pluginPage.coreSettings")}</a> : null}
     {error ? <p role="alert">{error}</p> : null}{message ? <p role="status">{message}</p> : null}
   </form>;
 }

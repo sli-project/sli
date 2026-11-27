@@ -121,7 +121,7 @@ internal sealed record AgentConsolePackage(Uri Origin, string Root, string Pin, 
     internal static string PackagePath(IConfiguration config) =>
         config["Sli:AgentInstallerPath"] ?? Path.Combine(config["Sli:Release:PackageRoot"] ?? "/opt/sli/current", "agent/SliAgent.msi");
 
-    internal static async Task<string> ReadVersionAsync(string path, string digest, CancellationToken ct)
+    private static async Task<string> ReadVersionAsync(string path, string digest, CancellationToken ct)
     {
         FileStream metadata;
         try { metadata = File.OpenRead(path + ".json"); }

@@ -57,9 +57,7 @@ internal sealed class FileAuditControlService(IAgentControlAudit audit)
             ["command"]=command.DeepClone(),["state"]=retryPending ? JsonValue.Create("pending") : state["state"]!.DeepClone(),
             ["scopes"]=scopes.DeepClone(),["folders"]=folders,
             ["check_agent_requirement"] = serverCheck && !retryPending && incompatible is not null
-                && failedVersion is not null && failedVersion < FileAuditResult.MinimumNativeCheckVersion
-                ? new JsonObject { ["agent_version"] = failedVersion.ToString(),
-                    ["minimum_version"] = FileAuditResult.MinimumNativeCheckVersion.ToString() } : null,
+                ? FileAuditResult.CheckAgentRequirement(failedVersion) : null,
             ["reported_at"]=state["reported_at"]?.DeepClone(),["may_own_audit"]=state["may_own_audit"]!.DeepClone(),
             ["last_event"]=JsonRead.TryString(lastEvent?["collection_scope_id"],out var eventScope) && scopeIds.Contains(eventScope) ? lastEvent!.DeepClone() : null
         });

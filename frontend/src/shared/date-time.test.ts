@@ -1,9 +1,30 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { localeRuntime, setLocale } from "../i18n";
-import { dayKey, formatDate, formatDateTime, formatRelative, localDateTimeToUtc, utcToLocalDateTimeInput } from "./date-time";
+import { dayKey, formatDate, formatDateTime, formatRelative, formatTableTime, localDateTimeToUtc, utcToLocalDateTimeInput } from "./date-time";
 
 beforeEach(() => { vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined); });
+
+describe("formatTableTime", () => {
+  afterEach(() => { vi.useRealTimers(); setLocale("ru"); });
+
+  it("includes a date only across calendar days in the selected zone", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-26T18:00:00Z"));
+    setLocale("ru");
+    expect(formatTableTime("2026-11-26T17:04:05Z", "Asia/Bangkok")).toBe("00:04:05");
+    expect(formatTableTime("2026-11-26T01:04:05Z", "Asia/Bangkok")).toBe("26.11 08:04");
+    setLocale("en");
+    expect(formatTableTime("2026-11-26T01:04:05Z", "Asia/Bangkok")).toBe("Nov 26 08:04");
+  });
+
+  it("preserves missing values and the unavailable timezone message", () => {
+    expect(formatTableTime(null, "UTC")).toBe("—");
+    expect(formatTableTime("2026-11-26T01:04:05Z", "invalid:bad")).toBe(
+      formatDateTime("2026-11-26T01:04:05Z", "invalid:bad"),
+    );
+  });
+});
 
 describe("formatDateTime", () => {
   it("uses the selected IANA time zone", () => {

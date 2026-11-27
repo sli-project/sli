@@ -12,10 +12,6 @@ test('agents list, computer card and registration panel', async ({ page }, testI
     id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
     host_id: `00000000-0000-4000-8001-${String(index + 1).padStart(12, '0')}`,
     host_name: `dc${index + 1}.example.test`, status: index === 19 ? 'disabled' : 'active', last_seen: observed,
-    agent_version: index === 1 ? '26.0.185' : '26.0.136',
-    update: index === 0 ? { status: 'updating', version: '26.0.185', reason: null }
-      : index === 1 ? { status: 'updated', version: '26.0.185', reason: null }
-      : index === 2 ? { status: 'failed', version: '26.0.185', reason: 'agent_update_verification_failed' } : null,
     assigned_modules: [{ module_id: 'sli.windows.ad-dc', enabled: true, config: { channels: { Security: true } } }],
     policy_revision: 2, applied_policy_revision: 2, applied_collection_state: 'active',
     collection_policy: { state: 'active', interval_seconds: 60, batch_size: 32, rate_limit_per_minute: 120, spool_max_bytes: 67108864, manage_windows_audit: true },
@@ -39,8 +35,8 @@ test('agents list, computer card and registration panel', async ({ page }, testI
     else if (path === '/api/v1/access/effective') body = { subject: { type: 'user', id: 1, username: 'fixture-admin' }, platform_owner: true, capabilities: ['access.manage'], reports: [] };
     else if (path === '/api/v2/reports') body = { contract_id: 'sli.report-catalog.v2', navigation, items: [] };
     else if (path === '/api/v1/overview') body = {};
-    else if (path === '/api/v1/setup/status') body = {};
     else if (path === '/api/v1/admin/agents') body = { items };
+    else if (path === '/api/v1/setup/status') body = { domains: [] };
     else if (path === '/api/v1/admin/agent-install-package' && route.request().method() === 'GET')
       body = { server_url: serverUrl, package_url: `${downloadPath}?revision=${revision}`, sha256: 'a'.repeat(64) };
     else if (path === downloadPath && new URL(route.request().url()).searchParams.get('revision') === revision) {
@@ -55,12 +51,9 @@ test('agents list, computer card and registration panel', async ({ page }, testI
   await page.goto('/app/agents');
   const table = page.getByRole('table', { name: 'Агенты' });
   await expect(table.getByText('dc1.example.test', { exact: true })).toBeVisible({ timeout: 20000 });
-  for (const value of ['26.0.136 · Обновляется до 26.0.185', '26.0.185 · Обновлён', '26.0.136 · Не удалось: проверка MSI не пройдена']) {
-    const version = table.getByRole('cell', { name: value, exact: true });
-    await expect(version).toBeVisible();
-    expect(await version.evaluate(cell => cell.scrollWidth <= cell.clientWidth), value).toBe(true);
-  }
-  const auditIssue = table.getByText('Включите аудит в политике домена', { exact: true });
+  const dcRow = table.getByRole('row').filter({ has: page.getByRole('cell', { name: 'dc1.example.test', exact: true }) });
+  await expect(dcRow.getByRole('cell', { name: 'Управляется групповой политикой · Audit Policy', exact: true })).toBeVisible();
+  const auditIssue = dcRow.getByRole('cell', { name: 'Включите аудит в политике домена', exact: true });
   await expect(auditIssue).toBeVisible();
   expect(await auditIssue.evaluate(cell => cell.scrollWidth <= cell.clientWidth)).toBe(true);
   await expect(table.locator('tbody details')).toHaveCount(0);

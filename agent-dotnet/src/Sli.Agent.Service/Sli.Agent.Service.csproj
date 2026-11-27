@@ -5,7 +5,6 @@
     <AssemblyName>SliAgent</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
-    <InternalsVisibleTo Include="Sli.Agent.Tests" />
     <ProjectReference Include="..\Sli.Agent.Windows\Sli.Agent.Windows.csproj" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" />

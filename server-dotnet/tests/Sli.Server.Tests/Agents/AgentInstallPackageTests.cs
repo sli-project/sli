@@ -61,13 +61,9 @@ public sealed class AgentInstallPackageTests
         using var rootKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         using var issuerKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         using var serverKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var rootRequest = new CertificateRequest("CN=Test CA", rootKey, HashAlgorithmName.SHA256);
-        rootRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, true, 1, true));
-        rootRequest.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign, true));
+        var rootRequest = AgentEnrollmentTests.CaRequest("CN=Test CA", rootKey, 1);
         using var root = rootRequest.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(2));
-        var issuerRequest = new CertificateRequest("CN=Test issuer", issuerKey, HashAlgorithmName.SHA256);
-        issuerRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, true, 0, true));
-        issuerRequest.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign, true));
+        var issuerRequest = AgentEnrollmentTests.CaRequest("CN=Test issuer", issuerKey, 0);
         using var issuer = issuerRequest.Create(root, DateTimeOffset.UtcNow.AddHours(-1), DateTimeOffset.UtcNow.AddDays(1), RandomNumberGenerator.GetBytes(16));
         var serverRequest = new CertificateRequest("CN=agents.example.test", serverKey, HashAlgorithmName.SHA256);
         var san = new SubjectAlternativeNameBuilder();

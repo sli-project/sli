@@ -78,10 +78,11 @@ public class CoreJobPersistentProcessTests
         int starts = 0;
         await using var children = new CoreJobProcess.Persistent((_, purpose) => Probe(purpose, starts++ == 0 ? mode : "success"));
         var job = CoreJobTests.Job();
-        if (mode == "memory") job["budget"]!["memory_bytes"] = 1L;
+        // Only the memory case should trip the watchdog. The protocol cases exercise frame validation.
+        job["budget"]!["memory_bytes"] = mode == "memory" ? 1L : long.MaxValue;
         var error = await Assert.ThrowsAnyAsync<Exception>(() => children.RunAsync(job, "handler", TimeSpan.Zero, null, TestContext.Current.CancellationToken));
         Assert.Equal(expected, error.Message);
-        job["budget"]!["memory_bytes"] = 268435456L;
+        job["budget"]!["memory_bytes"] = long.MaxValue;
         Assert.Equal("success", (await children.RunAsync(job, "handler", TimeSpan.Zero, null, TestContext.Current.CancellationToken)).Text("status"));
         Assert.Equal(2, starts);
     }
