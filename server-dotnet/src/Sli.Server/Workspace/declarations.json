@@ -263,7 +263,7 @@
     {
       "key": "workstations.logons",
       "title": "Входы на станциях",
-      "description": "Наблюдаемые события; отсутствие строк не подтверждает отсутствие активности.",
+      "description": "",
       "section": "reports/workstations",
       "section_title": "Рабочие станции",
       "owner_id": "sli.workstations",
@@ -274,7 +274,7 @@
     {
       "key": "workstations.processes",
       "title": "Процессы и службы",
-      "description": "Наблюдаемые события; отсутствие строк не подтверждает отсутствие активности.",
+      "description": "",
       "section": "reports/workstations",
       "section_title": "Рабочие станции",
       "owner_id": "sli.workstations",
@@ -285,7 +285,7 @@
     {
       "key": "workstations.usb",
       "title": "Съёмные носители",
-      "description": "Наблюдаемые события; отсутствие строк не подтверждает отсутствие активности.",
+      "description": "",
       "section": "reports/workstations",
       "section_title": "Рабочие станции",
       "owner_id": "sli.workstations",

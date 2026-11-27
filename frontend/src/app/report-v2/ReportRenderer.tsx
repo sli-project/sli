@@ -622,7 +622,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   const computerEmptyView = computerLogons && ready && first?.state === "empty" ?
     <DataTable caption={definition.title} columns={computerTable} rows={[]} rowKey={rowKey} compact
       emptyContent={t("reports.states.empty.text")} showFooter={false}/> : computerReport && view.key === "changes" && ready
-    ? state === "empty" || state === "ok"
+    ? first && !data.isPlaceholderData && (state === "empty" || state === "ok" || state === "partial" || state === "stale")
       ? <StateView state="empty" titleMessage={{ code: "reports.computers.changes_empty", params: {} }} detail={<></>}/>
       : state === "not_collected" ? <p role="status">{t("reports.states.not_collected.title")}</p> : null
     : computerReport ? computerEmpty() : null;

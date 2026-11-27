@@ -41,8 +41,12 @@ internal static class AdAgentRegistrySql
                 order by recorded.id desc limit 1
             ) registered_dc on true
             left join servers pinned_dc on pinned_dc.id::text=issued.server_id
-            left join sli_agent_snapshot_bindings snapshot on snapshot.agent_id=a.id and snapshot.module_id='sli.ad-snapshot'
-            left join domains snapshot_domain on snapshot_domain.domain_sid=snapshot.domain_sid and not snapshot_domain.is_archived
+            left join lateral (
+                select min(d.id) as id,count(*) as matches
+                from sli_agent_snapshot_bindings snapshot
+                join domains d on d.domain_sid=snapshot.domain_sid and not d.is_archived
+                where snapshot.agent_id=a.id and snapshot.module_id='sli.ad-snapshot'
+            ) snapshot_domain on true
             cross join lateral (
                 select lower(rtrim(btrim(a.registration_host_name),'.$')) as host,
                        coalesce(snapshot_domain.id,registered_dc.domain_id,pinned_dc.domain_id) as domain_id
@@ -58,6 +62,7 @@ internal static class AdAgentRegistrySql
                   and sam.alias_type='sam_account_name' and sam.normalized_value=split_part(registration.host,'.',1)||'$'
                 cross join lateral (select lower(rtrim(v.attributes_json->'attributes'->>'dns_host_name','.')) as dns) host
                 where b.entity_id is null and not exists(select 1 from bindings known where known.agent_id=a.id)
+                  and snapshot_domain.matches <= 1
                   and registration.host <> '' and a.status <> 'replaced'
                   and (registration.domain_id is null or registration.domain_id=d.id)
                   and (

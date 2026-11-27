@@ -75,6 +75,17 @@ public sealed class AdComputersViewsTests(AdComputersViewsTests.Data data) : ICl
             Assert.NotNull(rows[2]!["sli_agent"]!["last_seen_utc"]);
             Assert.Equal("3.4.5", rows[3]!["sli_agent"]?["version"]?.ToString());
             Assert.Null(rows[4]!["sli_agent"]!["version"]);
+
+            await PostCollectionPostgres.Sql(data.Db, """
+                insert into domains(id,fqdn,domain_sid) values(5,'duplicate.example.test','S-1-5-21-100000001-200000002-300000003');
+                """, Ct);
+            result = await data.Read(Request("computers"));
+            rows = result["items"]!.AsArray().ToDictionary(row => row!["entity_id"]!.GetValue<long>());
+            Assert.Equal(4, rows.Count);
+            Assert.Equal("installed", rows[1]!["sli_agent"]!["state"]!.ToString());
+            Assert.Equal("unknown", rows[2]!["sli_agent"]!["state"]!.ToString());
+            Assert.Null(rows[2]!["sli_agent"]!["version"]);
+            Assert.Equal("3.4.5", rows[3]!["sli_agent"]?["version"]?.ToString());
         }
         finally
         {
@@ -83,6 +94,7 @@ public sealed class AdComputersViewsTests(AdComputersViewsTests.Data data) : ICl
                     sli_agent_group_approval_links,sli_agents,entities_v2,storage_v2_entity_type;
                 delete from ad_context_entity_versions where id=10;
                 delete from ad_context_entity_aliases where alias_type='sam_account_name';
+                delete from domains where id=5;
                 """, Ct);
         }
     }
