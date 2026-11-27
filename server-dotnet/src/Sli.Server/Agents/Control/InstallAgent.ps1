@@ -131,6 +131,22 @@ function Read-AgentMsiProperties($Msi) {
             finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($record) }
         }
         [void]$view.Close()
+        [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($view)
+        $view = $null
+        $package['SupportsSameVersionUpgrade'] = $false
+        $view = $database.OpenView('SELECT `UpgradeCode`, `VersionMax`, `Attributes` FROM `Upgrade` WHERE `ActionProperty` = ''WIX_UPGRADE_DETECTED''')
+        [void]$view.Execute()
+        while ($record = $view.Fetch()) {
+            try {
+                # The replacement row must include this version and remove the related product.
+                if ($record.StringData(1) -eq $package['UpgradeCode'] -and
+                    $record.StringData(2) -eq $package['ProductVersion'] -and
+                    ($record.IntegerData(3) -band 514) -eq 512) {
+                    $package['SupportsSameVersionUpgrade'] = $true
+                }
+            } finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($record) }
+        }
+        [void]$view.Close()
         return $package
     } finally {
         if ($view) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($view) }
@@ -156,9 +172,10 @@ function Assert-AgentMsiUpgrade($Package, $Product) {
     finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($installer) }
     $version = [version]$Package['ProductVersion']
     $sameProduct = $Package['ProductCode'] -eq $Product.Code
-    # A different ProductCode at the same version would create a second install.
+    # A personalized install has another ProductCode at the same version.
     if ($Package['UpgradeCode'] -ne '{BE66EC86-AE25-4D3F-8C60-B191F3B0E20D}' -or
-        $version -lt $installedVersion -or ($version -eq $installedVersion) -ne $sameProduct) {
+        $version -lt $installedVersion -or ($version -gt $installedVersion -and $sameProduct) -or
+        ($version -eq $installedVersion -and !$sameProduct -and !$Package['SupportsSameVersionUpgrade'])) {
         throw 'SLI Agent .NET update requires the installed MSI or a newer SLI Agent .NET MSI.'
     }
     return $sameProduct

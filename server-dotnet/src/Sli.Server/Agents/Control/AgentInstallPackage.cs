@@ -59,6 +59,8 @@ internal static class AgentInstallPackage
             var name = settings.Origin.IdnHost;
             string productName = $"{product} ({name[..Math.Min(name.Length, 40)]})";
             properties["ProductName"] = productName;
+            // A distinct product lets plain msiexec /i run the same-version major upgrade.
+            properties["ProductCode"] = Guid.NewGuid().ToString("B").ToUpperInvariant();
             properties["SERVER_URL"] = settings.Origin.AbsoluteUri;
             properties["CA_FINGERPRINT"] = settings.Pin;
             properties["SERVER_CA"] = settings.Root;
@@ -74,7 +76,7 @@ internal static class AgentInstallPackage
                 foreach (var (key, value) in properties)
                     await writer.WriteLineAsync($"{key}\t{value}".AsMemory(), ct);
             }
-            // A changed MSI must have a fresh PackageCode. Keep ProductCode and UpgradeCode.
+            // A changed MSI also needs a fresh PackageCode. Preserve UpgradeCode and ProductVersion.
             await RunAsync("msibuild", [output, "-i", table, "-s", productName, "SLI", "x64;1033", Guid.NewGuid().ToString("B").ToUpperInvariant()], ct);
             File.SetUnixFileMode(output, UnixFileMode.UserRead | UnixFileMode.UserWrite);
             var written = await ExportPropertiesAsync(output, ct);

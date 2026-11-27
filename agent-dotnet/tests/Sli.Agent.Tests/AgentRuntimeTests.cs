@@ -31,6 +31,7 @@ public sealed class AgentRuntimeTests : IDisposable
         ServerUrl = url,
         CaBundle = Path.Combine(_directory, "server-ca.pem"),
         StateDir = Path.Combine(_directory, "state"),
+        TokenFile = Path.Combine(_directory, "bootstrap-token"),
     };
 
     private AgentRuntime Runtime(AgentOptions options) => new(Microsoft.Extensions.Options.Options.Create(options), TimeProvider.System);
