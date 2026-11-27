@@ -126,6 +126,8 @@ jobs:
           runuser -u sli-builder -- env TZ=UTC "$py" -m pytest tests/unit/test_linux_beta_kit.py -q
           runuser -u sli-builder -- "$py" -m deploy.linux.build_beta_kit \
             --commit "$KIT_COMMIT" --debs "$work/beta-kit-inputs" --output "$kit" --require-agent-sdk
+          runuser -u sli-builder -- env SLI_TEST_BETA_KIT="$kit" "$py" -m pytest -q \
+            tests/unit/test_native_paths_no_server.py::test_built_kit_payload_has_no_python_server
           runuser -u sli-builder -- "$py" -m deploy.linux.build_beta_kit \
             --commit "$KIT_COMMIT" --verify-offline-kit "$kit/sli-debian-beta-kit.tar.gz"
           mkdir "$assets"

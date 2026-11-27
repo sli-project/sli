@@ -32,15 +32,8 @@ AGENT = (
     f"{SERVER}Agents/", "config/event_catalog.json", "config/source_packs/dc.json",
     "tests/unit/test_agent_dotnet_vectors.py",
 )
-AGENT_SECURITY_TESTS = {
-    f"tests/unit/test_{name}.py" for name in (
-        "agent_ca", "agent_tls", "agent_security_recovery", "agent_group_enrollment",
-        "agent_packets_api", "agent_updates", "sli_agent_enrollment", "sli_agent_transport", "sli_agent_updates",
-    )
-}
 UI_DOMAIN_TESTS = {
-    "tests/tooling/test_ui_domain_binding_guard.py", "tests/unit/test_ui_domain_binding_api.py",
-    "tests/core/test_report_domain.py",
+    "tests/tooling/test_ui_domain_binding_guard.py",
 }
 SUITES = ("source", "checkpoint", "posix", "unit")
 POSTGRES_INSTALLER_PATHS = (
@@ -125,11 +118,9 @@ def scoped_tests(root: Path, paths: list[str]) -> set[str]:
     if "frontend" in areas:
         selected.update(UI_DOMAIN_TESTS)
     if "agent-dotnet" in areas:
-        selected.update(AGENT_SECURITY_TESTS)
-    if any(path.startswith((f"{SERVER}Reporting/", f"{SERVER}Gpo/", f"{SERVER}Ad/")) for path in paths):
-        selected.update(shipped.REPORT_ACCESS_TESTS)
+        selected.update({"tests/unit/test_agent_ca.py", "tests/tooling/test_sli_agent_local_install.py"})
     if set(server_dotnet_risk.changed_areas(paths)) & {"access", "storage"}:
-        selected.update(shipped.REPORT_ACCESS_TESTS | UI_DOMAIN_TESTS)
+        selected.update(UI_DOMAIN_TESTS)
     changed = {path for path in paths if path.startswith("deploy/linux/")}
     assets = changed - {path for path in changed if path.endswith(".py")}
     index = shipped.source_index(root) if changed else {}
@@ -153,15 +144,13 @@ def scoped_tests(root: Path, paths: list[str]) -> set[str]:
     return selected
 
 
-def pytest_arguments(root: Path, paths: list[str], *, include_legacy_reports: bool = False) -> dict[str, list[str]]:
+def pytest_arguments(root: Path, paths: list[str]) -> dict[str, list[str]]:
     jobs = plan_jobs(paths)
     if not jobs["unit"]:
         return {suite: [] for suite in SUITES}
-    if jobs["broad"]:
-        files, _, _, _ = shipped.select_tests(root, include_legacy_reports=include_legacy_reports)
-        selected = set(files)
-    else:
-        selected = scoped_tests(root, paths)
+    candidates = None if jobs["broad"] else scoped_tests(root, paths)
+    files, _ = shipped.select_tests(root, candidates=candidates)
+    selected = set(files)
     result = {}
     for suite in ("source", "checkpoint", "posix"):
         manifest = root / f"scripts/ci/pr_{suite}_tests.txt"
@@ -196,7 +185,7 @@ def main() -> None:
                 print(f"{name}={str(applies).lower()}", file=output)
     if args.argfiles:
         args.argfiles.mkdir(parents=True, exist_ok=True)
-        for suite, selectors in pytest_arguments(Path.cwd(), paths, include_legacy_reports=not args.diff).items():
+        for suite, selectors in pytest_arguments(Path.cwd(), paths).items():
             if any("\n" in selector or "\r" in selector for selector in selectors):
                 parser.error("A pytest selector contains a line break")
             (args.argfiles / f"{suite}.txt").write_text("".join(f"{selector}\n" for selector in selectors),

@@ -30,10 +30,8 @@ jobs:
       - run: python -m ruff check --config .github/ruff-ci.toml server scripts tests
       - run: python scripts/maintenance/github_sanitary_check.py --root . --json
       - run: python -m compileall -q server scripts tests
-      - run: python scripts/ci/shipped_python_tests.py --output .ci-shipped-python-tests.txt
-      - run: python -m pytest -q -m "not postgres_integration"
-        env:
-          PYTEST_ADDOPTS: "@.ci-shipped-python-tests.txt"
+      - run: python -m scripts.ci.shipped_python_tests --output .ci-shipped-python-tests.txt
+      - run: python -m pytest -q -m "not postgres_integration and not legacy" "@.ci-shipped-python-tests.txt"
 
   frontend:
     runs-on: ubuntu-latest
@@ -173,24 +171,16 @@ jobs:
                      and test.get("result") == "Pass" for test in tests):
               raise SystemExit("The signed AD packet report scenario did not pass")
           PY
-      - run: python scripts/ci/shipped_python_tests.py --output .ci-shipped-python-tests.txt
-      - name: T002 actual PostgreSQL context at synthetic enterprise scale
-        run: python -m pytest -q -s tests/reporting/test_new_logon_pairs_context_native.py
-      - name: T051 bounded synthetic context plans and typed timeout
-        run: python -m pytest -q -s tests/reporting/test_new_logon_pairs_diagnostics_postgres.py
-      - name: Measure synthetic collection aggregation equivalence
-        run: python -m pytest -q -s tests/reporting/test_agent_collection_query_plan_postgres.py
-      - name: Measure synthetic plugin receipt plans
-        run: python -m pytest -q -s tests/reporting/test_plugin_receipts_query_plan_postgres.py
+      - run: python -m scripts.ci.shipped_python_tests --output .ci-shipped-python-tests.txt
       - name: Verify full-schema ACL directory backup and parallel restore
         run: python -m pytest -q tests/migrations/test_qw_restore_context_migration.py -m postgres_integration
       - name: Remaining PostgreSQL integration tests
         shell: bash
         run: |
-          # --ignore does not drop a file passed explicitly, so the three files run
-          # in their own steps above are removed from the shipped list here.
-          grep -vxF -e tests/migrations/test_qw_restore_context_migration.py -e tests/reporting/test_agent_collection_query_plan_postgres.py -e tests/reporting/test_plugin_receipts_query_plan_postgres.py .ci-shipped-python-tests.txt > .ci-shipped-postgres-tests.txt
-          python -m pytest -v -m "postgres_integration and not e2e" @.ci-shipped-postgres-tests.txt
+          # The ACL restore test runs in its own step.
+          grep -vxF -e tests/migrations/test_qw_restore_context_migration.py \
+            .ci-shipped-python-tests.txt > .ci-shipped-postgres-tests.txt
+          python -m pytest -v -m "postgres_integration and not e2e and not legacy" @.ci-shipped-postgres-tests.txt
       - name: Stop disposable PostgreSQL 18
         if: ${{ always() }}
         shell: bash

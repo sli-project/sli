@@ -20,10 +20,13 @@ internal static class GpoPolicyCard
     }
 
     internal static async Task<JsonObject> QueryAsync(IGpoReadStore store, JsonObject pair, JsonObject snapshot,
-        string policyId, GpoRequest request, CancellationToken ct, GpoPolicySnapshot? exact = null)
+        string policyReference, GpoRequest request, CancellationToken ct, GpoPolicySnapshot? exact = null)
     {
-        var policy = snapshot.Rows("gpos").FirstOrDefault(row => row.Text("id") == policyId);
+        var isGuid = Guid.TryParse(policyReference, out var guid);
+        var policy = snapshot.Rows("gpos").FirstOrDefault(row => row.Text("id") == policyReference ||
+            isGuid && Guid.TryParse(row.Text("guid"), out var rowGuid) && rowGuid == guid);
         if (policy is null) return exact is null ? GpoReport.Result("empty") : SnapshotUnavailable();
+        string policyId = policy.Text("id");
 
         var settings = Select("settings", "side", "setting_name", "category", "extension", "path", "value_display", "audit_mode");
         foreach (var setting in settings.OfType<JsonObject>())
@@ -45,14 +48,12 @@ internal static class GpoPolicyCard
         var data = historyRequested ? new JsonObject() :
             new JsonObject { ["settings"] = settings, ["links"] = links, ["permissions"] = permissions, ["versions"] = versions };
         var coverage = new JsonObject { ["observed_at_utc"] = snapshot["observed_at"]?.DeepClone() };
-        JsonArray? items = null;
-        if (exact is not null)
+        var items = historyRequested && exact is null ? null : new JsonArray(Project(policy, "id", "display_name", "guid", "gpo_status"));
+        coverage["domain_id"] = domain;
+        coverage["snapshot_id"] = exact is null ? pair["snapshot_id"]?.DeepClone() : JsonValue.Create(exact.Id.ToString("D"));
+        if (exact is not null) coverage["observed_at_utc"] = Iso(exact.ObservedAt);
+        if (!historyRequested)
         {
-            coverage["observed_at_utc"] = Iso(exact.ObservedAt);
-            coverage["domain_id"] = domain;
-            coverage["snapshot_id"] = exact.Id.ToString("D");
-            var header = Project(policy, "id", "display_name", "guid", "gpo_status");
-            items = new JsonArray(header);
             var sources = new JsonObject();
             foreach (string source in new[] { "report", "links", "permissions" })
                 sources[source] = Bounded(policy["source_states"]?[source]?["status"] ?? snapshot["source_states"]?[source]?["status"]);
