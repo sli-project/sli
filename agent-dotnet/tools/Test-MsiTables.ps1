@@ -113,7 +113,6 @@ $null = $view.Close()
 foreach ($name in @('PrivateState', 'Bootstrap', 'EnrollmentBootstrap')) {
     if (-not $components.ContainsKey($name) -or ($components[$name].Attributes -band 16) -eq 0) { throw "$name must survive upgrade/uninstall" }
 }
-if (($components['Bootstrap'].Attributes -band 128) -eq 0) { throw 'Connection settings must not be overwritten on reinstall' }
 if (($components['EnrollmentBootstrap'].Attributes -band 128) -ne 0) {
     throw 'An explicitly supplied fresh bootstrap must replace the previous token'
 }
@@ -128,9 +127,11 @@ try {
     $condition = $components['EnrollmentBootstrap'].Condition
     if ($session.EvaluateCondition($condition) -ne 1) { throw 'Personalized MSI must write its key on fresh install' }
     $session.Property('SAVED_SERVER_URL') = 'https://agents.example.test/'
-    if ($session.EvaluateCondition($condition) -ne 0) { throw 'Personalized MSI must keep the previous bootstrap on upgrade' }
+    if ($session.EvaluateCondition($condition) -ne 1) { throw 'Personalized MSI must write its fresh key over existing state' }
     $session.Property('SERVER_CA') = ''
     if ($session.EvaluateCondition($condition) -ne 1) { throw 'Explicit recovery input must still replace the previous bootstrap' }
+    $session.Property('ENROLL_TOKEN') = ''
+    if ($session.EvaluateCondition($condition) -ne 0) { throw 'A tokenless package must leave the bootstrap alone' }
 }
 finally { $null = [Runtime.InteropServices.Marshal]::FinalReleaseComObject($session) }
 $view = $database.OpenView('SELECT `Name`, `Value`, `Component_` FROM `Registry` WHERE `Root` = 2 AND `Key` = ''SOFTWARE\SLI\AgentNet''')

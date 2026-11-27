@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Security.Principal;
@@ -21,7 +23,7 @@ public sealed class MsiLifecycleWindowsTests(ITestOutputHelper output)
 {
     [MsiLifecycleFact]
     [Trait("Category", "WindowsOnly")]
-    public async Task UpgradePreservesIdentityAndUninstallClearsItWithExplicitQueuePurge()
+    public async Task UpdateKeepsIdentityAndPersonalizedReinstallRecoversBrokenState()
     {
         using var currentUser = WindowsIdentity.GetCurrent();
         Assert.True(new WindowsPrincipal(currentUser).IsInRole(WindowsBuiltInRole.Administrator),
@@ -138,10 +140,46 @@ public sealed class MsiLifecycleWindowsTests(ITestOutputHelper output)
                 "ENROLL_TOKEN=synthetic-unused-bootstrap");
             AssertServiceRunning();
             Assert.False(File.Exists(Path.Combine(options.StateDir, "identity.json")));
-            await Msi("remove-reinstalled", "/x", upgrade, "/qn", "/norestart", "PURGE_QUEUE=1");
+
+            using (var service = new ServiceController(AgentWorker.ServiceName))
+            {
+                service.Stop();
+                service.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(30));
+            }
+            var brokenKey = Path.Combine(options.StateDir, "identity-key.json");
+            AgentRuntime.CreateIdentityStore(options).Prepare();
+            File.WriteAllText(brokenKey, "broken");
+            var recoveryQueue = Path.Combine(options.StateDir, "queue");
+            AgentRuntime.CreateFiles().EnsureDirectory(recoveryQueue);
+            File.Copy(Path.Combine(dataRoot, "retained-queue-state", Path.GetFileName(packetPath)),
+                Path.Combine(recoveryQueue, Path.GetFileName(packetPath)));
+            var personalized = Path.Combine(logs, "personalized.msi");
+            const string newServer = "https://127.0.0.1:2/";
+            var pin = Convert.ToHexStringLower(SHA256.HashData(authority.Root.RawData));
+            Personalize(upgrade, personalized, newServer, pin, Convert.ToBase64String(authority.Root.RawData));
+
+            // Same ProductCode, fresh PackageCode and embedded properties, just as in a console download.
+            await Msi("personalized-reinstall", "/i", personalized, "/qn", "/norestart");
+            AssertServiceRunning();
+            var settings = MsiConfiguration.ReadSettings();
+            Assert.Equal(newServer, settings["Agent:ServerUrl"]);
+            Assert.Equal(pin, settings["Agent:CaFingerprint"]);
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            var protectedBootstrap = Path.Combine(options.StateDir, "bootstrap.json");
+            while (!Directory.EnumerateDirectories(dataRoot, "previous-*").Any() ||
+                   !File.Exists(protectedBootstrap) || !File.Exists(brokenKey))
+                await Task.Delay(100, deadline.Token);
+            var archive = Assert.Single(Directory.EnumerateDirectories(dataRoot, "previous-*"));
+            Assert.Equal("broken", File.ReadAllText(Path.Combine(archive, "identity-key.json")));
+            Assert.NotEqual("broken", File.ReadAllText(brokenKey));
+            Assert.Equal(Encoding.ASCII.GetBytes(packet.ToCanonical()),
+                File.ReadAllBytes(Path.Combine(archive, "queue", Path.GetFileName(packetPath))));
+
+            await Msi("remove-reinstalled", "/x", personalized, "/qn", "/norestart", "PURGE_QUEUE=1");
             AssertServiceAbsent();
             if (Directory.Exists(program)) Assert.Empty(Directory.EnumerateFiles(program, "*", SearchOption.AllDirectories));
             Assert.False(Directory.Exists(options.StateDir));
+            Assert.Empty(Directory.EnumerateDirectories(dataRoot, "previous-*"));
             Assert.Empty(Directory.EnumerateDirectories(dataRoot, "retained-queue-*"));
         }
         finally
@@ -202,6 +240,44 @@ public sealed class MsiLifecycleWindowsTests(ITestOutputHelper output)
             Assert.True(process.ExitCode == 0 || allowAbsent && process.ExitCode == 1605,
                 $"MSI {step} returned {process.ExitCode}; see {log}. A reboot-required result also needs investigation on this clean runner.");
         }
+    }
+
+    private static void Personalize(string source, string destination, string server, string pin, string ca)
+    {
+        File.Copy(source, destination);
+        var installer = Activator.CreateInstance(Type.GetTypeFromProgID("WindowsInstaller.Installer")!)!;
+        object? database = null, summary = null;
+        try
+        {
+            database = Invoke(installer, "OpenDatabase", BindingFlags.InvokeMethod, destination, 1)!;
+            foreach (var (name, value) in new[] { ("SERVER_URL", server), ("SERVER_CA", ca),
+                         ("CA_FINGERPRINT", pin), ("ENROLL_TOKEN", new string('t', 43)) })
+            {
+                var view = Invoke(database, "OpenView", BindingFlags.InvokeMethod,
+                    "INSERT INTO `Property` (`Property`, `Value`) VALUES (?, ?)")!;
+                var record = Invoke(installer, "CreateRecord", BindingFlags.InvokeMethod, 2)!;
+                try
+                {
+                    Invoke(record, "StringData", BindingFlags.SetProperty, 1, name);
+                    Invoke(record, "StringData", BindingFlags.SetProperty, 2, value);
+                    Invoke(view, "Execute", BindingFlags.InvokeMethod, record);
+                }
+                finally { Marshal.FinalReleaseComObject(record); Marshal.FinalReleaseComObject(view); }
+            }
+            summary = Invoke(database, "SummaryInformation", BindingFlags.GetProperty, 1)!;
+            Invoke(summary, "Property", BindingFlags.SetProperty, 9, Guid.NewGuid().ToString("B").ToUpperInvariant());
+            Invoke(summary, "Persist", BindingFlags.InvokeMethod);
+            Invoke(database, "Commit", BindingFlags.InvokeMethod);
+        }
+        finally
+        {
+            if (summary is not null) Marshal.FinalReleaseComObject(summary);
+            if (database is not null) Marshal.FinalReleaseComObject(database);
+            Marshal.FinalReleaseComObject(installer);
+        }
+
+        static object? Invoke(object target, string member, BindingFlags flags, params object[] args) =>
+            target.GetType().InvokeMember(member, flags, null, target, args);
     }
 
     private static void AssertServiceRunning()
