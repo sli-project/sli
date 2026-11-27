@@ -354,6 +354,8 @@ foreach ($side in @('computer','user')) {
     $new=ConvertTo-SLIGpoV2Settings -Xml $xml -GpoId 'gpo-test' -GpoName 'Synthetic policy' -Side $side -Maximum 5000 -ObservedAt $script:ObservedAt
     $output[$side]=@{legacy=$old; agent=$new}
 }
+[xml]$auditXml='<GPO><Computer><ExtensionData><Extension><AuditSetting><PolicyTarget>System</PolicyTarget><SubcategoryGuid>{0CCE9215-69AE-11D9-BED3-505054503030}</SubcategoryGuid><SettingValue>3</SettingValue></AuditSetting><AuditSetting><PolicyTarget>System</PolicyTarget><SubcategoryGuid>{0CCE9242-69AE-11D9-BED3-505054503030}</SubcategoryGuid><SettingValue>1</SettingValue></AuditSetting></Extension></ExtensionData></Computer></GPO>'
+$output.audit=(ConvertTo-SLIGpoV2Settings -Xml $auditXml -GpoId 'gpo-test' -GpoName 'Synthetic policy' -Side computer -Maximum 50 -ObservedAt $script:ObservedAt).rows
 $output.facts=ConvertFrom-SLIGpoReportXml -XmlText $xml.OuterXml
 $policy=@{max_bytes=128}; $script:CapturedBytes=0; $script:overflow=$false
 $output.budget=@{small=(Within-Budget @{name='synthetic'}); large=(Within-Budget @{name=('x' * 200)}); overflow=$script:overflow}
@@ -373,6 +375,14 @@ $output | ConvertTo-Json -Depth 30 -Compress
     result = json.loads(completed.stdout.decode("utf-8-sig"))
     assert result["computer"]["legacy"] == result["computer"]["agent"]
     assert result["user"]["legacy"] == result["user"]["agent"]
+    assert {
+        row["value_display"]: row["audit_mode"]
+        for row in result["audit"]
+        if row["setting_name"] == "SubcategoryGuid"
+    } == {
+        "{0CCE9215-69AE-11D9-BED3-505054503030}": "3",
+        "{0CCE9242-69AE-11D9-BED3-505054503030}": "1",
+    }
     assert "synthetic-redaction-marker" not in json.dumps(result)
     assert result["facts"]["attributes"]["gpo_computer_enabled"] is True
     assert result["facts"]["attributes"]["gpo_user_enabled"] is False

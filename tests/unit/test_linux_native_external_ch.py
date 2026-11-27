@@ -20,7 +20,7 @@ import zipfile
 
 import pytest
 
-from deploy.linux import backup, native_backup, native_clickhouse, native_clickhouse_transition
+from deploy.linux import backup, native_backup, native_clickhouse_transition
 from deploy.linux import native_clickhouse_endpoint as ch
 from deploy.linux import native_host as host, native_install, native_package, native_runtime, native_upgrade
 
@@ -97,7 +97,7 @@ def test_ready_checks_postgres_pin_without_retired_provider(tmp_path, monkeypatc
     monkeypatch.setattr(native_runtime, "no_transaction", lambda: None)
     monkeypatch.setattr(native_runtime, "release", lambda: (tmp_path, manifest, "accepted"))
     monkeypatch.setattr(native_runtime, "document", lambda path: installed)
-    monkeypatch.setattr(installed_state, "ledger_matches", lambda *a: None)
+    monkeypatch.setattr(installed_state, "native_ledger_matches", lambda *a: None)
     from deploy.linux import native_pg_inventory
     monkeypatch.setattr(native_pg_inventory, "verify_ledger", lambda *a, **k: None)
     versions = ["18.6"]
