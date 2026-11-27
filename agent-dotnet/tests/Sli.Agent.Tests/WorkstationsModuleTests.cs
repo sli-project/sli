@@ -99,6 +99,44 @@ public sealed class WorkstationsModuleTests
         Assert.Equal(1, sample.FilteredCount);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void NativeProcessCommandLineIsCollectedOnlyWhenEnabledAndBoundedBeforeSigning(bool includeCommand)
+    {
+        const string provider = "Microsoft-Windows-Security-Auditing";
+        string original = "<&" + new string('界', 700);
+        string expected = includeCommand ? original[..342] : "";
+        var policy = WorkstationPolicy.Parse(new JsonObject { ["allow_event_ids"] = new JsonArray(4688, 6416) });
+        var source = new RowsSource([
+            Native(4688, 1, "Security", provider, ("CommandLine", original)),
+            Native(6416, 2, "Security", provider, ("DeviceId", @"USBSTOR\Fixture")),
+        ]);
+        var collector = new WorkstationsModule(Helpers.HostId, policy, source, includeProcessCommandLine: includeCommand);
+        var sample = collector.Collect(null, Helpers.Now).Sample!;
+        var rows = sample.Payload["records"]!.AsArray();
+        Assert.Equal(2, rows.Count);
+        var process = rows[0]!["payload"]!;
+        string xml = process["xml"]!.GetValue<string>();
+        System.Xml.Linq.XNamespace ns = EventXml.Namespace;
+        Assert.Equal(expected, Assert.Single(EventXml.ParseBounded(xml).Descendants(ns + "Data")).Value);
+        Assert.Equal(includeCommand ? expected : null, process["properties"]![0]?.GetValue<string>());
+        Assert.Equal(includeCommand, xml.Contains("&lt;&amp;", StringComparison.Ordinal));
+        Assert.Equal(6416, rows[1]!["payload"]!["event_id"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public void WorkstationNativeFilterIncludesAssignedEventsAndKeepsTheSavedAnchor()
+    {
+        var policy = WorkstationPolicy.Parse(new JsonObject { ["allow_event_ids"] = new JsonArray(4624, 4688, 6416) });
+        var query = EventQueries.BuildWorkstation("Security", new ChannelProgress(31, "saved", Helpers.HostId), policy);
+        Assert.Contains("EventID=4624", query);
+        Assert.Contains("EventID=4688", query);
+        Assert.Contains("EventID=6416", query);
+        Assert.Contains("EventRecordID=31", query);
+        Assert.DoesNotContain("EventID=4625", query);
+    }
+
     [Fact]
     public void ScriptQuotaCannotBeRaisedAndSurvivesRestart()
     {

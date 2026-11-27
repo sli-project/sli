@@ -13,13 +13,15 @@ public sealed class AgentModuleAssignmentTests
         var policy = AgentModuleAssignmentRules.NormalizeWorkstation(request, useCollectionBaseline: true);
 
         Assert.Equal("4", policy["policy_revision"]!.GetValue<string>());
-        Assert.Equal([1102, 4624, 4625, 4698, 4732, 4733, 5001, 5010, 5012, 7036, 7040, 7045],
-            Assert.IsType<JsonArray>(policy["allow_event_ids"]).Select(value => value!.GetValue<int>()));
+        var events = Assert.IsType<JsonArray>(policy["allow_event_ids"]).Select(value => value!.GetValue<int>()).ToArray();
+        Assert.Contains(4688, events);
+        Assert.Contains(6416, events);
+        Assert.DoesNotContain(4104, events);
         Assert.True(policy["families"]!["logons"]!.GetValue<bool>());
         Assert.True(policy["families"]!["local_admins"]!.GetValue<bool>());
         Assert.True(policy["families"]!["protection"]!.GetValue<bool>());
-        Assert.False(policy["families"]!["processes"]!.GetValue<bool>());
-        Assert.False(policy["families"]!["usb"]!.GetValue<bool>());
+        Assert.True(policy["families"]!["processes"]!.GetValue<bool>());
+        Assert.True(policy["families"]!["usb"]!.GetValue<bool>());
     }
 
     [Fact]

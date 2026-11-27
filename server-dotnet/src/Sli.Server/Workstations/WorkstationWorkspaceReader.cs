@@ -53,7 +53,7 @@ public sealed class WorkstationWorkspaceReader(IPostgresConnectionFactory connec
             select a.*,binding.server_id,binding.domain_id,binding.computer,
                    server.hostname as host_name,server.os_name as operating_system,
                    server.os_version as operating_system_version,server.updated_at as metadata_observed_at,
-                   domain.fqdn as domain_name,
+                   nullif(domain.fqdn,'workstations.invalid') as domain_name,
                    coalesce(binding.computer,a.registration_host_name) as display_name,
                    case when a.module is null then 'unbound'
                         when a.module->'enabled' is distinct from 'true'::jsonb then 'disabled'
@@ -221,7 +221,8 @@ public sealed class WorkstationWorkspaceReader(IPostgresConnectionFactory connec
         if (Ws.Text(c.Params, "search") is { Length: > 0 } search)
         {
             string text = Add(search.ToLowerInvariant());
-            predicate += " and (strpos(lower(coalesce(a.display_name,''))," + text + ")>0 or strpos(lower(coalesce(a.domain_name,''))," + text + ")>0)";
+            predicate += " and (strpos(lower(coalesce(a.display_name,'') collate pg_catalog.pg_unicode_fast)," + text
+                + ")>0 or strpos(lower(coalesce(a.domain_name,''))," + text + ")>0)";
         }
         if (Ws.Text(c.Params, "source_instance_id") is { Length: > 0 } source) predicate += " and a.source_instance_id=" + Add(Guid.Parse(source).ToString("D"));
         if (Ws.Text(c.Params, "collection") is { Length: > 0 } collection && collection != "all") predicate += " and a.collection_state=" + Add(collection);

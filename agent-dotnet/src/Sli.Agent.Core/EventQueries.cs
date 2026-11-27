@@ -27,9 +27,22 @@ public static class EventQueries
         return string.Join(" or ", terms);
     }
 
-    public static string Build(string channel, ChannelProgress progress, EventCatalog catalog)
+    public static string Build(string channel, ChannelProgress progress, EventCatalog catalog) =>
+        Build(progress, CatalogFilter(channel, progress, catalog));
+
+    public static string BuildWorkstation(string channel, ChannelProgress progress, WorkstationPolicy policy)
     {
-        var filter = CatalogFilter(channel, progress, catalog);
+        int index = Array.IndexOf(WorkstationPolicy.Channels, channel);
+        if (index < 0) throw new AgentException("agent_workstations_channel_invalid");
+        var terms = WorkstationPolicy.FamilyEvents.SelectMany(family => family.Value
+            .Where(id => WorkstationPolicy.ChannelEvents[index].Contains(id) && policy.EventEnabled(id, family.Key)))
+            .Select(id => $"EventID={id}").ToList();
+        if (progress.Bookmark.Length > 0 && progress.RecordId is { } anchor) terms.Add($"EventRecordID={anchor}");
+        return Build(progress, terms.Count > 0 ? string.Join(" or ", terms) : "EventRecordID=0");
+    }
+
+    private static string Build(ChannelProgress progress, string? filter)
+    {
         var hasBookmark = progress.Bookmark.Length > 0;
         var after = progress.RecordId;
         var selector = hasBookmark || after is null ? "*" : $"*[System[EventRecordID > {after}]]";

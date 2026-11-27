@@ -47,6 +47,27 @@ public sealed class WindowsAuditTests : IDisposable
     }
     private WindowsAuditManager Manager(IDurableFiles? files = null) => new(_directory, files ?? new PhysicalDurableFiles(), _api);
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void WorkstationPolicyEnablesAndReportsProcessCreationAndPlugAndPlay(bool commandLine)
+    {
+        var policy = Policy();
+        policy.Workstations!["families"]!["processes"] = true;
+        policy.Workstations["families"]!["usb"] = true;
+        policy = policy with { Control = policy.Control with { AuditProcessCommandLine = commandLine } };
+        var report = Manager().Reconcile(policy, Helpers.Now)["windows_audit"]!;
+        Assert.Equal("applied", report["management_state"]!.GetValue<string>());
+        foreach (var (family, subcategory) in new[] { ("processes", "process_creation"), ("usb", "pnp_activity") })
+        {
+            var row = Assert.Single(report["families"]![family]!["required"]!.AsArray())!;
+            Assert.Equal(subcategory, row["subcategory"]!.GetValue<string>());
+            Assert.True(row["actual_success"]!.GetValue<bool>());
+            Assert.Equal(1, _api.Values[row["guid"]!.GetValue<string>()]);
+        }
+        Assert.Equal(commandLine ? 1 : (int?)null, _api.CommandLine);
+    }
+
     private static AgentPolicy DcPolicy(bool manage = true) => Policy(manage) with { Workstations = null, AdDc = new JsonObject() };
 
     private static AgentPolicy RootPolicy(bool enable = true) => DcPolicy(enable) with {
