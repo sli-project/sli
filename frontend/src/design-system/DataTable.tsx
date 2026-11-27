@@ -40,7 +40,7 @@ export type TableColumn<Row> = {
 };
 
 export function DataTable<Row>({
-  columns, rows: resultRows, rowKey, sort, onSort, onRowClick, selectedKey, caption, labelledBy,
+  columns, rows: resultRows, rowKey, sort, onSort, onRowClick, canActivateRow, selectedKey, caption, labelledBy,
   hasMore = false, loadingMore = false, onLoadMore, total: serverTotal, stickyHeader = true, pagination: serverPaging, showFooter = true,
   compact, density, expanded, afterRow, renderExpanded, toolbar, toolbarEnd, footerControls, wrapCells = false,
   pageSize: serverPageSize, localPagination, columnSample = resultRows, columnsControlTarget, rowGroup, rowDetail, expandedContent, emptyContent, renderExpandedRow,
@@ -51,6 +51,7 @@ export function DataTable<Row>({
   sort?: SortState | null;
   onSort?: (field: string) => void;
   onRowClick?: (row: Row) => void;
+  canActivateRow?: (row: Row) => boolean;
   selectedKey?: string | null;
   expandedContent?: (row: Row) => ReactNode;
   rowGroup?: (row: Row) => { key: string; heading: ReactNode; collapsed: boolean };
@@ -178,14 +179,15 @@ export function DataTable<Row>({
           const visibleCells = row.getVisibleCells();
           const expansion = group?.collapsed ? null : expanded?.(row.original);
           const extra = group?.collapsed ? null : afterRow?.(row.original);
+          const activate = canActivateRow?.(row.original) === false ? undefined : onRowClick;
           return <Fragment key={row.id}>
             {groupStart ? <tr data-group><td colSpan={columnCount}>{group.heading}</td></tr> : null}
-            {group?.collapsed ? null : <tr data-selected={selected || Boolean(detail) || undefined} data-clickable={onRowClick ? true : undefined}
-            tabIndex={onRowClick ? 0 : undefined}
-            onClick={onRowClick ? () => onRowClick(row.original) : undefined}
-            onKeyDown={onRowClick ? (event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onRowClick(row.original); } } : undefined}
+            {group?.collapsed ? null : <tr data-selected={selected || Boolean(detail) || undefined} data-clickable={activate ? true : undefined}
+            tabIndex={activate ? 0 : undefined}
+            onClick={activate ? () => activate(row.original) : undefined}
+            onKeyDown={activate ? (event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); activate(row.original); } } : undefined}
             aria-expanded={renderExpandedRow ? selected : undefined}
-            aria-selected={onRowClick && !renderExpandedRow ? selected : undefined}>
+            aria-selected={activate && !renderExpandedRow ? selected : undefined}>
             {visibleCells.map((cell) => {
               const column = cell.column.columnDef.meta as TableColumn<Row>;
               const value = content.get(row.original)?.get(column.key);

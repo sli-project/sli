@@ -1,67 +1,41 @@
-"""Prospective normal AD issuer on real disposable273/274; no native source calls."""
-from concurrent.futures import ThreadPoolExecutor
+"""Migration 274 issuer catalog and authorization on disposable PostgreSQL."""
 from contextlib import contextmanager
-import json
 from pathlib import Path
-from threading import Event
-from time import monotonic, sleep
-from uuid import uuid4
 
 import pytest
 
+from tests.migrations.historical_postgres import historical_connection
 
-pytestmark = [pytest.mark.postgres_integration, pytest.mark.postgres_empty]
+
+pytestmark = [pytest.mark.postgres_integration, pytest.mark.postgres_owned_cluster]
 ROOT = Path(__file__).resolve().parents[2]
 PATH = ROOT / 'config/postgres_migrations/274_agent_ad_binding_issuer.sql'
-CONFIG = dict(source_name='fixture-dc', connect_address='fixture-endpoint')
 
 
 @pytest.fixture
-def issuer_base(coverage_pg):
-    """Real273 candidate with unrelated269/270/271/272 synthetic predecessor markers; restore exact169 history and assignment grants."""
-    dsn = coverage_pg[0][0]
-    import psycopg
-    with psycopg.connect(dsn, autocommit=True) as admin:
-        admin.execute('delete from finding_evidence_source_bindings')
-        admin.execute('delete from sli_agent_module_bindings')
-        admin.execute("update sli_agents set assigned_modules='[]',policy_revision=1")
-        admin.execute('set role adlog_storage_owner')
-        source = (PATH.parent / '169_agent_collection_control.sql').read_text('utf-8-sig')
-        admin.execute(source[source.index('create table public.sli_agent_policy_history'):source.index('-- Preserve actions')])
-        admin.execute('grant select on sli_agents to adlog_user')
-        admin.execute('grant update(assigned_modules,policy_revision) on sli_agents to adlog_user')
-        # Existing163/169 audit choices, preserving actual273 added choice.
-        admin.execute("""do $$ declare prior text; begin
-          select pg_get_expr(conbin,conrelid) into strict prior from pg_constraint
-          where conrelid='sli_agent_audit'::regclass and conname='sli_agent_audit_action_check';
-          alter table sli_agent_audit drop constraint sli_agent_audit_action_check;
-          execute format('alter table sli_agent_audit add constraint sli_agent_audit_action_check check ((%s) or action=''module_assign'')',prior);
-          end $$""")
-        admin.execute('reset role')
-    return dsn, coverage_pg[1], coverage_pg[0][1]
+def issuer_base(tmp_path, monkeypatch):
+    with historical_connection(tmp_path, monkeypatch, (273, "password_attacks_v2")) as admin:
+        yield admin.info.dsn
 
 
 @pytest.fixture
 def issuer_pg(issuer_base):
-    import psycopg
-    if PATH.exists():
-        with psycopg.connect(issuer_base[0], autocommit=True) as admin:
-            admin.execute(PATH.read_text('utf-8-sig'))
+    with connection(issuer_base) as admin:
+        admin.execute(PATH.read_text('utf-8-sig'))
     return issuer_base
 
 
 @contextmanager
-def connection(source, *, web=False, semantic=False):
+def connection(dsn, *, web=False):
     import psycopg
     from psycopg.conninfo import make_conninfo
     from psycopg.rows import dict_row
-    login = source[2] if semantic else source[1]
-    dsn = make_conninfo(source[0], user=login) if web or semantic else source[0]
+
+    if web:
+        dsn = make_conninfo(dsn, user='adlog_user')
     with psycopg.connect(dsn, autocommit=True, row_factory=dict_row) as conn:
-        if web or semantic:
-            assert conn.execute('select session_user as u').fetchone()['u'] == login
-        if semantic:
-            conn.execute('set role adlog_semantic_worker')
+        if web:
+            assert conn.execute('select session_user as u').fetchone()['u'] == 'adlog_user'
         yield conn
 
 

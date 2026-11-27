@@ -15,7 +15,8 @@ public sealed partial class AgentManagementService
         while (await reader.ReadAsync(ct)) rows.Add(AgentControlJson.Row(reader.GetString(0))); return rows.ToArray();
     }
 
-    public async Task<JsonElement> ListAgentsAsync(NpgsqlConnection db, NpgsqlTransaction tx, string? rawId, string actor, CancellationToken ct)
+    public async Task<JsonElement> ListAgentsAsync(NpgsqlConnection db, NpgsqlTransaction tx, string? rawId, string actor,
+        CancellationToken ct, string? after = null)
     {
         string filter = rawId is not null ? "where id=@id" : """
             where (status='replaced' or not (last_seen is null and created_at <= clock_timestamp()-interval '24 hours'))
@@ -23,15 +24,28 @@ public sealed partial class AgentManagementService
             and (status in ('active','replaced') or not exists(select 1 from sli_agent_audit retired where retired.target=sli_agents.id::text
                 and retired.action='disable' and retired.details->>'reason'='registration_replaced'))
             """;
-        var parameters = rawId is null ? Array.Empty<NpgsqlParameter>() : [new NpgsqlParameter("id", AgentControlJson.Id(rawId))];
+        var parameters = new List<NpgsqlParameter>();
+        if (rawId is not null) parameters.Add(new NpgsqlParameter("id", AgentControlJson.Id(rawId)));
+        if (rawId is null && after is not null)
+        {
+            parameters.Add(new NpgsqlParameter("after", AgentControlJson.Id(after)));
+            filter += """
+                 and exists(select 1 from sli_agents cursor_row where cursor_row.id=@after
+                    and (sli_agents.created_at<cursor_row.created_at
+                        or (sli_agents.created_at=cursor_row.created_at and sli_agents.id>cursor_row.id)))
+                """;
+        }
         var agents = await RowsAsync(db, tx, """
-            select id,host_id,key_fingerprint,status,assigned_modules,last_seen,created_at,instance_name,policy_revision,
+            select id,host_id,key_fingerprint,status,assigned_modules,last_seen,created_at,instance_name,policy_revision,machine_role,
                 applied_policy_revision,rights_probe,collection_policy,applied_collection_state,windows_audit,
                 coalesce(rights_probe->>'agent_version',
                     (select version from sli_agent_update_results v where v.agent_id=sli_agents.id order by observed_at desc limit 1),
                     (select details->>'agent_version' from sli_agent_audit v where v.target=sli_agents.id::text and v.action='issue' order by id desc limit 1)) as agent_version
             from sli_agents
-            """ + "\n" + filter + "\norder by created_at desc,id limit 100", ct, parameters);
+            """ + "\n" + filter + "\norder by created_at desc,id limit 101", ct, parameters.ToArray());
+        const int pageSize = 100;
+        string? nextCursor = agents.Length > pageSize ? agents[pageSize - 1]["id"]!.GetValue<string>() : null;
+        if (nextCursor is not null) agents = agents[..pageSize];
         var lastRejections = new Dictionary<Guid, AgentCertificateRejections.Rejection>();
         if (agents.Length > 0 && rejections?.Snapshot() is { Count: > 0 } observed)
         {
@@ -116,6 +130,37 @@ public sealed partial class AgentManagementService
                 .OrderByDescending(a=>Version.TryParse(a["agent_version"]?.GetValue<string>(),out var version) ? version : new Version(0,0,0)).FirstOrDefault();
             agent["replaced_by"]=current?["id"]?.DeepClone(); agent["replacement_version"]=current?["agent_version"]?.DeepClone();
         }
-        await audit.AppendAsync(db, tx, "agent_list", actor, "agents", new { }, ct); return JsonSerializer.SerializeToElement(new { items = agents });
+        var failed = rawId is null && after is null ? await RowsAsync(db, tx, """
+            select distinct on (computer) id::text as id, reported_hostname, occurred_at, reason from (
+                select a.id, a.occurred_at, a.details->>'reported_hostname' as reported_hostname,
+                    a.details->>'code' as reason,
+                    lower(coalesce(a.details->>'reported_hostname', a.details->>'source_address', '')) as computer
+                from sli_agent_audit a
+                where a.action='issue' and a.actor='enrollment' and a.details->>'outcome'='rejected'
+                    and not exists(select 1 from sli_agents registered
+                        where registered.created_at >= a.occurred_at
+                            and lower(registered.registration_host_name)=lower(a.details->>'reported_hostname'))
+                order by a.occurred_at desc, a.id desc limit 100
+            ) recent order by computer, occurred_at desc, id desc
+            """, ct) : [];
+        await audit.AppendAsync(db, tx, "agent_list", actor, "agents", new { }, ct);
+        return JsonSerializer.SerializeToElement(new { items = agents, rejected_enrollments = failed, next_cursor = nextCursor });
+    }
+
+    public async Task<JsonElement> SetMachineRoleAsync(NpgsqlConnection db, NpgsqlTransaction tx, JsonElement input, string actor, CancellationToken ct)
+    {
+        Guid id = AgentControlJson.Id(AgentControlJson.Get(input, "agent_id"));
+        var role = AgentControlJson.Get(input, "machine_role");
+        if (role.ValueKind != JsonValueKind.String || role.GetString() is not ("domain_controller" or "file_server" or "workstation"))
+            throw new AgentControlException("invalid_agent_machine_role");
+        string machineRole = role.GetString()!;
+        await using var update = new NpgsqlCommand("""
+            update sli_agents set machine_role=@role where id=@id and status='active' returning id
+            """, db, tx);
+        update.Parameters.AddWithValue("id", id);
+        update.Parameters.AddWithValue("role", machineRole);
+        if (await update.ExecuteScalarAsync(ct) is null) throw new AgentControlException("agent_not_found", 404);
+        await audit.AppendAsync(db, tx, "module_assign", actor, id.ToString(), new { machine_role = machineRole }, ct);
+        return JsonSerializer.SerializeToElement(new { machine_role = machineRole });
     }
 }

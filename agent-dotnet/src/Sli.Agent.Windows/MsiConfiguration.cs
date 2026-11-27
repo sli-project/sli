@@ -23,7 +23,7 @@ public static class MsiConfiguration
         using var root = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
         using var key = root.OpenSubKey(RegistryPath);
         var result = new Dictionary<string, string?>();
-        foreach (var name in new[] { "ServerUrl", "CaBundle", "CaFingerprint", "TokenFile", "InstanceName" })
+        foreach (var name in new[] { "ServerUrl", "CaBundle", "CaFingerprint", "CaCertificate", "TokenFile", "InstanceName" })
             if (key?.GetValue(name) is string { Length: > 0 } value)
                 result["Agent:" + name] = name == "InstanceName" ? ValidateInstanceName(value) : value;
         if (key?.GetValue("StateDirectory") is string { Length: > 0 } directory) result["Agent:StateDir"] = directory;

@@ -2,9 +2,9 @@ import { FilterChips } from "../../design-system/FilterChips";
 import { Checkbox } from "../../design-system/Checkbox";
 import { AccessRequestStateView, useAccessRequest } from "../access-request-state";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, ApiResponseError, PASSWORD_DETECTION_DOMAIN_UNAVAILABLE, type AgentItem, type AgentEnrollmentToken } from "../../api/client";
-import { DataTable, DetailDrawer, FactList, PageHeader, StateView, type TableColumn } from "../../design-system";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api, ApiResponseError, PASSWORD_DETECTION_DOMAIN_UNAVAILABLE, type AgentItem, type AgentEnrollmentToken, type AgentEnrollmentRejection, type AgentMachineRole } from "../../api/client";
+import { Button, DataTable, DetailDrawer, FactList, PageHeader, Select, StateView, type TableColumn } from "../../design-system";
 import { t } from "../../i18n";
 import { formatDateTime } from "../../shared/date-time";
 import { EMPTY_VALUE } from "../../shared/format";
@@ -34,6 +34,25 @@ export function AgentsPage() {
 }
 
 type AgentFilter = "all" | "silent" | "auditOff" | "disabled";
+const machineRoles = { domain_controller: "agents.roleDc", file_server: "agents.fileServer.role", workstation: "agents.roleWorkstation" } as const;
+const enrollmentReasons = {
+  enrollment_token_rejected: "agents.enrollmentReason.keyRejected",
+  enrollment_token_revoked: "agents.enrollmentReason.keyRevoked",
+  enrollment_token_expired: "agents.enrollmentReason.keyExpired",
+  enrollment_token_exhausted: "agents.enrollmentReason.limitReached",
+  invalid_agent_registration_name: "agents.enrollmentReason.invalidName",
+  agent_registration_name_mismatch: "agents.enrollmentReason.nameMismatch",
+  agent_host_already_enrolled: "agents.enrollmentReason.alreadyEnrolled",
+  agent_identity_computer_conflict: "agents.enrollmentReason.identityConflict",
+} as const;
+type InventoryRow = AgentItem | AgentEnrollmentRejection;
+
+function computerRole(agent: AgentItem): AgentMachineRole | undefined {
+  return agent.machine_role ?? (agentHasDcAudit(agent) ? "domain_controller"
+    : agent.assigned_modules.some((module) => moduleId(module) === "sli.file-audit") ? "file_server"
+    : agent.assigned_modules.some((module) => moduleId(module) === "sli.workstations") ? "workstation" : undefined);
+}
+
 const certificateRejectionActions = {
   untrusted_root: "agents.certificateRejection.untrustedRoot",
   unexpected_chain_length: "agents.certificateRejection.chainLength",
@@ -102,7 +121,8 @@ function AgentsContent() {
   const params = new URLSearchParams(window.location.search);
   const agentId = params.get("agent_id") ?? undefined;
   const openPasswordDomain = params.get("configure") === "password-domain";
-  const inventory = useQuery({ queryKey: agentId ? ["admin-agents", agentId] : ["admin-agents"], queryFn: () => api.agents(agentId), refetchInterval: 15_000 });
+  const inventory = useInfiniteQuery({ queryKey: ["admin-agents", "pages", agentId], initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) => api.agents(agentId, pageParam), getNextPageParam: (page) => page.next_cursor ?? undefined, refetchInterval: 15_000 });
   const setup = useQuery({ queryKey: ["setup-status"], queryFn: api.setupStatus, retry: false, refetchInterval: 30_000 });
   const health = !setup.isError && !setup.data?.agent_collection?.diagnostics ? setup.data?.agent_collection : null;
   const sources = new Map(statusSources(health, setup.data?.domains ?? [], timeZone).map((row) => [row.id, row]));
@@ -111,7 +131,7 @@ function AgentsContent() {
   const linkedAgentFocused = useRef(false);
   useEffect(() => {
     const id = agentId ?? (window.location.hash.startsWith("#agent-") ? window.location.hash.slice(7) : undefined);
-    if (id && inventory.data?.items.some((item) => item.id === id) && !linkedAgentFocused.current) {
+    if (id && inventory.data?.pages.some((page) => page.items.some((item) => item.id === id)) && !linkedAgentFocused.current) {
       linkedAgentFocused.current = true;
       setSelectedId(id);
     }
@@ -133,7 +153,7 @@ function AgentsContent() {
     if (value === "all") url.searchParams.delete("filter"); else url.searchParams.set("filter", value);
     window.history.replaceState(window.history.state, "", url);
   };
-  const action = useMutation({ mutationFn: ({ kind, body }: { kind: "modules" | "disable" | "revoke" | "rights-probe" | "policy" | "remove"; body: Record<string, unknown> }) => api.agentAction(kind, body),
+  const action = useMutation({ mutationFn: ({ kind, body }: { kind: "modules" | "disable" | "revoke" | "rights-probe" | "policy" | "remove" | "role"; body: Record<string, unknown> }) => api.agentAction(kind, body),
     onSuccess: (_, { kind, body }) => {
       const policy = body.collection_policy;
       if (kind === "policy" && typeof body.agent_id === "string" && policy && typeof policy === "object" && "manage_windows_audit" in policy) {
@@ -150,29 +170,38 @@ function AgentsContent() {
   const actionErrorKey = workstationProfileError ? "agents.invalidPolicy"
     : actionErrorMessage === PASSWORD_DETECTION_DOMAIN_UNAVAILABLE ? "agents.passwordDomain.unavailable" : "agents.actionError";
   const date = (value?: string | null) => formatDateTime(value, timeZone);
-  const items = computers((inventory.data?.items ?? []).filter((agent) => agent.status !== "replaced"));
-  const oldAgents = (inventory.data?.items ?? []).filter((agent) => agent.status === "replaced" && !agent.removal).map((agent) => ({ ...agent, name: agentHostName(agent) }));
-  const selected = inventory.data?.items.find((item) => item.id === selectedId);
+  const inventoryItems = inventory.data?.pages.flatMap((page) => page.items) ?? [];
+  const items = computers(inventoryItems.filter((agent) => agent.status !== "replaced"));
+  const oldAgents = inventoryItems.filter((agent) => agent.status === "replaced" && !agent.removal).map((agent) => ({ ...agent, name: agentHostName(agent) }));
+  const selected = inventoryItems.find((item) => item.id === selectedId);
+  const rejections = inventory.data?.pages[0]?.rejected_enrollments ?? [];
   const groups = {
-    all: items.filter((item) => item.status === "active"),
+    all: [...items.filter((item) => item.status === "active"), ...rejections],
     silent: items.filter(silent),
     auditOff: items.filter((item) => item.status === "active" && (auditDisabled(item) ?? 0) > 0),
     disabled: items.filter((item) => item.status !== "active"),
   };
-  const columns: TableColumn<AgentItem>[] = [
-    { key: "host_name", label: t("agents.hostName"), render: agentHostName },
-    { key: "agent_version", label: t("agents.version"), render: (agent) => agent.agent_version || "—" },
-    { key: "role", label: t("agents.computerRole"), render: (agent) => agent.assigned_modules.some((module) => ["sli.windows.ad-dc", "sli.windows.ad-dc-history"].includes(moduleId(module)))
-      ? t("agents.roleDc") : agent.assigned_modules.some((module) => moduleId(module) === "sli.workstations") ? t("agents.roleWorkstation") : "—" },
-    { key: "status", label: t("agents.status"), render: (agent) => collectionState(agent).state },
+  const columns: TableColumn<InventoryRow>[] = [
+    { key: "host_name", label: t("agents.hostName"), render: (row) => "reason" in row ? row.reported_hostname || t("agents.enrollmentReason.unknownComputer") : agentHostName(row) },
+    { key: "agent_version", label: t("agents.version"), render: (row) => "reason" in row ? EMPTY_VALUE : row.agent_version || EMPTY_VALUE },
+    { key: "role", label: t("agents.computerRole"), render: (row) => {
+      const role = "reason" in row ? undefined : computerRole(row);
+      return role ? t(machineRoles[role]) : EMPTY_VALUE;
+    } },
+    { key: "status", label: t("agents.status"), render: (row) => "reason" in row ? t("agents.notConnected") : collectionState(row).state },
     { key: "action", label: t("systemStatus.action"), render: (agent) => {
+      if ("reason" in agent) return t(Object.hasOwn(enrollmentReasons, agent.reason)
+        ? enrollmentReasons[agent.reason as keyof typeof enrollmentReasons] : "agents.enrollmentReason.rejected");
       const reason = agent.certificate_rejection_reason;
       return reason && Object.hasOwn(certificateRejectionActions, reason)
         ? t(certificateRejectionActions[reason]) : collectionState(agent).action;
     } },
-    { key: "last_seen", label: t("agents.lastData"), kind: "datetime", render: (agent) =>
-      <span title={date(agent.last_seen)}>{formatDateTime(agent.last_seen, timeZone, { withYear: false })}</span> },
+    { key: "last_seen", label: t("agents.lastData"), kind: "datetime", render: (row) => {
+      const time = "reason" in row ? row.occurred_at : row.last_seen;
+      return <span title={date(time)}>{formatDateTime(time, timeZone, { withYear: false })}</span>;
+    } },
     { key: "windows_audit", label: t("agents.windowsAudit"), render: (agent) => {
+      if ("reason" in agent) return EMPTY_VALUE;
       const count = auditDisabled(agent);
       return dcAuditFailure(agent) ?? (count === null ? "—" : count ? t("agents.auditDisabledCount", { count }) : t("agents.auditConfigured"));
     } },
@@ -181,15 +210,20 @@ function AgentsContent() {
   const addButton = <button className="sli-ds-button" type="button" onClick={() => setConsoleSession(sessionKey)}>{t("agents.addComputer")}</button>;
   const modules = selected?.assigned_modules.filter((module) => ["sli.windows.ad-dc", "sli.windows.ad-dc-history", "sli.ad-snapshot", "sli.gpo-snapshot", "sli.workstations"].includes(moduleId(module))) ?? [];
   const selectedState = selected && collectionState(selected);
+  const more = inventory.hasNextPage ? <Button disabled={inventory.isFetchingNextPage}
+    onClick={() => { void inventory.fetchNextPage(); }}>{t(inventory.isFetchingNextPage ? "table.loadingMore" : "table.loadMore")}</Button> : null;
   return <section className="sli-ds-report">
     <PageHeader title={t("agents.title")} actions={addButton}/>
     <FilterChips label={t("agents.title")} value={filter}
       items={quickFilters.map((key) => ({ key, label: t(`agents.quick.${key}`), count: String(groups[key].length) }))}
       onChange={(key) => { const next = quickFilters.find((item) => item === key); if (next) setQuickFilter(next); }}/>
-    {inventory.isLoading ? <StateView state="loading"/> : inventory.isError ? <div><p role="alert">{t("agents.loadError")}</p><button className="sli-ds-button" onClick={() => void inventory.refetch()}>{t("state.retry")}</button></div>
-      : groups[filter].length ? <div className="sli-ds-report__views"><DataTable key={filter} localPagination columns={columns} rows={groups[filter]} rowKey={(agent) => agent.id} onRowClick={(agent) => setSelectedId(agent.id)} selectedKey={selectedId} caption={t("agents.title")}/></div>
-      : items.length ? <p>{t("agents.noMatches")}</p>
-      : <div><p>{t("agents.emptyComputers")}</p>{addButton}</div>}
+    {inventory.isLoading ? <StateView state="loading"/> : inventory.isLoadingError ? <div><p role="alert">{t("agents.loadError")}</p><button className="sli-ds-button" onClick={() => void inventory.refetch()}>{t("state.retry")}</button></div>
+      : groups[filter].length ? <div className="sli-ds-report__views"><DataTable key={filter} localPagination columns={columns} rows={groups[filter]}
+        rowKey={(row) => "reason" in row ? `enrollment-${row.id}` : row.id} canActivateRow={(row) => !("reason" in row)}
+        onRowClick={(row) => setSelectedId(row.id)} selectedKey={selectedId} caption={t("agents.title")} footerControls={more}/></div>
+      : more ?? (items.length || rejections.length ? <p>{t("agents.noMatches")}</p>
+      : <div><p>{t("agents.emptyComputers")}</p>{addButton}</div>)}
+    {inventory.isFetchNextPageError && <p role="alert">{t("agents.loadError")}</p>}
     <OldAgentsTable agents={oldAgents} canRemove={Boolean(access?.platform_owner)}/>
     <div className="sli-ds-filters__actions">
       <button className="sli-ds-button" type="button" onClick={() => setKeysSession(sessionKey)}>{t("agents.console.keys")}</button>
@@ -202,6 +236,13 @@ function AgentsContent() {
     {keysSession === sessionKey && <AgentConsoleKeys sessionKey={sessionKey} timeZone={timeZone} onClose={() => setKeysSession(undefined)}/>}
     {selected ? <DetailDrawer open title={agentHostName(selected)} onClose={() => setSelectedId(null)}>
       {selectedState ? <p>{selectedState.state}{selectedState.action === EMPTY_VALUE ? "" : `. ${selectedState.action}`}</p> : null}
+      <div className="sli-ds-field">
+        <label htmlFor="agent-machine-role">{t("agents.computerRole")}</label>
+        <Select id="agent-machine-role" label={t("agents.computerRole")} value={computerRole(selected)}
+          options={Object.entries(machineRoles).map(([value, label]) => ({ value, label: t(label) }))}
+          disabled={selected.status !== "active" || action.isPending}
+          onChange={(role) => { if (role && role !== computerRole(selected)) action.mutate({ kind: "role", body: { agent_id: selected.id, machine_role: role } }); }}/>
+      </div>
       <AgentFileServerCard key={selected.id} agent={selected} busy={action.isPending} timeZone={timeZone}
         canManage={Boolean(access?.platform_owner || access?.subject.coarse_role === "admin" && access.capabilities.includes("access.manage"))}/>
       {selected.collection_policy || modules.length || selected.eventlog_diagnostics?.items.length || selected.delivery_diagnostics ? <section>
@@ -251,15 +292,16 @@ function AgentsContent() {
 function AgentConsoleKeys({ sessionKey, timeZone, onClose }: { sessionKey: string; timeZone: string; onClose: () => void }) {
   const tokens = useQuery({ queryKey: ["agent-console-tokens", sessionKey], queryFn: api.agentConsoleTokens,
     refetchInterval: 15_000, meta: { persist: false } });
-  const revoke = useMutation({ mutationFn: api.revokeAgentConsoleToken,
+  const revoke = useMutation({ mutationFn: ({ id, packaged }: { id: string; packaged: boolean }) => packaged ? api.revokeAgentInstallPackage(id) : api.revokeAgentConsoleToken(id),
     onSuccess: async () => { await tokens.refetch(); } });
   const date = (value: string) => formatDateTime(value, timeZone);
   return <DetailDrawer open title={t("agents.console.keys")} onClose={onClose}>
     {tokens.isLoading ? <StateView state="loading"/> : tokens.isError ? <p role="alert">{t("agents.console.listError")}</p>
       : tokens.data?.items.length ? <ul>{tokens.data.items.map((token) => <li key={token.id}>
-        {date(token.created_at)} · {t("agents.console.remaining", { count: token.remaining })}{" "}
+        {token.packaged ? t("agents.console.packagedKey", { time: formatDateTime(token.created_at, timeZone, { timeOnly: true }), count: token.connected })
+          : `${date(token.created_at)} · ${t("agents.console.remaining", { count: token.remaining ?? 0 })}`}{" "}
         <button className="sli-ds-button" type="button" disabled={revoke.isPending} onClick={() => {
-          if (window.confirm(t("agents.console.confirmRevoke", { date: date(token.created_at) }))) revoke.mutate(token.id);
+          if (window.confirm(t("agents.console.confirmRevoke", { date: date(token.created_at) }))) revoke.mutate(token);
         }}>{t("agents.console.revoke")}</button>
       </li>)}</ul> : <p>{t("agents.console.noKeys")}</p>}
     {revoke.isError && <p role="alert">{t("agents.console.revokeError")}</p>}

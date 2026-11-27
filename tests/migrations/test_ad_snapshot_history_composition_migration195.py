@@ -74,7 +74,7 @@ def test_health_probe_keeps_freshness_pid_and_failure_checks(history_database, m
         insert into public.runtime_worker_heartbeats values('storage_lifecycle','warning',
             '{"last_cycle_reason":"snapshot_history_migration_required"}',now(),1,300);""")
     monkeypatch.setattr(healthcheck, "native_postgres_dsn", lambda: os.environ["ADLOG_TEST_PG_DSN"])
-    started_at = admin.execute("select now() - interval '1 hour'").fetchone()[0]
+    started_at = admin.execute("select now() - interval '1 hour' as started_at").fetchone()["started_at"]
     assert healthcheck.native_healthy("storage_lifecycle", process_pid=1, started_at=started_at)
     assert capsys.readouterr().out == "warning: storage_lifecycle: snapshot_history_migration_required\n"
     for update in ("heartbeat_at=now()-interval '631 seconds'", "heartbeat_at=now()+interval '60 seconds'",

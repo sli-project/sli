@@ -651,6 +651,8 @@
     "config/postgres_migrations/447_sigma_live.sql": "5cf36334dc1b884c2dc989dbea2d79000afbf59396538a1f8e3af96bb4a7fe6b",
     "config/postgres_migrations/448_workstation_ad_inventory.rollback.sql": "49962338b568bba665700a6a4e85f8ec70837f157be8e2a2b399ded95cd7af10",
     "config/postgres_migrations/448_workstation_ad_inventory.sql": "3304368fe98b6d6ab5bdbcbf0a229a24264da59872ee36e124d92722b204c38f",
+    "config/postgres_migrations/450_agent_install_package.rollback.sql": "6a7aefce761018ffc45b8362546dfb2ecade5f648752ee5d503b7e1f27b2edc5",
+    "config/postgres_migrations/450_agent_install_package.sql": "82546003f7754875cfc2e5f2525aa1fcb990508c4d42f067b7367b24bf37e1b8",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },

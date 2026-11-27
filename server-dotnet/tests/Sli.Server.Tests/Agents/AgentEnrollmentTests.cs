@@ -184,9 +184,7 @@ public class AgentEnrollmentTests
     {
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new SqlPostgresFixture();
-        await fixture.StartAsync(ct, throughVersion: 389);
-        var migration = MigrationDirectory.Read(390).Single(item => item.Version == 390).Path;
-        await fixture.Pg.ApplyFileAsync(migration, null, ct);
+        await fixture.StartAsync(ct);
         await using (var admin = new NpgsqlConnection(fixture.Pg.ConnectionString))
         {
             await admin.OpenAsync(ct);

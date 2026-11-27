@@ -1,35 +1,17 @@
-"""Prospective assignment retention on disposable PG; no complete bootstrap claim.
-
-Actual156/163/169 and232 execute.183 policy-table and219 binding/scope DDL
-are copied unchanged; unrelated empty plugin relation shapes are fixture-only.
-No native proof is replaced. Factory/ensure/QW publication is outside this seam.
-"""
+"""Migration 272 catalog and runtime privileges on disposable PostgreSQL."""
 from contextlib import contextmanager
-from dataclasses import replace
-import json
-import os
 from pathlib import Path
 
 import pytest
 
-from tests.postgres_integration_guard import assert_disposable_database
+from tests.migrations.historical_postgres import historical_connection
 
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS = ROOT/'config/postgres_migrations'
 PATH = MIGRATIONS/'272_file_audit_assignment_policy.sql'
 AGENT = '00000000-0000-4000-8000-000000000071'
-HOST = '00000000-0000-4000-8000-000000000072'
-APP = 'sli_test_file_policy_app272'
 WORKER = 'sli_test_file_policy_worker272'
-pytestmark = [pytest.mark.postgres_integration, pytest.mark.postgres_empty]
-
-
-def source(name):
-    return (MIGRATIONS/name).read_text('utf-8-sig')
-
-
-def table(text, name):
-    return text[text.index('create table '+name):].split('\n);', 1)[0]+'\n);'
+pytestmark = [pytest.mark.postgres_integration, pytest.mark.postgres_owned_cluster]
 
 
 @contextmanager
@@ -41,32 +23,31 @@ def connect(dsn, user=None):
         yield conn
 
 
-def assignment(enabled=True, expected=1):
-    return dict(agent_id=AGENT, module_id='sli.file-audit', enabled=enabled, expected_revision=expected,
-                config=dict(source_name='fixture-server', mass_operation_files=25, mass_operation_seconds=60,
-                    roots=[dict(collection_scope_id='scope:one', share_name='fixture-share', path='C:\\fixture',
-                        important=True, sacl=dict(trustee_sids=['S-1-1-0'], inherit_files=True, inherit_directories=True))]))
-
-
 @pytest.fixture
-def installed(base):
-    with connect(base[0]) as admin:
-        before = admin.execute("select pg_get_functiondef('public.read_file_ransom_results(jsonb,uuid,text,text,integer,integer)'::regprocedure) as body").fetchone()
-        admin.execute(PATH.read_text('utf-8-sig'))
-        assert admin.execute("select pg_get_functiondef('public.read_file_ransom_results(jsonb,uuid,text,text,integer,integer)'::regprocedure) as body").fetchone() == before
-    return base
+def installed(tmp_path, monkeypatch):
+    from psycopg import sql
 
-
-def snapshot(dsn):
-    with connect(dsn) as admin:
-        return {name: admin.execute('select to_jsonb(t) as row from '+name+' t order by 1').fetchall()
-                for name in ('sli_agents', 'sli_agent_policy_history', 'sli_agent_audit',
-                             'sli_plugin_file_audit.policy_revisions')}
+    with historical_connection(tmp_path, monkeypatch, (271, "account_watch_source_prefilter")) as predecessor:
+        worker = sql.Identifier(WORKER)
+        predecessor.execute(sql.SQL('create role {} login inherit').format(worker))
+        predecessor.execute(sql.SQL('grant adlog_semantic_worker to {}').format(worker))
+        predecessor.execute(sql.SQL('grant connect on database {} to {}').format(
+            sql.Identifier(predecessor.info.dbname), worker))
+        dsn = predecessor.info.dsn
+        with connect(dsn) as admin:
+            read_results = (
+                "select pg_get_functiondef("
+                "'public.read_file_ransom_results(jsonb,uuid,text,text,integer,integer)'::regprocedure) as body"
+            )
+            before = admin.execute(read_results).fetchone()
+            admin.execute(PATH.read_text('utf-8-sig'))
+            assert admin.execute(read_results).fetchone() == before
+        yield dsn
 
 
 def test_private_catalog_and_no_extra_app_or_worker_table_rights(installed):
     import psycopg
-    dsn, _ = installed
+    dsn = installed
     with connect(dsn) as admin:
         catalog = admin.execute("""select owner.rolname,p.prosecdef,p.provolatile,p.proconfig,
             pg_get_function_identity_arguments(p.oid) as args,
@@ -79,6 +60,6 @@ def test_private_catalog_and_no_extra_app_or_worker_table_rights(installed):
         for role in ('adlog_user', 'adlog_semantic_worker'):
             assert not admin.execute("select has_table_privilege(%s,'sli_plugin_file_audit.policy_revisions','SELECT,INSERT,UPDATE,DELETE') as ok", (role,)).fetchone()['ok']
         assert admin.execute("select has_column_privilege('adlog_file_audit_owner','sli_agents','assigned_modules','SELECT') as ok").fetchone()['ok']
-    with pytest.raises(psycopg.errors.InsufficientPrivilege):
-        with connect(dsn, WORKER) as worker:
+    with connect(dsn, WORKER) as worker:
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
             worker.execute('select sli_plugin_file_audit.retain_assignment_policy(%s,%s,%s)', (AGENT, 'session', 1))

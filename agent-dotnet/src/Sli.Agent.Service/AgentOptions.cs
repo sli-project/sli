@@ -14,6 +14,7 @@ public sealed class AgentOptions
     public string CaBundle { get; set; } = string.Empty;
 
     public string? CaFingerprint { get; set; }
+    public string? CaCertificate { get; set; }
     public string? TokenFile { get; set; }
     public string? HostId { get; set; }
     public string? InstanceName { get; set; }

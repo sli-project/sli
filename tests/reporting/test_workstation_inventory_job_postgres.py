@@ -10,6 +10,7 @@ from uuid import uuid4
 import pytest
 
 from tests.migrations.historical_postgres import historical_connection
+from tests.postgres_integration_guard import assert_disposable_database
 
 pytestmark = pytest.mark.postgres_integration
 ROOT = Path(__file__).resolve().parents[2]
@@ -72,6 +73,17 @@ def historical_producer_connection(tmp_path, monkeypatch):
         yield conn
 
 
+@pytest.fixture
+def current_producer_connection(isolated_postgres_integration_database):
+    dsn = os.environ.get("ADLOG_TEST_PG_DSN")
+    if not dsn:
+        pytest.skip("isolated PostgreSQL DSN required")
+    psycopg = pytest.importorskip("psycopg")
+    with psycopg.connect(dsn, autocommit=True) as conn:
+        assert_disposable_database(conn)
+        yield conn
+
+
 @pytest.mark.parametrize("state", ["exact", "foreign", "foreign_filter", "foreign_health", "foreign_runtime", "future"])
 def test_producer_fixture_restores_inventory_or_refuses_before_partial_reset(request, state):
     from psycopg.rows import dict_row
@@ -80,7 +92,7 @@ def test_producer_fixture_restores_inventory_or_refuses_before_partial_reset(req
 
     # The exact round trip covers real successors without crossing 326's
     # final-catalog rollback guard. Unknown markers are still refused on the current schema.
-    fixture = "historical_producer_connection" if state == "exact" else "profile_connection"
+    fixture = "historical_producer_connection" if state == "exact" else "current_producer_connection"
     conn = request.getfixturevalue(fixture)
     conn.row_factory = dict_row
     before = conn.execute("select * from schema_migrations where version<=284 order by version").fetchall()
