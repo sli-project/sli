@@ -1,6 +1,7 @@
 import json
 import subprocess
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -147,3 +148,73 @@ def test_all_rows_must_meet_the_acceptance_thresholds():
     assert drill.build_report(records)["passed"]
     records[-1]["telegram_attempt"] = None
     assert not drill.build_report(records)["passed"]
+
+
+class StandClock:
+    def __init__(self, start):
+        self.current = drill.timestamp(start)
+
+    def now(self):
+        return self.current
+
+    def sleep(self, seconds):
+        self.current += timedelta(seconds=seconds)
+
+
+def test_observe_polls_for_a_finding_then_waits_for_its_telegram_attempt():
+    started_at = "2026-01-01T10:00:00Z"
+    command = drill.stand_command("observer@stand.example.test", Path("fixture-identity"))
+    clock = StandClock(started_at)
+    finding = {
+        "id": 42, "rule_code": drill.PASSWORD_BRUTE, "title_code": None,
+        "signal_at": "2026-01-01T10:00:12Z", "russian_title": True,
+    }
+    accepted = {"finding_id": 42, "state": "accepted", "accepted_at": "2026-01-01T10:00:35Z"}
+    replies = iter([None, finding, None, accepted])
+    times = []
+
+    def run(argv, *, input, **options):
+        assert argv == command
+        assert "begin read only;" in input
+        assert options["check"] and options["capture_output"]
+        times.append(clock.now() - drill.timestamp(started_at))
+        response = next(replies)
+        return subprocess.CompletedProcess(argv, 0, stdout=json.dumps(response) if response else "", stderr="")
+
+    report = drill.observe_stand(
+        [{"scenario": 1, "started_at": started_at}], command, now=clock.now, sleep=clock.sleep, run=run,
+    )
+    row = report["rows"][0]
+    assert [elapsed.total_seconds() for elapsed in times] == [0, 20, 20, 40]
+    assert row["found"] and row["russian_title"] and row["telegram_accepted"]
+    assert row["minutes"] == 0.34
+
+
+@pytest.mark.parametrize("ssh_times_out", [False, True])
+def test_observe_stops_at_the_scenario_deadline(ssh_times_out):
+    started_at = "2026-01-01T10:00:00Z"
+    command = drill.stand_command("observer@stand.example.test", Path("fixture-identity"))
+    clock = StandClock("2026-01-01T10:09:30Z")
+    budgets = []
+
+    def run(argv, *, timeout, **options):
+        budgets.append(timeout)
+        if ssh_times_out:
+            clock.sleep(timeout)
+            raise subprocess.TimeoutExpired(argv, timeout)
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    report = drill.observe_stand(
+        [{"scenario": 1, "started_at": started_at}], command, now=clock.now, sleep=clock.sleep, run=run,
+    )
+    assert clock.now() == drill.timestamp("2026-01-01T10:10:00Z")
+    assert budgets == ([30] if ssh_times_out else [30, 10])
+    assert not report["rows"][0]["found"]
+
+
+def test_dry_run_prints_stand_command_with_identity_path_redacted(capsys):
+    assert drill.main(["--dry-run", "--stand-ssh", "observer@stand.example.test", "--stand-key", "fixture-key"]) == 0
+    output = capsys.readouterr().out
+    assert "observer@stand.example.test" in output
+    assert "-i '<stand-key>'" in output
+    assert "fixture-key" not in output
