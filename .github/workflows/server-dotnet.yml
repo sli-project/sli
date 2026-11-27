@@ -322,6 +322,12 @@ jobs:
           echo 'create_main_cluster = false' | sudo tee /etc/postgresql-common/createcluster.conf > /dev/null
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends postgresql-18 postgresql-client-18
+      - name: MSI table tools for the Windows agent package tests
+        if: runner.environment == 'github-hosted'
+        run: |
+          if command -v msibuild >/dev/null && command -v msiinfo >/dev/null; then exit 0; fi
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends msitools
       - name: Run and verify server test shard
         shell: bash
         env:

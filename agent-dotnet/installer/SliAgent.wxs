@@ -10,12 +10,24 @@
     <Property Id="INSTANCE_NAME" Secure="yes" />
     <Property Id="CA_FILE" Secure="yes" />
     <Property Id="CA_FINGERPRINT" Secure="yes" />
+    <Property Id="SERVER_CA" Secure="yes" />
     <Property Id="PURGE_QUEUE" Secure="yes" />
     <Property Id="SAVED_SERVER_URL" Secure="yes">
       <RegistrySearch Id="SavedServerUrl" Root="HKLM" Key="SOFTWARE\SLI\AgentNet" Name="ServerUrl" Type="raw" Bitness="always64" />
     </Property>
     <Launch Condition="Installed OR WIX_UPGRADE_DETECTED OR SAVED_SERVER_URL OR (SERVER_URL AND (ENROLL_TOKEN OR TOKEN_FILE))"
             Message="Specify SERVER_URL and ENROLL_TOKEN (or TOKEN_FILE)." />
+    <UI>
+      <Dialog Id="AgentInstallProgress" Width="370" Height="100" Title="[ProductName]" Modeless="yes">
+        <Control Id="Status" Type="Text" X="20" Y="20" Width="330" Height="16" TabSkip="no" Text="Installing [ProductName]..." />
+        <Control Id="Progress" Type="ProgressBar" X="20" Y="48" Width="330" Height="12" ProgressBlocks="yes">
+          <Subscribe Event="SetProgress" Attribute="Progress" />
+        </Control>
+      </Dialog>
+      <InstallUISequence>
+        <Show Dialog="AgentInstallProgress" Before="ExecuteAction" Condition="SERVER_CA AND NOT Installed" />
+      </InstallUISequence>
+    </UI>
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="SLIProgramFolder" Name="SLI">
         <Directory Id="INSTALLFOLDER" Name="AgentNet">
@@ -43,10 +55,11 @@
               <RegistryValue Name="ServerUrl" Value="[SERVER_URL]" Type="string" KeyPath="yes" />
               <RegistryValue Name="CaBundle" Value="[CA_FILE]" Type="string" />
               <RegistryValue Name="CaFingerprint" Value="[CA_FINGERPRINT]" Type="string" />
+              <RegistryValue Name="CaCertificate" Value="[SERVER_CA]" Type="string" />
             </RegistryKey>
           </Component>
-          <!-- Only explicit bootstrap input replaces an old token. Runtime removes it after persistence. -->
-          <Component Id="EnrollmentBootstrap" Guid="FB980F8D-5BC5-4CA3-AEA4-B3B880E5B205" Permanent="yes" Condition="ENROLL_TOKEN OR TOKEN_FILE">
+          <!-- An upgrade using the preconfigured MSI keeps the existing bootstrap. -->
+          <Component Id="EnrollmentBootstrap" Guid="FB980F8D-5BC5-4CA3-AEA4-B3B880E5B205" Permanent="yes" Condition="(ENROLL_TOKEN OR TOKEN_FILE) AND NOT (SERVER_CA AND SAVED_SERVER_URL)">
             <RegistryValue Root="HKLM" Key="SOFTWARE\SLI\AgentNet" Name="EnrollmentToken" Value="[ENROLL_TOKEN]" Type="string" KeyPath="yes" />
             <RegistryValue Root="HKLM" Key="SOFTWARE\SLI\AgentNet" Name="TokenFile" Value="[TOKEN_FILE]" Type="string" />
             <RegistryValue Root="HKLM" Key="SOFTWARE\SLI\AgentNet" Name="InstanceName" Value="[INSTANCE_NAME]" Type="string" />

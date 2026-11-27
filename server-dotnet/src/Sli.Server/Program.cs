@@ -565,6 +565,9 @@ app.MapFallback("{**path}", async context =>
     else
         await DomainHttp.WriteAsync(context, new { error = "not_found" }, StatusCodes.Status404NotFound, context.RequestAborted);
 });
+if (builder.Configuration["SLI_DEPLOYMENT_MODE"] == "native")
+    await app.Services.GetRequiredService<AgentInstallPackages>().PrepareOnStartupAsync(
+        app.Services.GetRequiredService<IPostgresConnectionFactory>(), app.Lifetime.ApplicationStopping);
 app.Run();
 }
 catch(ServerConfigurationException error)

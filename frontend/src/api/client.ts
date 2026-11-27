@@ -103,6 +103,11 @@ export function acceptedAgentFileAuditCommand(body: Record<string, unknown>, res
   return { ...command, agent_id: body.agent_id } as AgentFileAuditCommand;
 }
 
+export type AgentMachineRole = "domain_controller" | "file_server" | "workstation";
+export type AgentEnrollmentRejection = { id: string; reported_hostname: string | null; occurred_at: string; reason: string };
+export type AgentInstallPackage = { server_url: string | null; package_url: string | null; sha256?: string; host_limit?: number | null; expires_at?: string | null };
+export type AgentInstallPackageSettings = { server_url: string; host_limit?: number | null; expires_at?: string | null };
+
 export type AgentItem = {
   certificate_rejection_reason?: "untrusted_root" | "unexpected_chain_length" | "wrong_eku" | "expired" | "not_yet_valid" | "revoked" | "invalid_chain";
   delivery_diagnostics?: AgentDeliveryDiagnostics | null;
@@ -116,6 +121,7 @@ export type AgentItem = {
     reason: "agent_removal_requires_admin" | "agent_removal_unmanaged" | "agent_removal_cleanup_failed" | null;
     connection: "online" | "offline" | "never_seen"; requested_at: string; reported_at: string | null } | null;
   id: string; host_id: string; status: "active" | "disabled" | "replaced"; last_seen: string | null;
+  machine_role?: AgentMachineRole | null;
   certificate_reissue_required?: boolean; server_id?: number | null; agent_version?: string | null; replacement_version?: string | null; replaced_by?: string | null;
   created_at?: string;
   inventory_hidden_reason?: "administrator_removed" | "registration_replaced" | "never_seen_expired" | null;
@@ -2329,7 +2335,8 @@ export const api = {
     requestMutation<{ status: "deleted" }>("/api/v1/ad-operation-credentials/delete", "POST", body),
   checkAdOperationCredential: (body: { credential_id: string; credential_revision: number }) =>
     requestMutation<{ write_enabled: false }>("/api/v1/ad-operation-credentials/check", "POST", body),
-  agents: (agentId?: string) => request<{ items: AgentItem[] }>(`/api/v1/admin/agents${agentId ? `?agent_id=${encodeURIComponent(agentId)}` : ""}`),
+  agents: (agentId?: string, after?: string) => request<{ items: AgentItem[]; rejected_enrollments?: AgentEnrollmentRejection[]; next_cursor?: string | null }>(
+    `/api/v1/admin/agents${agentId ? `?agent_id=${encodeURIComponent(agentId)}` : after ? `?after=${encodeURIComponent(after)}` : ""}`),
   agentSequenceRecovery: (agentId: string) => request<{ gaps: AgentSequenceGap[]; truncated: boolean; recovery_preview: AgentSequenceRecoveryPreview }>(`/api/v1/admin/agents/sequence-recovery?agent_id=${encodeURIComponent(agentId)}`),
   acceptAgentSequenceGap: (agentId: string, observationIds: string[], previewToken: string) => requestMutation<{ status: "authorized"; agent_id: string; observation_ids: string[]; preview_token: string }>("/api/v1/admin/agents/sequence-recovery", "POST", { agent_id: agentId, observation_ids: observationIds, preview_token: previewToken, confirm_loss: true }),
   agentFileAuditStatus: (agentId: string) => request<AgentFileAuditStatus>(`/api/v1/admin/agents/file-audit?agent_id=${encodeURIComponent(agentId)}`),
@@ -2337,7 +2344,7 @@ export const api = {
     request<AgentFileAuditCatalog>(`/api/v1/admin/agents/file-audit/catalog?agent_id=${encodeURIComponent(agentId)}`, signal),
   requestAgentFileAuditCatalog: (agentId: string) =>
     requestMutation<AgentFileAuditCatalog>("/api/v1/admin/agents/file-audit/catalog", "POST", { agent_id: agentId }),
-  agentAction: async (kind: "modules" | "disable" | "revoke" | "rights-probe" | "policy" | "remove" | "restore" | "file-audit", body: Record<string, unknown>) => {
+  agentAction: async (kind: "modules" | "disable" | "revoke" | "rights-probe" | "policy" | "remove" | "restore" | "file-audit" | "role", body: Record<string, unknown>) => {
     const result = await requestMutation<{ status?: string; password_detection_domain?: { status?: string } }>(`/api/v1/admin/agents/${kind}`, "POST", body);
     if (kind === "modules" && Object.prototype.hasOwnProperty.call(body, "password_detection_domain")
         && !["configured", "unchanged"].includes(result?.password_detection_domain?.status ?? "")) {
@@ -2362,10 +2369,10 @@ export const api = {
   agentUpdateWaves: () => request<{ items: AgentUpdateWave[] }>("/api/v1/admin/agent-update-waves"),
   stopAgentUpdateWave: (wave_id: string) => requestMutation<AgentUpdateWave>("/api/v1/admin/agent-update-waves/stop", "POST", { wave_id }),
   createAgentToken: (body: { host_id: string; key_fingerprint: string; ttl_seconds: number; registration_host_name?: string }) => requestMutation<AgentEnrollmentToken>("/api/v1/admin/agent-tokens", "POST", body),
-  agentConsoleSettings: () => request<{ server_url: string | null }>("/api/v1/admin/agent-console-tokens/settings"),
-  createAgentConsoleToken: (hostLimit: number, manageWindowsAudit: boolean, serverUrl: string) => requestMutation<{ id: string; expires_at: string; command: string; package_url: string }>(
-    "/api/v1/admin/agent-console-tokens", "POST", { host_limit: hostLimit, manage_windows_audit: manageWindowsAudit, server_url: serverUrl }),
-  agentConsoleTokens: () => request<{ items: { id: string; created_at: string; expires_at: string; remaining: number }[] }>(
+  agentInstallPackage: () => request<AgentInstallPackage>("/api/v1/admin/agent-install-package"),
+  configureAgentInstallPackage: (body: AgentInstallPackageSettings) => requestMutation<AgentInstallPackage>("/api/v1/admin/agent-install-package", "POST", body),
+  revokeAgentInstallPackage: (id: string) => requestMutation<AgentInstallPackage>("/api/v1/admin/agent-install-package/revoke", "POST", { id }),
+  agentConsoleTokens: () => request<{ items: { id: string; created_at: string; expires_at: string | null; remaining: number | null; packaged: boolean; connected: number }[] }>(
     "/api/v1/admin/agent-console-tokens"),
   revokeAgentConsoleToken: (id: string) => requestMutation("/api/v1/admin/agent-console-tokens/revoke", "POST", { id }),
   homeSummary: () => request<HomeSummary>("/api/v1/home/summary").then(localizeHomeSummary),

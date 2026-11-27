@@ -114,15 +114,32 @@ foreach ($name in @('PrivateState', 'Bootstrap', 'EnrollmentBootstrap')) {
     if (-not $components.ContainsKey($name) -or ($components[$name].Attributes -band 16) -eq 0) { throw "$name must survive upgrade/uninstall" }
 }
 if (($components['Bootstrap'].Attributes -band 128) -eq 0) { throw 'Connection settings must not be overwritten on reinstall' }
-if (($components['EnrollmentBootstrap'].Attributes -band 128) -ne 0 -or $components['EnrollmentBootstrap'].Condition -ne 'ENROLL_TOKEN OR TOKEN_FILE') {
+if (($components['EnrollmentBootstrap'].Attributes -band 128) -ne 0) {
     throw 'An explicitly supplied fresh bootstrap must replace the previous token'
 }
+if ($package['SecureCustomProperties'].Split(';') -notcontains 'SERVER_CA' -or $package.ContainsKey('ENROLL_TOKEN')) {
+    throw 'Release MSI must accept the site CA and ship without an enrollment key'
+}
+$session = $installer.OpenPackage((Resolve-Path -LiteralPath $Msi).Path, 1)
+try {
+    $session.Property('ENROLL_TOKEN') = 'synthetic-bootstrap'
+    $session.Property('SERVER_CA') = 'synthetic-public-cert'
+    $session.Property('SAVED_SERVER_URL') = ''
+    $condition = $components['EnrollmentBootstrap'].Condition
+    if ($session.EvaluateCondition($condition) -ne 1) { throw 'Personalized MSI must write its key on fresh install' }
+    $session.Property('SAVED_SERVER_URL') = 'https://agents.example.test/'
+    if ($session.EvaluateCondition($condition) -ne 0) { throw 'Personalized MSI must keep the previous bootstrap on upgrade' }
+    $session.Property('SERVER_CA') = ''
+    if ($session.EvaluateCondition($condition) -ne 1) { throw 'Explicit recovery input must still replace the previous bootstrap' }
+}
+finally { $null = [Runtime.InteropServices.Marshal]::FinalReleaseComObject($session) }
 $view = $database.OpenView('SELECT `Name`, `Value`, `Component_` FROM `Registry` WHERE `Root` = 2 AND `Key` = ''SOFTWARE\SLI\AgentNet''')
 $null = $view.Execute()
 $settings = @{}
 while ($null -ne ($setting = $view.Fetch())) { $settings[$setting.StringData(1)] = @{ Value = $setting.StringData(2); Component = $setting.StringData(3) } }
 $null = $view.Close()
 if ($settings['StateDirectory'].Value -ne '[AgentDataFolder]state' -or $settings['StateDirectory'].Component -ne 'PrivateState') { throw 'Machine-wide state directory missing' }
+if ($settings['CaCertificate'].Value -ne '[SERVER_CA]' -or $settings['CaCertificate'].Component -ne 'Bootstrap') { throw 'The pinned site CA must persist with the connection settings' }
 foreach ($name in @('EnrollmentToken', 'TokenFile')) {
     if ($settings[$name].Component -ne 'EnrollmentBootstrap') { throw 'Bootstrap refresh must be independent of preserved connection settings' }
 }

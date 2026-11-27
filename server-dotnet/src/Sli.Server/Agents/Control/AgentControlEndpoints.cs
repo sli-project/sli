@@ -19,10 +19,16 @@ public static class AgentControlEndpoints
     public static IServiceCollection AddAgentControl(this IServiceCollection services)
     {
         services.TryAddScoped<IAccessFactsRepository, AccessFactsRepository>();
+        services.TryAddSingleton<AgentInstallPackages>();
         services.TryAddSingleton<IAgentControlAudit, AgentControlAudit>(); services.AddScoped<AgentManagementService>(); services.AddScoped<IAgentPolicyService, AgentPolicyService>(); services.AddScoped<AgentModuleAssignmentService>(); return services;
     }
     public static IEndpointRouteBuilder MapAgentControlEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapGet(AgentInstallPackages.SettingsPath, context => HandleAsync(context, AgentInstallPackages.SettingsPath, noStoreOnly: true));
+        endpoints.MapPost(AgentInstallPackages.SettingsPath, context => HandleAsync(context, AgentInstallPackages.SettingsPath, noStoreOnly: true));
+        endpoints.MapPost(AgentInstallPackages.SettingsPath + "/revoke", context => HandleAsync(context, AgentInstallPackages.SettingsPath + "/revoke", noStoreOnly: true));
+        endpoints.MapGet(AgentInstallPackages.DownloadPath, context => HandleAsync(context, AgentInstallPackages.DownloadPath, noStoreOnly: true));
+        endpoints.MapPost("/api/v1/admin/agents/role", context => HandleAsync(context, "/api/v1/admin/agents/role"));
         endpoints.MapGet(ConsoleTokens, context => HandleAsync(context, ConsoleTokens, noStoreOnly: true));
         endpoints.MapPost(ConsoleTokens, context => HandleAsync(context, ConsoleTokens, noStoreOnly: true));
         endpoints.MapGet(ConsoleTokens + "/settings", context => HandleAsync(context, ConsoleTokens + "/settings", noStoreOnly: true));
@@ -79,11 +85,34 @@ public static class AgentControlEndpoints
             await using var db = await services.GetRequiredService<IPostgresConnectionFactory>().OpenAsync(durable);
             await using var tx = await db.BeginTransactionAsync(durable);
             var management = services.GetRequiredService<AgentManagementService>();
+            var packages = services.GetRequiredService<AgentInstallPackages>();
+            if (route.StartsWith(AgentInstallPackages.SettingsPath, StringComparison.Ordinal) && !context.Request.IsHttps)
+                throw new AgentControlException("agent_console_https_required", 403);
+            if (route == AgentInstallPackages.DownloadPath)
+            {
+                var download = await packages.OpenDownloadAsync(db, tx, context.Request.Query["revision"].ToString(), ct);
+                await using var file = download.FileStream;
+                await tx.CommitAsync(ct);
+                await download.ExecuteAsync(context);
+                return;
+            }
+            if (mutation && (route == AgentInstallPackages.SettingsPath || route == AgentInstallPackages.SettingsPath + "/revoke"))
+            {
+                Guid? revoke = route.EndsWith("/revoke", StringComparison.Ordinal)
+                    ? AgentControlJson.Id(AgentControlJson.Get(body!.RootElement, "id")) : null;
+                var prepared = await packages.PrepareAsync(db, tx, revoke is null ? body!.RootElement : default, revoke, actor, durable);
+                await tx.CommitAsync(durable);
+                AgentInstallPackages.DeleteRetiredFiles(prepared.RetiredMsi, prepared.RetiredKey);
+                await DomainHttp.WriteAsync(context, prepared.Body, 200, ct);
+                return;
+            }
             var output = authorizedOperation is not null ? await authorizedOperation(db, tx, body is null ? default : body.RootElement, principal, new CapabilityComposer().Compose(facts), durable) : rawOperation is not null ? await rawOperation(db, tx, actor, durable) : operation is not null ? await operation(db, tx, body is null ? default : body.RootElement, actor, durable) : (context.Request.Method, route) switch
             {
-                ("GET", "/api/v1/admin/agents") => await management.ListAgentsAsync(db, tx, Values(context, "agent_id").FirstOrDefault(), actor, durable),
+                ("GET", "/api/v1/admin/agents") => await management.ListAgentsAsync(db, tx, Values(context, "agent_id").FirstOrDefault(), actor, durable,
+                    Values(context, "after").FirstOrDefault()),
                 ("GET", ConsoleTokens) => await management.ListConsoleTokensAsync(db, tx, actor, durable),
                 ("GET", ConsoleTokens + "/settings") => await management.ReadConsoleSettingsAsync(db, tx, durable),
+                ("GET", AgentInstallPackages.SettingsPath) => await packages.ReadSettingsAsync(db, tx, durable),
                 ("GET", _) => await management.ListTokensAsync(db, tx, actor, durable),
                 ("POST", ConsoleTokens) => await management.CreateConsoleTokenAsync(db, tx, body!.RootElement, actor, context, durable),
                 ("POST", ConsoleTokens + "/revoke") => await management.RevokeConsoleTokenAsync(db, tx, body!.RootElement, actor, durable),
@@ -91,6 +120,7 @@ public static class AgentControlEndpoints
                 ("POST", "/api/v1/admin/agent-tokens/revoke") => await management.RevokeTokenAsync(db, tx, body!.RootElement, actor, durable),
                 ("POST", "/api/v1/admin/agents/policy") => await services.GetRequiredService<IAgentPolicyService>().UpdateControlAsync(db, tx, body!.RootElement, actor, durable),
                 ("POST", "/api/v1/admin/agents/modules") => await services.GetRequiredService<AgentModuleAssignmentService>().AssignAsync(db, tx, body!.RootElement, actor, durable),
+                ("POST", "/api/v1/admin/agents/role") => await management.SetMachineRoleAsync(db, tx, body!.RootElement, actor, durable),
                 _ => await management.RevokeAsync(db, tx, body!.RootElement, actor, route.EndsWith("/disable", StringComparison.Ordinal), durable)
             };
             await tx.CommitAsync(durable); await DomainHttp.WriteAsync(context, output, 200, ct);

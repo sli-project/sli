@@ -641,6 +641,8 @@
     "config/postgres_migrations/435_user_activity_indexes.sql": "952ea66b5e559a1f457c171e13740958ac2653a40f2cec331836441dd07a5416",
     "config/postgres_migrations/442_agent_unicode_host_names.rollback.sql": "6cb56e445aaeeb4198a84ee5a90f2bd1b37636b3832393abccfb0e876f853352",
     "config/postgres_migrations/442_agent_unicode_host_names.sql": "d41ac836c39ae430d80c9de064dfca94057c60f9491ceb26a8a5746215dc2567",
+    "config/postgres_migrations/443_agent_install_package.rollback.sql": "16ba1f51f77ac93d783b905d0650284a6d8868497fe98a9b7a3952dae04eeeaf",
+    "config/postgres_migrations/443_agent_install_package.sql": "775f3f8a2f95ec71258fa2899e0eb9853b44dcd7ca01d031d0d9fbe90478e4ad",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },

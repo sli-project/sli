@@ -12,7 +12,7 @@ public sealed partial class AgentManagementService
     private const string ConsoleServerUrlSetting = "agents.console_server_url";
     internal const int ConsoleHostLimit = 100;
 
-    private static async Task<string?> ReadConsoleServerUrlAsync(NpgsqlConnection db, NpgsqlTransaction tx, CancellationToken ct)
+    internal static async Task<string?> ReadConsoleServerUrlAsync(NpgsqlConnection db, NpgsqlTransaction tx, CancellationToken ct)
     {
         await using var query = new NpgsqlCommand("select value from platform_settings where key=@key", db, tx);
         query.Parameters.AddWithValue("key", ConsoleServerUrlSetting);
@@ -90,9 +90,11 @@ public sealed partial class AgentManagementService
     public async Task<JsonElement> ListConsoleTokensAsync(NpgsqlConnection db, NpgsqlTransaction tx, string actor, CancellationToken ct)
     {
         var items = await RowsAsync(db, tx, """
-            select id,created_at,expires_at,host_limit,remaining from sli_agent_console_tokens
-            where revoked_at is null and remaining>0 and expires_at>clock_timestamp()
-            order by created_at desc,id limit 100
+            select id,created_at,expires_at,host_limit,remaining,installer is not null as packaged,
+                (select count(*) from sli_agent_enrollment_tokens e where e.console_token_id=t.id and e.used_at is not null) as connected
+            from sli_agent_console_tokens t
+            where revoked_at is null and (installer is not null or (remaining>0 and expires_at>clock_timestamp()))
+            order by installer is not null desc,created_at desc,id limit 100
             """, ct);
         await audit.AppendAsync(db, tx, "token_list", actor, "console-tokens", new { }, ct);
         return JsonSerializer.SerializeToElement(new { items });
@@ -104,7 +106,7 @@ public sealed partial class AgentManagementService
         Guid id = AgentControlJson.Id(AgentControlJson.Get(payload, "id"));
         await using var query = new NpgsqlCommand("""
             update sli_agent_console_tokens set revoked_at=clock_timestamp()
-            where id=@id and remaining>0 and revoked_at is null and expires_at>clock_timestamp() returning id
+            where id=@id and installer is null and remaining>0 and revoked_at is null and expires_at>clock_timestamp() returning id
             """, db, tx);
         query.Parameters.AddWithValue("id", id);
         if (await query.ExecuteScalarAsync(ct) is null) throw new AgentControlException("enrollment_token_not_found", 404);
@@ -116,10 +118,10 @@ public sealed partial class AgentManagementService
 internal sealed record AgentConsolePackage(Uri Origin, string Root, string Pin, string Digest, string ProductVersion = "")
 {
     public const string DownloadPath = "/api/v1/agent/installer/SliAgent.msi";
-    private static string PackagePath(IConfiguration config) =>
-        config["Sli:AgentInstallerPath"] ?? "/opt/sli/current/agent/SliAgent.msi";
+    internal static string PackagePath(IConfiguration config) =>
+        config["Sli:AgentInstallerPath"] ?? Path.Combine(config["Sli:Release:PackageRoot"] ?? "/opt/sli/current", "agent/SliAgent.msi");
 
-    private static async Task<string> ReadVersionAsync(string path, string digest, CancellationToken ct)
+    internal static async Task<string> ReadVersionAsync(string path, string digest, CancellationToken ct)
     {
         FileStream metadata;
         try { metadata = File.OpenRead(path + ".json"); }
@@ -195,7 +197,7 @@ internal sealed record AgentConsolePackage(Uri Origin, string Root, string Pin, 
         }
     }
 
-    internal static Uri ValidateOrigin(string address, X509Certificate2 certificate)
+    internal static Uri ValidateOrigin(string address, X509Certificate2 certificate, bool requireRemote = false)
     {
         address = address.Trim();
         if (address.Length <= 1024 && address.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
@@ -207,13 +209,31 @@ internal sealed record AgentConsolePackage(Uri Origin, string Root, string Pin, 
             && address.IndexOf('/', "https://".Length) is var pathStart
             && (pathStart < 0 || pathStart == address.Length - 1)
             && origin.AbsoluteUri.Length <= 1024
+            && (!requireRemote || IsRemoteHost(origin.IdnHost))
             && certificate.MatchesHostname(origin.IdnHost, allowWildcards: true, allowCommonName: false))
             return origin;
 
+        throw new AgentControlException("invalid_agent_console_server_url", allowedHosts: CertificateHosts(certificate));
+    }
+
+    internal static string[] CertificateHosts(X509Certificate2 certificate)
+    {
         var san = certificate.Extensions.OfType<X509SubjectAlternativeNameExtension>().SingleOrDefault();
-        string[] hosts = san is null ? [] : san.EnumerateDnsNames()
+        return san is null ? [] : san.EnumerateDnsNames()
             .Concat(san.EnumerateIPAddresses().Select(ip => ip.ToString())).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        throw new AgentControlException("invalid_agent_console_server_url", allowedHosts: hosts);
+    }
+
+    internal static bool IsRemoteHost(string host)
+    {
+        if (System.Net.IPAddress.TryParse(host, out var ip))
+        {
+            if (ip.IsIPv4MappedToIPv6) ip = ip.MapToIPv4();
+            return !System.Net.IPAddress.IsLoopback(ip) && !ip.Equals(System.Net.IPAddress.Any)
+                && !ip.Equals(System.Net.IPAddress.IPv6Any) && !ip.IsIPv6LinkLocal && !ip.IsIPv6Multicast;
+        }
+        host = host.TrimEnd('.');
+        return !host.Contains('*') && !host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+            && !host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase);
     }
 
     public string Command(string token) => "& {\n" + Script + "\n} "

@@ -151,7 +151,7 @@ def build(source, output, release, version, runtime_version, previous=None, *, c
     with tempfile.TemporaryDirectory(prefix="sli-deb-") as temporary:
         staging = Path(temporary)
         host = staging / "sli-host"
-        control(host, "sli-host", version, "python3, systemd, adduser, ca-certificates, tzdata, openssl",
+        control(host, "sli-host", version, "python3, systemd, adduser, ca-certificates, tzdata, openssl, msitools",
                 "SLI native host management")
         with (host / 'DEBIAN/control').open('a', encoding='utf-8') as stream:
             stream.write('Pre-Depends: python3, postgresql-common\n')
