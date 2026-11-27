@@ -39,6 +39,19 @@ internal sealed class SemanticOutboxRetention(NpgsqlDataSource maintenance, Life
                 files.PurgeReceipt(audit, result); return result;
             }
             result["schema_ready"] = true;
+            // Discovery may scan an old UUID range. Only recheck this page under
+            // the writer fence, so an empty or sparse range cannot stall enqueue.
+            var candidates = await Rows(db, tx, """
+                select job_id from public.semantic_processing_outbox
+                where status='completed' and job_id>@after and greatest(created_at,updated_at,completed_at)<@cutoff
+                order by job_id limit @limit
+                """, ct, ("after", after), ("cutoff", cutoff), ("limit", limit));
+            if (candidates.Count == 0) {
+                result["status"] = "complete"; result["transaction"] = "committed";
+                await tx.CommitAsync(ct); files.PurgeReceipt(audit, result); return result;
+            }
+            var candidateIds = candidates.Select(row => Guid.Parse(LifecycleJson.Text(row,"job_id"))).ToArray();
+            result["last_scanned_job_id"] = candidateIds[^1].ToString();
             await Execute(db, tx, "set local statement_timeout=0; set local lock_timeout=0", ct);
             waiting?.Invoke(true);
             try {
@@ -51,8 +64,7 @@ internal sealed class SemanticOutboxRetention(NpgsqlDataSource maintenance, Life
             var rows = await Rows(db, tx, """
                 with jobs as materialized (
                   select job_id,source_event_id from public.semantic_processing_outbox
-                  where status='completed' and job_id>@after and greatest(created_at,updated_at,completed_at)<@cutoff
-                  order by job_id limit @limit
+                  where job_id=any(@ids) and status='completed' and greatest(created_at,updated_at,completed_at)<@cutoff
                 )
                 select j.job_id,case
                   when exists(select 1 from public.entity_identity_semantic_replays_v2 r where r.replay_job_id=j.job_id) then 'evidence_reference'
@@ -60,9 +72,8 @@ internal sealed class SemanticOutboxRetention(NpgsqlDataSource maintenance, Life
                     and r.payload_json->>'original_job_id'=j.job_id::text) then 'repair_reference'
                   else 'eligible' end as classification
                 from jobs j order by j.job_id
-                """, ct, ("after", after), ("limit", limit), ("cutoff", cutoff));
+                """, ct, ("ids", candidateIds), ("cutoff", cutoff));
             result["selected_count"] = (long)rows.Count;
-            result["last_scanned_job_id"] = rows.Count == 0 ? after.ToString() : LifecycleJson.Text(rows[^1], "job_id");
             var ids = rows.Where(r => LifecycleJson.Text(r,"classification") == "eligible").Select(r => Guid.Parse(LifecycleJson.Text(r,"job_id"))).ToArray();
             foreach (var held in rows.Where(r => LifecycleJson.Text(r,"classification") != "eligible").GroupBy(r => LifecycleJson.Text(r,"classification")))
                 result["held_reasons"]![held.Key] = held.LongCount();
@@ -97,7 +108,7 @@ internal sealed class SemanticOutboxRetention(NpgsqlDataSource maintenance, Life
             result["deleted_count"] = (long)deleted.Count;
             result["status"] = "verified_pending_commit"; files.PurgeReceipt(audit, result);
             pending = true; await tx.CommitAsync(ct); pending = false;
-            result["status"] = rows.Count == limit ? "partial" : "complete"; result["transaction"] = "committed";
+            result["status"] = candidates.Count == limit ? "partial" : "complete"; result["transaction"] = "committed";
         } catch (Exception error) {
             try { await tx.RollbackAsync(CancellationToken.None); } catch { }
             result["status"] = "blocked"; result["reason"] = LifecycleJson.Failure(error);
