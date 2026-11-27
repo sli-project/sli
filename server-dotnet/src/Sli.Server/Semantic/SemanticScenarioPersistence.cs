@@ -70,7 +70,7 @@ internal sealed partial class SemanticProduction
             last = last > oldLast ? last : oldLast;
             // Keep the scenario's bounded time window. The open password
             // problem retains its original first observation in its facts.
-            if (Detections.PasswordAttacks.ScenarioPartition(p.Policy.Selector, password) is not null && last - first > TimeSpan.FromHours(24))
+            if (last - first > TimeSpan.FromHours(24))
                 first = last.AddHours(-24);
             int increment = replay is null ? 1 : 0;
             await session.QueryAsync(SemanticRiskSql.refresh_scenario4, ct, first, last,
@@ -182,9 +182,15 @@ internal sealed partial class SemanticProduction
             target = dcEvidence.Text("name");
             source = dcEvidence.Text("host");
         }
+        var campaign = passwordThreshold || rule == "semantic.qw.audit-disabled"
+            ? await CampaignFingerprint(session, job, ct) : null;
+        if (campaign is not null) fingerprint = campaign;
         await session.QueryAsync("select pg_advisory_xact_lock(hashtextextended($1,0))", ct, fingerprint);
         var created = await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding7, ct, fingerprint, rule, scenario.Text("title"), scenario.Text("risk_class"), scenario.Number("confidence_score") / 100.0, scenario.Text("first_seen_utc"), scenario.Text("last_seen_utc"), actor, target, source, scenario.Text("explanation"), scenario.Text("explanation"), "Review the linked evidence and validate the security impact.");
         var finding = (await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding8, ct, fingerprint)).Single()!; if (finding.Text("rule_code") != rule) throw new InvalidDataException("finding_fingerprint_conflict"); long id = finding.Number("id");
+        if (!passwordThreshold && campaign is not null &&
+            !string.Equals((await session.QueryAsync("select public.problem_campaign_route440($1,$2) as fingerprint", ct, job, id)).Single().Text("fingerprint"), campaign, StringComparison.Ordinal))
+            throw new InvalidDataException("finding_campaign_conflict");
         await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding9, ct, id, sid);
         int? dcRepeats = null;
         if (p.DcCatalogEvidence is not null)
@@ -195,8 +201,9 @@ internal sealed partial class SemanticProduction
         if (passwordThreshold)
         {
             var facts = (await session.QueryAsync("select public.publish_password_threshold_facts418($1,$2) as facts", ct, id, job)).Single()!["facts"]!;
+            if (campaign is not null && !facts.Flag("campaign")) throw new InvalidDataException("finding_campaign_conflict");
             target = facts.Text("account"); source = facts.Text("source");
-            if (facts is JsonObject password && Detections.PasswordAttacks.ScenarioPartition(p.Policy.Selector, password) is not null)
+            if (campaign is not null || facts is JsonObject password && Detections.PasswordAttacks.ScenarioPartition(p.Policy.Selector, password) is not null)
             {
                 findingFirst = facts.Text("first");
                 findingLast = facts.Text("last");
@@ -221,16 +228,25 @@ internal sealed partial class SemanticProduction
         if (evidence.Number("count") <= 0) throw new InvalidOperationException("finding_without_exact_evidence");
         int? repeats = dcRepeats ?? (rule == "semantic.qw.agent-tamper"
             ? Math.Max(0, (int)evidence.Number("count") - 1) : (int?)null);
-        await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding12, ct, scenario.Text("title"), scenario.Text("risk_class"), scenario.Number("confidence_score") / 100.0, findingFirst, findingLast, actor, target, source, scenario.Text("explanation"), scenario.Text("explanation"), "Review the linked evidence and validate the security impact.", (int)evidence.Number("count"), evidence["max_event_id"] is null ? null : evidence.Number("max_event_id"), id, repeats);
+        string? severity = campaign is not null && finding.Text("severity") == "critical" ? "critical" : scenario.Text("risk_class");
+        if (campaign is not null && rule == "semantic.qw.audit-disabled" && created.Count == 0)
+            await session.QueryAsync("""
+                update public.findings set last_seen_utc=greatest(last_seen_utc::timestamptz,$1::timestamptz),
+                    updated_at=now() where id=$2
+                """, ct, findingLast, id);
+        else
+            await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding12, ct, scenario.Text("title"), severity, scenario.Number("confidence_score") / 100.0, findingFirst, findingLast, actor, target, source, scenario.Text("explanation"), scenario.Text("explanation"), "Review the linked evidence and validate the security impact.", (int)evidence.Number("count"), evidence["max_event_id"] is null ? null : evidence.Number("max_event_id"), id, repeats);
         await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding13, ct, sid, id, job, fingerprint, (int)evidence.Number("count"));
         var publication = (await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding14, ct, sid)).Single()!;
-        if (publication.Number("finding_id") != id || publication.Text("finding_fingerprint") != fingerprint) throw new InvalidDataException("finding_publication_replay_conflict");
+        bool canonicalPublication = publication.Number("finding_id") == id && publication.Text("finding_fingerprint") == fingerprint;
+        if (campaign is null && !canonicalPublication)
+            throw new InvalidDataException("finding_publication_replay_conflict");
         if (created.Count > 0) await session.QueryAsync(SemanticRiskSql.publish_enabled_scenario_finding15, ct, id);
         bool legacyModule = rule is "semantic.qw.nps-denials" or "semantic.qw.file-decoy" or "semantic.qw.file-acl-broad-write";
         if (finding.Flag("transition_admission") && !legacyModule)
         {
-            if ((p.Policy.Source == "qw_signal" || p.DcCatalogEvidence is not null) &&
-                Notifications.ProblemNotification.IsTransition(created.Count > 0, false, finding.Text("status")!, finding.Text("severity")!, scenario.Text("risk_class")!))
+            if (canonicalPublication && (p.Policy.Source == "qw_signal" || p.DcCatalogEvidence is not null) &&
+                Notifications.ProblemNotification.IsTransition(created.Count > 0, false, finding.Text("status")!, finding.Text("severity")!, severity!))
                 await session.QueryAsync("select public.enqueue_problem_notification423($1,$2) as enqueued", ct, sid, job);
         }
         else
@@ -241,6 +257,14 @@ internal sealed partial class SemanticProduction
         }
         await RecordFindingIdentitySupersessions(session, sid, id, ct);
         return created.Count > 0;
+    }
+
+    private static async Task<string?> CampaignFingerprint(ISemanticSession session, Guid job, CancellationToken ct)
+    {
+        var available = await session.QueryAsync("select to_regprocedure('public.problem_campaign_route440(uuid,bigint)') is not null as available", ct);
+        return available.Single().Flag("available")
+            ? (await session.QueryAsync("select public.problem_campaign_route440($1,null) as fingerprint", ct, job)).Single().Text("fingerprint")
+            : null;
     }
     private static async Task RecordScenarioIdentitySupersessions(ISemanticSession session, Guid scenario, CancellationToken ct)
     {

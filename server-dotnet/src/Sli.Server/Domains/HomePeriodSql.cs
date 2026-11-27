@@ -138,7 +138,10 @@ internal static class HomePeriodSql
                        'accounts',case when @identity then coalesce(password.facts->'account_count',
                            case when password.facts->>'account' is not null and findings.rule_code='semantic.qw.password-brute-force'
                                then '1'::jsonb end) end,
-                       'account',case when @identity then password.facts->>'account' end) as password_totals,
+                       'account',case when @identity then password.facts->>'account' end,
+                       'addresses',case when @technical then password.facts->'address_count' end,
+                       'address',case when @technical then password.facts->>'source' end,
+                       'first_at',password.facts->'first','last_at',password.facts->'last') as password_totals,
                    case findings.severity when 'critical' then 0 when 'high' then 1
                         when 'medium' then 2 when 'low' then 3 else 4 end as importance
             from admitted findings {{ProblemCohorts.Sql("queue-cohort", usePasswordProjection: true)}}

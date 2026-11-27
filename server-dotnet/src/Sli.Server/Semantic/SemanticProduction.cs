@@ -219,6 +219,15 @@ internal sealed partial class SemanticProduction(PasswordProducerRuntime runtime
             }, ct) ?? EmptyStage(); result["password_risk"] = passwordRisk;
             step = "sigma"; result["sigma"] = await Stage("sigma", db, connection => ProcessSigma(connection,ct), ct);
             step = "risk"; var risk = await Stage("risk", db, connection => ProcessRisk(connection,ct), ct); result["risk"] = risk; result["risk_queued"] = risk["queued"].Copy(); result["findings_created"] = risk.Number("published") + passwordRisk.Number("published");
+            if (result["password_producer"].Number("completed") > 0 && result["password_producer"].Number("failed") == 0)
+            {
+                step = "expire_password_campaigns";
+                await using var expiration = await db.BeginTransactionAsync(ct);
+                var session = new SemanticSession(db, expiration);
+                if ((await session.QueryAsync("select to_regprocedure('public.expire_password_campaigns440()') is not null as available", ct)).Single().Flag("available"))
+                    await session.QueryAsync("select public.expire_password_campaigns440()", ct);
+                await expiration.CommitAsync(ct);
+            }
             step = "enabled_policies";
             await using var policyRead = await db.BeginTransactionAsync(ct);
             var policies = await new SemanticSession(db, policyRead).QueryAsync(SemanticProductionSql.Guard0, ct);

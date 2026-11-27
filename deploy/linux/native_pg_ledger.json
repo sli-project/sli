@@ -637,6 +637,8 @@
     "config/postgres_migrations/425_journal_finding_event_lookup.sql": "9d4e3e42a56638c03df8380fc934bb0f13c30e76ccae35fbb1ca6f1a01f6f952",
     "config/postgres_migrations/426_semantic_outbox_retention.rollback.sql": "eb5351d089373eba7e3fb43fab4840ee1347dadc6f0bbe87a28ad3b3cd7a84f8",
     "config/postgres_migrations/426_semantic_outbox_retention.sql": "415ad119bc2052ac95b95d4027286dfa04f1a1b1c7301017cebb5b78ba379111",
+    "config/postgres_migrations/440_detection_campaigns.rollback.sql": "7d503bcb0cffd5fdcbdce27037b3aef7ca0aaa5114a09e848f4f642f0d5537f2",
+    "config/postgres_migrations/440_detection_campaigns.sql": "09c4c82b73218cb98c3d9a2bda238f9de2d49b60ea9f2086dc693e6a29c1d34f",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },
