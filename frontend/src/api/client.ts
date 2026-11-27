@@ -61,49 +61,6 @@ export type AgentDeliveryDiagnostic = {
   http_status: number | null; observed_at_utc: string; resolved_at_utc: string | null;
 };
 export type AgentDeliveryDiagnostics = { reported_at: string; items: AgentDeliveryDiagnostic[] };
-export type AgentFileAuditCommand = {
-  agent_id: string; command_id: string; policy_revision: string; action: "check" | "apply" | "restore";
-  collection_scope_ids: string[];
-};
-export type AgentFileAuditReadError = {
-  stage: "audit_policy" | "share" | "directory" | "acl" | "local_groups" | "inventory";
-  code_kind?: "win32" | "hresult";
-  code?: number;
-};
-export type AgentFileAuditStatus = {
-  command: Omit<AgentFileAuditCommand, "agent_id">; state: string; reported_at?: string | null;
-  check_agent_requirement?: { agent_version: string; minimum_version: string } | null;
-  folders?: Record<string, string>;
-  last_event?: { collection_scope_id: string; observed_at: string; received_at: string } | null;
-  scopes: Record<string, { state: string; reason_code: string; read_error?: AgentFileAuditReadError }>; may_own_audit: boolean;
-};
-
-export type AgentFileAuditShare = { share_name: string; path: string; collection_scope_id: string };
-export type AgentFileAuditCatalog = {
-  state: "unsupported" | "idle" | "pending" | "ready" | "expired" | "incomplete" | "unavailable";
-  items: AgentFileAuditShare[];
-  native_status?: number | null;
-  saved_selection: AgentFileAuditShare | null;
-  saved_report_share_key?: string | null;
-  saved_command: (Omit<AgentFileAuditCommand, "agent_id" | "action"> & { action: "check" | "apply" }) | null;
-};
-
-/** Bind a successful enqueue response to the exact singleton request, never a policy ACK. */
-export function acceptedAgentFileAuditCommand(body: Record<string, unknown>, result: unknown): AgentFileAuditCommand | null {
-  if (!result || typeof result !== "object" || !body.command || typeof body.command !== "object"
-      || typeof body.agent_id !== "string" || "agents" in body) return null;
-  const command = body.command as Record<string, unknown>;
-  const accepted = result as Record<string, unknown>;
-  if (accepted.state !== "pending" || typeof command.command_id !== "string" || !command.command_id
-      || accepted.command_id !== command.command_id || !Number.isSafeInteger(accepted.policy_revision)
-      || typeof body.expected_revision !== "number" || accepted.policy_revision !== body.expected_revision + 1
-      || command.policy_revision !== String(accepted.policy_revision)
-      || !["check", "apply", "restore"].includes(String(command.action))
-      || !Array.isArray(command.collection_scope_ids) || !command.collection_scope_ids.length
-      || !command.collection_scope_ids.every((scope): scope is string => typeof scope === "string")) return null;
-  return { ...command, agent_id: body.agent_id } as AgentFileAuditCommand;
-}
-
 export type AgentMachineRole = "domain_controller" | "file_server" | "workstation";
 export type AgentEnrollmentRejection = { id: string; reported_hostname: string | null; occurred_at: string; reason: string };
 export type AgentInstallPackage = { server_url: string | null; package_url: string | null; sha256?: string; host_limit?: number | null; expires_at?: string | null };
@@ -160,7 +117,7 @@ export type PluginState = {
     last_data_at: string | null;
     error_at: string | null;
     error_object: string | null;
-    check_agent_requirement?: AgentFileAuditStatus["check_agent_requirement"];
+    check_agent_requirement?: { agent_version: string; minimum_version: string } | null;
   };
   data_receipts?: {
     state: "observed" | "no_receipts" | "unavailable" | "not_supported";
@@ -2345,11 +2302,9 @@ export const api = {
     `/api/v1/admin/agents${agentId ? `?agent_id=${encodeURIComponent(agentId)}` : after ? `?after=${encodeURIComponent(after)}` : ""}`),
   agentSequenceRecovery: (agentId: string) => request<{ gaps: AgentSequenceGap[]; truncated: boolean; recovery_preview: AgentSequenceRecoveryPreview }>(`/api/v1/admin/agents/sequence-recovery?agent_id=${encodeURIComponent(agentId)}`),
   acceptAgentSequenceGap: (agentId: string, observationIds: string[], previewToken: string) => requestMutation<{ status: "authorized"; agent_id: string; observation_ids: string[]; preview_token: string }>("/api/v1/admin/agents/sequence-recovery", "POST", { agent_id: agentId, observation_ids: observationIds, preview_token: previewToken, confirm_loss: true }),
-  agentFileAuditStatus: (agentId: string) => request<AgentFileAuditStatus>(`/api/v1/admin/agents/file-audit?agent_id=${encodeURIComponent(agentId)}`),
-  agentFileAuditCatalog: (agentId: string, signal?: AbortSignal) =>
-    request<AgentFileAuditCatalog>(`/api/v1/admin/agents/file-audit/catalog?agent_id=${encodeURIComponent(agentId)}`, signal),
-  requestAgentFileAuditCatalog: (agentId: string) =>
-    requestMutation<AgentFileAuditCatalog>("/api/v1/admin/agents/file-audit/catalog", "POST", { agent_id: agentId }),
+  refreshFileAuditCatalogs: () => requestMutation("/api/v1/admin/agents/file-audit/catalog", "POST", {}),
+  fileAuditAccounts: (q: string, sids: string[]) =>
+    requestMutation<{ items: Array<{ sid: string; name: string }> }>("/api/v1/admin/agents/file-audit/accounts", "POST", { q, sids }),
   agentAction: async (kind: "modules" | "disable" | "revoke" | "rights-probe" | "policy" | "remove" | "restore" | "file-audit" | "role", body: Record<string, unknown>) => {
     const result = await requestMutation<{ status?: string; password_detection_domain?: { status?: string } }>(`/api/v1/admin/agents/${kind}`, "POST", body);
     if (kind === "modules" && Object.prototype.hasOwnProperty.call(body, "password_detection_domain")

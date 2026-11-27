@@ -3,6 +3,7 @@ import { chooseOption } from "../../../tests/select-option";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
 import ad from "../../../../config/plugin_settings_schema/sli.ad.settings.json";
 import fileAudit from "../../../../config/plugin_settings_schema/sli.file-audit.settings.json";
 import gpo from "../../../../config/plugin_settings_schema/sli.gpo.settings.json";
@@ -67,6 +68,12 @@ beforeEach(() => {
       { fqdn: "one.example.invalid", observed_at_utc: "2026-10-29T01:00:00Z" }, { fqdn: "two.example.invalid", observed_at_utc: null },
     ], domain_controllers: [{ hostname: "DC-01", domain: "one.example.invalid", enabled: true }, { hostname: "DC-02", domain: "two.example.invalid", enabled: true }] });
     if (path === "/api/v1/admin/agents") return json({ items: [] });
+    if (path.startsWith("/api/v2/reports/file-audit.overview/data?")) return json({
+      coverage: { audit_resources: { servers: 1, audited: 1, shares: 6 } }, items: [], metrics: [], limitations: [], series: {}, filter_options: {},
+    });
+    if (path === "/api/v1/admin/agents/file-audit/accounts") return json({
+      items: [{ sid: "S-1-5-21-100000001-200000002-300000003-1201", name: "EXAMPLE\\Backup Operators" }],
+    });
     if (path === "/api/v2/reports") return json({ contract_id: "sli.report-catalog.v2", items: [
       { key: "ad.infrastructure", title: "Состояние домена", description: "Каталог", section: "active-directory", section_title: "AD", owner_id: "sli.ad" },
       { key: "ad.gpo.v2", title: "Политики", description: "GPO", section: "active-directory", section_title: "AD", owner_id: "sli.gpo" },
@@ -120,11 +127,29 @@ it.each(["sli.ad", "sli.gpo"])("retains domain setup in Connection for %s", asyn
   }
 });
 
-it("uses the server status in the file audit header and reads management controls only from the connection tab", async () => {
+it("uses Resources counts in the file audit header and has no Connection tab", async () => {
   mount("sli.file-audit");
-  expect(await screen.findByText(/Включён · Ожидаются первые данные/)).toBeTruthy();
-  expect(screen.queryByText(t("plugins.disabled"))).toBeNull();
+  expect(await screen.findByText(t("file-audit.resources.summary", { status: t("plugins.enabled"), servers: 1, audited: 1, shares: 6 }), { exact: false })).toBeTruthy();
+  expect(screen.getByRole("link", { name: t("file-audit.screen.overview") }).getAttribute("href")).toContain("file-audit.overview");
+  expect(screen.queryByRole("tab", { name: t("pluginPage.tab.connection") })).toBeNull();
   expect(requests.some((request) => request.path === "/api/v1/admin/agents")).toBe(false);
+});
+
+it("searches for AD accounts by name and saves only the selected SID", async () => {
+  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+  vi.stubGlobal("CSS", { ...globalThis.CSS, escape: (value: string) =>
+    Array.from(value, character => "\\" + character.codePointAt(0)!.toString(16) + " ").join("") });
+  mount("sli.file-audit");
+  const picker = await screen.findByRole("combobox", { name: t("plugins.sli.file-audit.settings.excluded_accounts.label") });
+  const user = userEvent.setup();
+  await user.type(picker, "Backup");
+  await user.click(await screen.findByRole("option", { name: "EXAMPLE\\Backup Operators" }));
+  expect(await screen.findByRole("button", { name: t("filters.remove", { label: "EXAMPLE\\Backup Operators" }) })).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: t("platformSettings.save") }));
+  await waitFor(() => expect(writes()).toEqual([{
+    path: "/api/plugins/sli.file-audit/settings", method: "PUT",
+    body: { key: "file_audit.excluded_accounts", value: ["S-1-5-21-100000001-200000002-300000003-1201"] },
+  }]));
 });
 
 it("shows the workstation state consistently even when the legacy source pack is disabled", async () => {
@@ -140,21 +165,6 @@ it("shows the workstation state consistently even when the legacy source pack is
   const panel = screen.getByRole("tabpanel");
   expect(within(panel).getByRole("link", { name: header.textContent! }).getAttribute("href")).toBe("/app/agents");
   expect(panel.textContent).not.toMatch(/Плагин выключен|Сведения о последних данных недоступны/);
-});
-
-it("identifies the connected file server and gives the same versioned upgrade action in Connection", async () => {
-  pluginStates["sli.file-audit"] = { source_count: 1, source_names: ["FS01"], status: {
-    state: "error", reason: "outdated_agent", next_action: null,
-    last_data_at: null, error_at: null, error_object: "FS01",
-    check_agent_requirement: { agent_version: "26.0.136", minimum_version: "26.0.154" },
-  } };
-  mount("sli.file-audit");
-  const expected = "Включён · FS01 подключён, агент устарел · Агент 26.0.136 не может проверить файловый аудит. Обновите его до версии 26.0.154 или новее.";
-  const header = await screen.findByText(expected, { selector: "header p" });
-  fireEvent.click(screen.getByRole("tab", { name: "Подключение" }));
-  const panel = screen.getByRole("tabpanel");
-  expect(within(panel).getByText(header.textContent!)).toBeTruthy();
-  expect(document.body.textContent).not.toMatch(/Нет подключённых источников|Установите агент SLI на файловый сервер/);
 });
 
 it("keeps VPN setup and declared rules available while hiding empty Settings and Reports", async () => {

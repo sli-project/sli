@@ -8,6 +8,76 @@ namespace Sli.Server.Reporting.V2;
 
 public sealed partial class FileAuditReportReader
 {
+    private static async Task<JsonArray> CatalogRootsAsync(ISemanticSession session, JsonArray configured, CancellationToken ct)
+    {
+        var agents = await session.QueryAsync("""
+            select a.id::text as agent_id,c.source_id as source_instance_id,a.registration_host_name as source_name,
+                a.policy_revision as audit_policy_revision,a.file_audit as audit, m.config as assigned,c.cached_shares
+            from public.sli_file_audit_smb_catalog c join public.sli_agents a
+                on a.id=c.agent_id and c.source_id=coalesce(a.source_host_id,a.host_id)::text
+            left join lateral (
+                select item->'config' as config from jsonb_array_elements(a.assigned_modules) item
+                where item->>'module_id'='sli.file-audit' and item->'enabled'='true'::jsonb
+                    and coalesce(item#>>'{config,source_kind}','server')='server'
+                limit 1
+            ) m on true
+            where a.status='active' and c.supported_until>clock_timestamp() and c.cached_at is not null
+                and jsonb_array_length(c.cached_shares)>0
+            order by a.id limit 1001
+            """, ct);
+        var byAgent = configured.OfType<JsonObject>().ToLookup(row => (Text(row, "agent_id"), Text(row, "source_instance_id")));
+        var roots = new JsonArray();
+        foreach (var server in agents.OfType<JsonObject>())
+        {
+            string agent = Text(server, "agent_id")!, source = Text(server, "source_instance_id")!;
+            foreach (var share in Array(server["cached_shares"]).OfType<JsonObject>())
+            {
+                string name = Text(share, "Name")!, path = Text(share, "Path")!;
+                if (FileAuditCatalog.IsAdministrativeShare(name, path)) continue;
+                var previous = byAgent[(agent, source)].FirstOrDefault(root =>
+                    string.Equals(Text(root, "share_name"), name, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(Text(root, "path"), path, StringComparison.OrdinalIgnoreCase));
+                var root = previous?.Copy() ?? new JsonObject
+                {
+                    ["agent_id"] = agent, ["source_instance_id"] = source, ["source_kind"] = "server",
+                    ["collection_scope_id"] = FileAuditCatalog.ScopeId(source, name, path),
+                    ["share_name"] = name, ["path"] = path,
+                };
+                root["source_name"] = SourceName(previous) ?? Text(server, "source_name");
+                var scope = Text(root, "collection_scope_id")!;
+                var audit = server["audit"];
+                var command = audit?["request"]?["command"];
+                bool selected = Array(command?["collection_scope_ids"]).Any(value => value?.ToString() == scope);
+                bool assigned = Array(server["assigned"]?["roots"]).Any(value => Text(value, "collection_scope_id") == scope);
+                var receipt = audit?["scopes"]?[scope];
+                string? status = Text(receipt, "state");
+                string? reason = Text(receipt, "reason_code");
+                bool changing = selected && Text(command, "action") is "apply" or "restore";
+                bool restoring = changing && Text(command, "action") == "restore";
+                bool verified = Text(audit, "state") == "verified";
+                var retained = audit?["permissions_retained"]?[scope];
+                string auditState = "disabled";
+                if (changing && !verified)
+                {
+                    bool error = status is "failed" or "blocked" || status == "partial" &&
+                        (reason != "coverage_incomplete" || receipt?["inventory_pending"]?.GetValue<bool>() != true);
+                    auditState = error ? "error" : restoring ? "restoring" : "applying";
+                }
+                else if (assigned && (changing && !restoring && verified || retained is not null))
+                    auditState = "enabled";
+                root["audit_state"] = auditState;
+                root["audit_checked_at"] = (receipt?["observed_at_utc"] ?? retained?["observed_at_utc"] ?? audit?["reported_at"])?.DeepClone();
+                root["audit_reason"] = reason;
+                root["audit_can_restore"] = assigned || restoring;
+                root["audit_policy_revision"] = server["audit_policy_revision"]?.DeepClone();
+                root["catalog_configured"] = previous is not null;
+                roots.Add(root);
+                if (roots.Count == 1001) return roots;
+            }
+        }
+        return roots;
+    }
+
     private static string? SourceName(JsonNode? root) =>
         Text(root, "source_name") is { Length: > 0 } name && !Guid.TryParse(name, out _)
         && name != Text(root, "source_instance_id") ? name[..Math.Min(name.Length, 256)] : null;

@@ -28,12 +28,31 @@ internal static class FileAuditCatalog
     private sealed record Item(string share_name, string path, string collection_scope_id);
     private sealed record Selection(Item Item, JsonObject? Command);
 
+    internal static string ScopeId(string source, string share, string path) => AuthAudit.Uuid5("sli:file-audit:smb:v1:" +
+        JsonSerializer.Serialize(new[] { source, share.ToUpperInvariant(), path.ToUpperInvariant() })).ToString("D");
+
+    internal static bool IsAdministrativeShare(string name, string path) =>
+        name.ToUpperInvariant() is "ADMIN$" or "IPC$" or "PRINT$" or "FAX$"
+        || name.Length == 2 && name[1] == '$' && path.Length == 3
+            && char.ToUpperInvariant(name[0]) == char.ToUpperInvariant(path[0]);
+
+    private static async Task<bool> CacheAvailable(NpgsqlConnection db, NpgsqlTransaction? tx, CancellationToken ct)
+    {
+        await using var query = new NpgsqlCommand("""
+            select exists(select 1 from pg_attribute where attrelid=to_regclass('public.sli_file_audit_smb_catalog')
+                and attname='cached_at' and not attisdropped)
+            """, db, tx);
+        return await query.ExecuteScalarAsync(ct) is true;
+    }
+
     internal static Task Admin(HttpContext context) => AgentControlEndpoints.HandleAsync(
         context, AdminRoute, maxBodyBytes: 1024, noStoreOnly: true,
         authorizedOperation: (db, tx, body, principal, access, ct) =>
         {
             bool request = HttpMethods.IsPost(context.Request.Method);
             var query = context.Request.Query;
+            if (request && query.Count == 0 && Exactly(body))
+                return RefreshDueAsync(db, tx, principal, access, ct);
             string? id = request
                 ? Exactly(body, "agent_id") ? AgentControlJson.String(body.GetProperty("agent_id")) : null
                 : query.Count == 1 && query["agent_id"].Count == 1 ? query["agent_id"][0] : null;
@@ -41,6 +60,43 @@ internal static class FileAuditCatalog
                 throw Invalid();
             return ReadOrRequestAsync(db, tx, agent, request, principal, access, ct);
         });
+
+    private static async Task<JsonElement> RefreshDueAsync(NpgsqlConnection db, NpgsqlTransaction tx,
+        Principal principal, CapabilityDecisionSet access, CancellationToken ct)
+    {
+        if (!await CacheAvailable(db, tx, ct)) return JsonSerializer.SerializeToElement(new { });
+        var due = new List<Guid>();
+        var scopes = FileAuditAccess.DiscoveryScopes(access).ToArray();
+        await using (var read = new NpgsqlCommand($"""
+            select a.id,c.source_id from {Table} c join public.sli_agents a on a.id=c.agent_id and {Source}=c.source_id
+            where a.status='active' and c.supported_until>clock_timestamp()
+                and (c.expires_at is null or c.expires_at<=clock_timestamp())
+                and (c.cached_at is null or c.cached_at<=clock_timestamp()-interval '10 minutes')
+            order by a.id limit 1000
+            """, db, tx))
+        await using (var rows = await read.ExecuteReaderAsync(ct))
+            while (await rows.ReadAsync(ct))
+            {
+                var agent = rows.GetGuid(0);
+                var source = rows.GetString(1);
+                if (scopes.Any(scope => FileAuditAccess.Allowed(access, principal.Role, principal.Type, principal.Id, agent.ToString("D"), source, scope)))
+                    due.Add(agent);
+            }
+        if (due.Count > 0)
+        {
+            await using var refresh = new NpgsqlCommand($"""
+                update {Table} c set request_id=gen_random_uuid(), expires_at=clock_timestamp()+interval '5 minutes',
+                    result_status=null,native_status=null,shares='[]'::jsonb
+                from public.sli_agents a
+                where a.id=c.agent_id and a.status='active' and {Source}=c.source_id and a.id=any(@agents)
+                    and c.supported_until>clock_timestamp() and (c.expires_at is null or c.expires_at<=clock_timestamp())
+                    and (c.cached_at is null or c.cached_at<=clock_timestamp()-interval '10 minutes')
+                """, db, tx);
+            refresh.Parameters.AddWithValue("agents", due.ToArray());
+            await refresh.ExecuteNonQueryAsync(ct);
+        }
+        return JsonSerializer.SerializeToElement(new { });
+    }
 
     private static async Task<JsonElement> ReadOrRequestAsync(NpgsqlConnection db, NpgsqlTransaction tx,
         Guid agent, bool request, Principal principal, CapabilityDecisionSet access, CancellationToken ct)
@@ -79,12 +135,18 @@ internal static class FileAuditCatalog
         long? nativeStatus;
         JsonObject audit;
         JsonArray modules;
+        bool cache = await CacheAvailable(db, tx, ct);
+        string hasCache = cache ? "c.cached_at is not null" : "false";
+        string cachedShares = cache ? "case when c.cached_at is not null then c.cached_shares else c.shares end" : "c.shares";
         await using (var read = new NpgsqlCommand($"""
             select case
                 when c.supported_until is null or c.supported_until<=clock_timestamp() then 'unsupported'
+                when {hasCache} then 'ready'
                 when c.request_id is null then 'idle'
                 when c.expires_at<=clock_timestamp() then 'expired'
-                else coalesce(c.result_status,'pending') end, c.shares, a.file_audit, a.assigned_modules, c.native_status
+                else coalesce(c.result_status,'pending') end,
+                {cachedShares},
+                a.file_audit, a.assigned_modules, c.native_status
             from public.sli_agents a left join {Table} c on c.agent_id=a.id and c.source_id={Source}
             where a.status='active' and a.id=@agent and {Source}=@source
             """, db, tx))
@@ -106,8 +168,8 @@ internal static class FileAuditCatalog
         var saved = new List<Selection>();
         foreach (var (config, savedCheck) in new (JsonNode?, JsonObject?)[] { (requestState?["config"], commandState), (assigned?["config"], null) })
         {
-            var root = Roots(config, savedCheck).SingleOrDefault();
-            if (root is null || !long.TryParse(config?["policy_revision"]?.ToString(), out long revision))
+            var roots = Roots(config, savedCheck).ToArray();
+            if (roots.Length == 0 || !long.TryParse(config?["policy_revision"]?.ToString(), out long revision))
                 continue;
             await using var binding = new NpgsqlCommand("""
                 select sli_plugin_file_audit.catalog_policy_matches(@agent,@source,@revision,@policy::jsonb)
@@ -116,15 +178,14 @@ internal static class FileAuditCatalog
             binding.Parameters.AddWithValue("source", source);
             binding.Parameters.AddWithValue("revision", revision);
             binding.Parameters.AddWithValue("policy", config!.ToJsonString());
-            if (await binding.ExecuteScalarAsync(ct) is true) saved.Add(root);
+            if (await binding.ExecuteScalarAsync(ct) is true) saved.AddRange(roots);
         }
         Item Project(Share share)
         {
             var retained = saved.FirstOrDefault(x =>
                 string.Equals(x.Item.share_name, share.Name, StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(x.Item.path, share.Path, StringComparison.OrdinalIgnoreCase));
-            var scope = retained?.Item.collection_scope_id ?? AuthAudit.Uuid5("sli:file-audit:smb:v1:" +
-                JsonSerializer.Serialize(new[] { source, share.Name.ToUpperInvariant(), share.Path.ToUpperInvariant() })).ToString("D");
+            var scope = retained?.Item.collection_scope_id ?? ScopeId(source, share.Name, share.Path);
             return new(share.Name, share.Path, scope);
         }
         var selected = saved.FirstOrDefault(x => Allowed(x.Item.collection_scope_id));
@@ -154,19 +215,27 @@ internal static class FileAuditCatalog
     private static IEnumerable<Selection> Roots(JsonNode? config, JsonObject? command)
     {
         if (config is not JsonObject policy || (policy["source_kind"]?.ToString() ?? "server") != "server"
-            || policy["roots"] is not JsonArray { Count: 1 } roots || roots[0] is not JsonObject root)
+            || policy["roots"] is not JsonArray roots)
             yield break;
-        if (root["share_name"] is not JsonValue name || !name.TryGetValue<string>(out var share)
-            || root["path"] is not JsonValue local || !local.TryGetValue<string>(out var path)
-            || root["collection_scope_id"] is not JsonValue scope || !scope.TryGetValue<string>(out var id))
-            yield break;
-        var matching = command is not null && command["action"]?.ToString() is ("check" or "apply")
-            && command["collection_scope_ids"] is JsonArray { Count: 1 } ids && ids[0]?.ToString() == id;
-        yield return new(new(share, FileAuditPolicy.LocalPath(path), id), matching ? command : null);
+        foreach (var root in roots.OfType<JsonObject>())
+        {
+            if (root["share_name"] is not JsonValue name || !name.TryGetValue<string>(out var share)
+                || root["path"] is not JsonValue local || !local.TryGetValue<string>(out var path)
+                || root["collection_scope_id"] is not JsonValue scope || !scope.TryGetValue<string>(out var id))
+                continue;
+            var matching = command is not null && command["action"]?.ToString() is ("check" or "apply")
+                && command["collection_scope_ids"] is JsonArray ids && ids.Any(value => value?.ToString() == id);
+            yield return new(new(share, FileAuditPolicy.LocalPath(path), id), matching ? command : null);
+        }
     }
 
     internal static async Task<JsonObject?> PollAsync(NpgsqlConnection db, Guid agent, CancellationToken ct)
     {
+        bool cache = await CacheAvailable(db, null, ct);
+        var resetCache = cache ? """
+            , cached_shares=case when catalog.source_id=excluded.source_id then catalog.cached_shares else '[]'::jsonb end
+            , cached_at=case when catalog.source_id=excluded.source_id then catalog.cached_at end
+            """ : "";
         await using (var advertise = new NpgsqlCommand($"""
             insert into {Table} as catalog (agent_id,source_id,supported_until)
             select a.id,{Source},clock_timestamp()+interval '15 minutes'
@@ -178,11 +247,27 @@ internal static class FileAuditCatalog
                 result_status=case when catalog.source_id=excluded.source_id then catalog.result_status end,
                 native_status=case when catalog.source_id=excluded.source_id then catalog.native_status end,
                 shares=case when catalog.source_id=excluded.source_id then catalog.shares else '[]'::jsonb end
+                {resetCache}
             where catalog.source_id<>excluded.source_id or catalog.supported_until<clock_timestamp()+interval '14 minutes'
             """, db))
         {
             advertise.Parameters.AddWithValue("agent", agent);
             await advertise.ExecuteNonQueryAsync(ct);
+        }
+        if (cache)
+        {
+            await using var refresh = new NpgsqlCommand($"""
+                update {Table} c
+                set request_id=@request,expires_at=clock_timestamp()+interval '5 minutes',
+                    result_status=null,native_status=null,shares='[]'::jsonb
+                from public.sli_agents a
+                where c.agent_id=@agent and a.id=c.agent_id and a.status='active' and {Source}=c.source_id
+                    and (c.expires_at is null or c.expires_at<=clock_timestamp())
+                    and (c.cached_at is null or c.cached_at<=clock_timestamp()-interval '10 minutes')
+                """, db);
+            refresh.Parameters.AddWithValue("agent", agent);
+            refresh.Parameters.AddWithValue("request", Guid.NewGuid());
+            await refresh.ExecuteNonQueryAsync(ct);
         }
         await using var read = new NpgsqlCommand($"""
             select c.request_id, c.expires_at
@@ -223,8 +308,13 @@ internal static class FileAuditCatalog
             await using var db = await services.GetRequiredService<IPostgresConnectionFactory>().OpenAsync(work);
             await using var tx = await db.BeginTransactionAsync(work);
             var identity = await services.GetRequiredService<AgentIdentityService>().AuthenticateAsync(db, tx, peer, false, work);
+            var updateCache = await CacheAvailable(db, tx, work) ? """
+                , cached_shares=case when @status='ready' then @shares::jsonb else c.cached_shares end
+                , cached_at=case when @status='ready' and c.result_status is null then clock_timestamp() else c.cached_at end
+                """ : "";
             await using var command = new NpgsqlCommand($"""
                 update {Table} c set result_status=@status,shares=@shares::jsonb,native_status=@native
+                {updateCache}
                 from public.sli_agents a
                 where a.id=c.agent_id and a.status='active' and {Source}=c.source_id
                   and c.agent_id=@agent and c.request_id=@request and c.expires_at>clock_timestamp()
@@ -279,9 +369,7 @@ internal static class FileAuditCatalog
             string local;
             try { local = FileAuditPolicy.LocalPath(path); }
             catch (AgentException) { throw Invalid(); }
-            if (name.ToUpperInvariant() is "ADMIN$" or "IPC$" or "PRINT$" or "FAX$" or "SYSVOL" or "NETLOGON"
-                || name.Length == 2 && name[1] == '$' && local.Length == 3
-                && char.ToUpperInvariant(name[0]) == char.ToUpperInvariant(local[0]))
+            if (IsAdministrativeShare(name, local))
                 continue;
             shares.Add(new(name, local));
         }

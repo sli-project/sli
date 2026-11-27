@@ -7,7 +7,7 @@ import { useTimeZone } from "../../shared/time-zone";
 import { useDateFormatters } from "../../design-system/useDateFormatters";
 import { columnValue, readPath } from "../../app/report-v2/state";
 import { withDomain } from "../../app/domain-navigation";
-import { t } from "../../i18n";
+import { t, type MessageKey } from "../../i18n";
 import { fileMaskLabel, type FileMaskLabels } from "./permissionMasks";
 import { fileAuditHref, fileAuditShare, type FileAuditRow, type FileAuditTab, type FileServerView } from "./report";
 
@@ -98,7 +98,7 @@ export function fileServerColumns(view: FileServerView, declared: ReportColumnDt
   ];
   const count = (row: FileAuditRow) => row.permission_changes != null ? String(row.permission_changes)
     : row.permission_change_count_min != null && row.permission_change_count_max != null
-      ? String(row.permission_change_count_min) + '–' + String(row.permission_change_count_max) : "—";
+      ? String(row.permission_change_count_min) + '–' + String(row.permission_change_count_max) : t("file-audit.resources.notCollected");
   return [
     { key: "source_name", label: t("file-audit.workspace.server"), render: row => {
       const name = hostText(row.source_name, 256);
@@ -114,26 +114,61 @@ export function fileServerColumns(view: FileServerView, declared: ReportColumnDt
         {row.share_name ? <small>{hostText(row.path)}</small> : null}
       </span>;
     } },
-    { key: "fact", label: t("file-audit.workspace.observed_fact"), wrap: true, value: row =>
-      hostText(row.fact) ?? (row.last_permission_change ? t("file-audit.filters.permission-changes") : undefined) },
-    { key: "permission_changes", label: t("file-audit.workspace.permission_changes"), kind: "number", render: row =>
-      fileAuditShare(row) && row.permission_change_groups !== 0
-        ? <a href={hrefFor("permission-changes", row)} onClick={event => event.stopPropagation()}>{count(row)}</a> : count(row) },
-    { ...when("last_permission_change"), label: t("file-audit.workspace.last_change") },
-    { ...when("observed_at"), label: t("file-audit.workspace.snapshot") },
     { ...when("audit_received_at"), label: t("file-audit.screen.audit"), wrap: true, render: row =>
       <div className="sli-file-audit__resource">
         <span><FileAuditReceipt row={row}/></span>
         {Number.isSafeInteger(row.check_revision) && fileAuditShare(row) ? <FileAuditCheck row={row} refresh={refresh}/> : null}
       </div> },
+    { key: "permission_changes", label: t("file-audit.workspace.permission_changes"), kind: "number", render: row =>
+      fileAuditShare(row) && Number(row.permission_change_groups) > 0
+        ? <a href={hrefFor("permission-changes", row)} onClick={event => event.stopPropagation()}>{count(row)}</a> : count(row) },
+    { ...when("observed_at"), label: t("file-audit.workspace.snapshot"), render: row => <ResourceSnapshot row={row}/> },
   ];
 }
+
+function ResourceSnapshot({ row }: { row: FileAuditRow }) {
+  const { formatCell } = useDateFormatters();
+  return <span>{row.snapshot_id && row.observed_at ? formatCell(row.observed_at, "datetime") : t("file-audit.resources.notCollected")}</span>;
+}
+
+const resourceAuditReasons: Record<string, MessageKey> = {
+  sacl_missing: "file-audit.screen.sacl_missing",
+  policy_missing: "file-audit.screen.audit_policy_missing",
+  policy_blocked: "file-audit.resources.policyBlocked",
+  managed_by_gpo: "file-audit.resources.policyBlocked",
+  management_disabled: "file-audit.resources.managementOff",
+  native_unavailable: "file-audit.screen.audit_unreadable",
+  coverage_incomplete: "file-audit.screen.check_partial",
+  share_read_unavailable: "file-audit.resources.shareUnavailable",
+  share_path_mismatch: "file-audit.resources.shareUnavailable",
+  directory_root_invalid: "file-audit.resources.shareUnavailable",
+  directory_open_unavailable: "file-audit.resources.shareUnavailable",
+  directory_reparse_point: "file-audit.resources.shareUnavailable",
+  acl_read_unavailable: "file-audit.resources.entriesUnavailable",
+  sacl_plan_failed: "file-audit.resources.entriesUnavailable",
+  sacl_write_failed: "file-audit.resources.entriesUnavailable",
+  sacl_readback_failed: "file-audit.resources.entriesUnavailable",
+  restore_conflict: "file-audit.resources.restoreConflict",
+  restore_incomplete: "file-audit.resources.restoreIncomplete",
+  restore_scan_incomplete: "file-audit.resources.restoreIncomplete",
+  inheritance_untracked: "file-audit.resources.restoreIncomplete",
+};
 
 function FileAuditReceipt({ row }: { row: FileAuditRow }) {
   const { formatCell } = useDateFormatters();
   const receipt = (row.check_receipt ?? row.audit_receipt) as { action?: string; state?: string; reason_code?: string; observed_at?: string;
     check_agent_requirement?: { agent_version: string; minimum_version: string } } | undefined;
+  if (row.audit_state === "applying" || row.audit_state === "restoring" || row.audit_state === "enabled")
+    return <>{t(`file-audit.resources.${row.audit_state}`)}{row.audit_state === "enabled" && row.audit_checked_at
+      ? ` · ${formatCell(row.audit_checked_at, "datetime")}` : null}</>;
   if (row.check_pending === true) return <>{t("file-audit.screen.check_pending")}</>;
+  if (row.audit_state === "error") {
+    const code = typeof row.audit_reason === "string" ? row.audit_reason.split(":")[0] : "";
+    const reason = Object.hasOwn(resourceAuditReasons, code) ? resourceAuditReasons[code] : "file-audit.screen.audit_failed";
+    return <>{t("file-audit.resources.error", { reason: t(reason) })}</>;
+  }
+  if (row.audit_state === "disabled" && !row.check_receipt && receipt?.action !== "check")
+    return <>{t("file-audit.resources.disabled")}</>;
   const checkResult = row.check_receipt != null || receipt?.action === "check";
   const failure = receipt?.state === "failed" || receipt?.state === "blocked";
   if (receipt?.observed_at && (checkResult || failure &&

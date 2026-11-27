@@ -23,6 +23,7 @@ const LOCAL_PAGE_SIZES = [25, 50, 100, 200];
 export type TableColumn<Row> = {
   key: string;
   label: string;
+  renderHeader?: () => ReactNode;
   kind?: CellKind;
   /** Server-side sortable (ADR 0010: sorting is done by the report query). */
   sortable?: boolean;
@@ -131,7 +132,7 @@ export function DataTable<Row>({
   const columnVisibility = Object.fromEntries(displayed.map((column) => [column.key, visibility[column.key] ?? !column.hiddenByDefault]));
   const defs = useMemo<ColumnDef<Row>[]>(() => displayed.map((column) => ({
     id: column.key,
-    header: column.label,
+    header: column.renderHeader ?? column.label,
     meta: column,
   })), [displayed]);
   const table = useReactTable({

@@ -10,8 +10,8 @@ import { SigmaLiveRules } from "../sigma-live-rules";
 import { PluginSettingsForm } from "./plugin-settings-form";
 import { PluginReadState, PluginSources } from "./plugin-sources";
 import { PluginRadiusSources } from "./plugin-radius-sources";
-import { fileAuditAgentParameter } from "./plugin-file-audit-controls";
 import { moduleStatusText, pluginNextAction } from "./plugin-status";
+import { selectedDomain, withDomain } from "../domain-navigation";
 
 const tabIds = ["overview", "connection", "settings", "rules", "reports"] as const;
 
@@ -19,19 +19,26 @@ const tabIds = ["overview", "connection", "settings", "rules", "reports"] as con
 export function PluginPage({ pluginId, title }: { pluginId: string; title: string }) {
   const access = useEffectiveAccess();
   const sigmaPlugin = pluginId === "sli.sigma";
-  const [tab, setTab] = useState<string>(() => {
-    if (sigmaPlugin) return "rules";
-    return pluginId === "sli.file-audit" && new URLSearchParams(window.location.search).has(fileAuditAgentParameter)
-      ? "connection" : "overview";
-  });
+  const fileAudit = pluginId === "sli.file-audit";
+  const [tab, setTab] = useState<string>(sigmaPlugin ? "rules" : fileAudit ? "settings" : "overview");
   const client = useQueryClient();
   const { timeZone } = useTimeZone();
   const plugins = useQuery({ queryKey: ["plugins"], queryFn: api.plugins, refetchInterval: 5_000 });
   const item = plugins.isError ? undefined : plugins.data?.items.find((plugin) => plugin.plugin_id === pluginId);
   const settings = useQuery({ queryKey: ["plugin-settings", pluginId], queryFn: () => api.pluginSettings(pluginId), enabled: !!item });
   const reports = useQuery({ queryKey: ["reports-v2-catalog"], queryFn: api.reportsV2Catalog, enabled: !!item });
+  const domain = selectedDomain(window.location.search);
+  const resourceCounts = useQuery({
+    queryKey: ["report-v2", "file-audit", "resource-counts", access?.evaluated_at_utc, domain, timeZone],
+    enabled: !!item && fileAudit,
+    refetchInterval: 5_000, retry: false,
+    queryFn: ({ signal }) => {
+      const params = new URLSearchParams({ period: "24h", source_kind: "server", limit: "1", tz: timeZone });
+      if (domain) params.set("file_server_domain", domain);
+      return api.reportV2Data("file-audit.overview", params, signal);
+    },
+  });
   const canEdit = !!access && (access.platform_owner === true || access.subject.coarse_role === "admin");
-  const canManageAgents = canEdit && (access.platform_owner === true || access.capabilities.includes("access.manage"));
   const change = useMutation({
     mutationFn: ({ item, enabled }: { item: PluginState; enabled: boolean }) => api.setPluginEnabled(item, enabled),
     onSuccess: () => {
@@ -50,39 +57,46 @@ export function PluginPage({ pluginId, title }: { pluginId: string; title: strin
     || !!settings.data.schema["x-core-settings"]?.length);
   const availableTabs = tabIds.filter((key) => {
     switch (key) {
+      case "connection":
+      case "overview": return !fileAudit;
       case "settings": return hasSettings || settings.isError;
       case "rules": return sigmaPlugin || pluginRules.length > 0 || settings.isError;
       case "reports": return pluginReports.length > 0 || reports.isError;
       default: return true;
     }
   });
-  const activeTab = availableTabs.some((key) => key === tab) ? tab : "overview";
+  const activeTab = availableTabs.some((key) => key === tab) ? tab : availableTabs[0];
   const connection = activeTab === "connection";
   const overview = activeTab === "overview";
   const domainPlugin = pluginId === "sli.ad" || pluginId === "sli.gpo";
   const radiusPlugin = pluginId === "sli.remote-access";
-  const agentPlugin = pluginId === "sli.workstations" || pluginId === "sli.file-audit";
-  const statusText = item ? moduleStatusText(item, timeZone) : undefined;
+  const agentPlugin = pluginId === "sli.workstations";
+  const pluginStatus = item ? t(item.enabled ? "plugins.enabled" : "plugins.status.disabled") : undefined;
+  const counts = resourceCounts.data?.coverage.audit_resources as { servers: number; audited: number; shares: number } | undefined;
+  const statusText = fileAudit ? pluginStatus && counts && !resourceCounts.isError
+    ? t("file-audit.resources.summary", { status: pluginStatus, ...counts }) : pluginStatus
+    : item ? moduleStatusText(item, timeZone) : undefined;
+  const resourcesHref = withDomain("/app/report/file-audit.overview?tab=overview", window.location.search);
   const nextAction = pluginNextAction(item?.status);
   const openAgents = item?.status?.next_action === "connect_file_server" || item?.status?.next_action === "install_workstation_agent"
     || item?.status?.next_action === "connect_sigma_events";
   const connectionButton = <Button onClick={() => setTab("connection")}>{t("pluginPage.tab.connection")}</Button>;
   const rulesButton = <Button onClick={() => setTab("rules")}>{t("pluginPage.openSigmaRules")}</Button>;
   return <section className="sli-ds-report">
-    <PageHeader title={title} subtitle={statusText}
+    <PageHeader title={title} subtitle={fileAudit && statusText ? <>{statusText} · <a href={resourcesHref}>{t("file-audit.screen.overview")}</a></> : statusText}
       actions={item && plugins.data?.can_manage && canEdit ? <Checkbox role="switch" aria-label={t("plugins.toggle")} checked={item.enabled} disabled={change.isPending || !item.installed || (!item.enabled && (!item.configured || item.component_runtime !== "stopped"))} onChange={(event) => change.mutate({ item, enabled: event.target.checked })}/> : undefined}/>
     <PluginReadState loading={plugins.isLoading} error={plugins.error} retry={() => void plugins.refetch()}/>
     {plugins.data && !plugins.isError && !item ? <p role="status">{t("plugins.error.notFound")}</p> : null}
     {change.error ? <p role="alert">{t(change.error instanceof ApiResponseError && change.error.code === "plugin_not_configured" ? "plugins.error.notConfigured"
       : change.error instanceof ApiResponseError && change.error.code === "plugin_revision_conflict" ? "plugins.error.revisionConflict" : "plugins.changeFailed")}</p> : null}
-    <Tabs active={activeTab} onChange={setTab} items={availableTabs.map((key) => ({ key, label: t(`pluginPage.tab.${key}`) }))}>
+    {activeTab ? <Tabs active={activeTab} onChange={setTab} items={availableTabs.map((key) => ({ key, label: t(`pluginPage.tab.${key}`) }))}>
       <TabList label={title}/><TabPanel>
         {connection && statusText && (agentPlugin || openAgents)
           ? <p>{openAgents ? <a href="/app/agents">{statusText}</a> : statusText}</p> : null}
         {connection || overview && (domainPlugin || radiusPlugin) ? radiusPlugin ? <PluginRadiusSources/>
-          : <PluginSources key={pluginId} pluginId={pluginId} connection={connection} canEdit={canManageAgents}
+          : <PluginSources key={pluginId} pluginId={pluginId} connection={connection}
             sourceCount={item?.source_count ?? item?.source_names?.length}/> : null}
-        {overview && !domainPlugin && !radiusPlugin && item ? item.source_names?.length
+        {overview && !fileAudit && !domainPlugin && !radiusPlugin && item ? item.source_names?.length
           ? <ul>{item.source_names.map((name, index) => <li key={`${name}:${index}`}>{name}</li>)}</ul>
           : <p>{sigmaPlugin ? rulesButton : connectionButton}</p> : null}
         {activeTab === "settings" || activeTab === "rules" && !sigmaPlugin ? <PluginReadState loading={settings.isLoading} error={settings.error}
@@ -101,6 +115,6 @@ export function PluginPage({ pluginId, title }: { pluginId: string; title: strin
           </li>)}</ul> : null}
         </> : null}
       </TabPanel>
-    </Tabs>
+    </Tabs> : null}
   </section>;
 }
