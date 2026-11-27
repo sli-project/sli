@@ -46,6 +46,20 @@ function renderReport() {
   return render(<QueryClientProvider client={new QueryClient()}><ReportRenderer reportKey={definition.key}/></QueryClientProvider>);
 }
 
+it.each([
+  ["parameter_changes", "AD changes", "No AD changes in the selected period"],
+  ["spn_collisions", "SPN collisions", "No SPN collisions"],
+  ["semantic", "Linked findings", "No linked findings in the selected period"],
+])("shows a tab-specific line for an empty %s result", async (key, tab, phrase) => {
+  vi.mocked(api.reportV2Data).mockImplementation(async (_, params) => params.get("tab") === key
+    ? { ...result(), state: "empty" }
+    : result(controls));
+  renderReport();
+  fireEvent.click(await screen.findByRole("tab", { name: new RegExp(tab) }));
+  const table = await screen.findByRole("table", { name: tab });
+  expect(await within(table).findByRole("cell", { name: phrase })).toBeTruthy();
+});
+
 it("accepts the legacy all view on a domain-scoped AD URL", async () => {
   const rowId = controls[1].row_id;
   const previous = "/app/report/events.journal?domain=2&view=all&sort=observed_at_utc&cursor=previous";

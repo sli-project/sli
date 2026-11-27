@@ -109,6 +109,7 @@ it("shows short attack titles, two values per cell and the full attempt totals",
   expect(sprayLink.closest("td")?.textContent).toBe(`›${sprayTitle}`);
   expect(bruteLink.closest("td")?.textContent).toBe(`›${bruteTitle}`);
   expect(sprayLink.getAttribute("href")).toBe("/app/report/security.problems?id=1694&domain=7");
+  expect(bruteLink.getAttribute("href")).toBe("/app/report/security.problems?id=1689&domain=7");
   const object = sprayRow.getByText("+16").closest("td");
   const initiator = bruteRow.getByText("+19").closest("td");
   expect(object?.textContent).toBe("test-user01, test-user02+16");
@@ -122,7 +123,7 @@ it("shows short attack titles, two values per cell and the full attempt totals",
 
   await user.click(bruteLink);
   const panel = await screen.findByRole("dialog");
-  expect(within(panel).getByText("#1689")).toBeTruthy();
+  expect(within(panel).queryByText("#1689")).toBeNull();
   expect(within(panel).getByText((content) => content.includes(addresses.join(", ")))).toBeTruthy();
 });
 
