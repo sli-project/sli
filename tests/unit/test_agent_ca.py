@@ -160,6 +160,7 @@ def test_issuer_expiry_caps_certificate_and_blocks_expired_ca(authority, monkeyp
         authority.issue(ca.parse_csr(csr_pem(key), HOST), AGENT, HOST)
 
 
+@pytest.mark.legacy
 def test_provisioning_never_overwrites_private_files(tmp_path):
     path = tmp_path / "key"
     provision._write_new(str(path), b"synthetic", private=True)
@@ -168,6 +169,7 @@ def test_provisioning_never_overwrites_private_files(tmp_path):
     assert path.read_bytes() == b"synthetic"
 
 
+@pytest.mark.legacy
 def test_offline_signing_rejects_unapproved_subject():
     root_key, root = provision.create_root()
     key = ec.generate_private_key(ec.SECP384R1())

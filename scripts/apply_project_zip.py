@@ -23,7 +23,6 @@ Installation and recovery are not yet implemented by the new package contract.
 from __future__ import annotations
 
 import argparse
-import fnmatch
 import html
 import io
 import shutil
@@ -34,121 +33,18 @@ import zipfile
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from deploy.linux.release_package import ALLOWED_ROOT_FILES, ALLOWED_TOP_LEVEL, is_allowed
 from scripts.maintenance.release_package import (
     PackageError,
     read_archive_snapshot,
     safe_package_path,
 )
-
-# Top-level paths that may be updated from a clean source ZIP.
-ALLOWED_TOP_LEVEL = {
-    "frontend",
-    "server",
-    "sli_collect",
-    "sli_agent",
-    "scripts",
-    "web",
-    "config",
-    "docs",
-    "tests",
-    "tools",
-}
-
-# Root files that may be updated.
-ALLOWED_ROOT_FILES = {
-    "LICENSE",
-    "AGENTS.md",
-    "README.md",
-    "CHANGELOG.md",
-    "PROJECT_MAP.md",
-    "PROJECT_RULES.md",
-    "package.json",
-    "package-lock.json",
-    "requirements.lock.txt",
-    "requirements.txt",
-    "requirements-dev.txt",
-    "pyproject.toml",
-    "pytest.ini",
-    "setup.cfg",
-    "mypy.ini",
-    ".gitignore",
-    ".env.example",
-    "security-log-intelligence-roadmap.html",
-}
-
-# Local environment configuration is preserved by default. Use
-# --allow-local-config only for an intentional local restore.
-LOCAL_CONFIG_FILES = {
-    "config/domain_controllers.json",
-}
-
-# Paths and patterns that must never be copied into the working project.
-DENY_PATTERNS = [
-    ".env",
-    ".env.*",
-    "*.local",
-    "*.local.*",
-    "*.sqlite",
-    "*.sqlite3",
-    "*.db",
-    "*.db-*",
-    "*.log",
-    "*.jsonl",
-    "*.evtx",
-    "*.zip",
-    "*.7z",
-    "*.rar",
-    "*.tar",
-    "*.gz",
-    "__pycache__/*",
-    "*/__pycache__/*",
-    ".pytest_cache/*",
-    "*/.pytest_cache/*",
-    ".mypy_cache/*",
-    "*/.mypy_cache/*",
-    ".ruff_cache/*",
-    "*/.ruff_cache/*",
-    ".venv/*",
-    "venv/*",
-    "env/*",
-    ".git/*",
-    ".idea/*",
-    ".vscode/*",
-    "data/*",
-    "dist/*",
-    "build/*",
-    "bin/*",
-    "obj/*",
-    "*/bin/*",
-    "*/obj/*",
-]
-
-# Local config/runtime subtrees that should be preserved even under allowed top-level folders.
-DENY_PATH_PREFIXES = [
-    "data/",
-    "dist/",
-    "build/",
-    "bin/",
-    "obj/",
-    ".git/",
-    ".venv/",
-    "venv/",
-    "env/",
-    "frontend/node_modules/",
-    "config/local/",
-    "config/secrets/",
-    "config/private/",
-    # These are deliberately distributed only by package_admin_toolkit.py and
-    # must never arrive in a normal product update ZIP.
-    "scripts/manual_dc_audit/",
-    "scripts/dc_client/",
-]
 
 
 @dataclass(frozen=True)
@@ -165,42 +61,6 @@ def normalize_zip_name(name: str) -> str | None:
         return safe_package_path(name)
     except PackageError:
         return None
-
-
-def is_denied(rel: str, *, allow_local_config: bool = False) -> bool:
-    rel_posix = rel.replace("\\", "/").lstrip("/").casefold()
-
-    if rel_posix == ".env.example":
-        return False
-
-    if not allow_local_config and rel_posix in LOCAL_CONFIG_FILES:
-        return True
-
-    for prefix in DENY_PATH_PREFIXES:
-        if rel_posix == prefix.rstrip("/") or rel_posix.startswith(prefix):
-            return True
-
-    name = PurePosixPath(rel_posix).name
-    for pattern in DENY_PATTERNS:
-        if fnmatch.fnmatch(rel_posix, pattern) or fnmatch.fnmatch(name, pattern):
-            return True
-
-    return False
-
-
-def is_allowed(rel: str, *, allow_local_config: bool = False) -> bool:
-    rel_posix = rel.replace("\\", "/").lstrip("/")
-    parts = PurePosixPath(rel_posix).parts
-    if not parts:
-        return False
-
-    if is_denied(rel_posix, allow_local_config=allow_local_config):
-        return False
-
-    if len(parts) == 1:
-        return parts[0] in ALLOWED_ROOT_FILES
-
-    return parts[0] in ALLOWED_TOP_LEVEL
 
 
 def detect_archive_root(extracted_dir: Path) -> Path:
