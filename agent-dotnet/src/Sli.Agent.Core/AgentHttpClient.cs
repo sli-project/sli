@@ -79,11 +79,16 @@ public sealed class AgentHttpClient(HttpClient http, bool clientCertificateConfi
             {
                 try
                 {
-                    if (JsonNode.Parse(buffer.ToArray()) is JsonObject error && JsonRead.TryString(error["error"], out var code)
-                        && code is "agent_instance_name_mismatch" or "agent_registration_name_mismatch"
+                    if (JsonNode.Parse(buffer.ToArray()) is JsonObject error && JsonRead.TryString(error["error"], out var code))
+                    {
+                        if (path == "/api/v1/agent/enroll" && response.StatusCode == HttpStatusCode.BadRequest
+                            && code == "invalid_agent_registration_name")
+                            throw new TransportException(rejection, rejectedStatus) { EnrollmentRejectionReason = code };
+                        if (code is "agent_instance_name_mismatch" or "agent_registration_name_mismatch"
                             or "agent_csr_key_mismatch" or "agent_host_already_enrolled" or "agent_certificate_rejected"
                             or "agent_mtls_required" or "agent_service_unavailable" or "invalid_agent_module_config")
-                        rejection = code;
+                            rejection = code;
+                    }
                 }
                 catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException) { }
                 throw new TransportException(rejection, rejectedStatus);
