@@ -11,6 +11,7 @@ using Sli.Server.Agents.FileAudit;
 using Sli.Server.Agents.Consumer;
 using Sli.Server.Agents.Radius;
 using Sli.Server.Agents.SnapshotPublication;
+using Sli.Server.Agents.Updates;
 using Sli.Server.Auth;
 using Sli.Server.Auth.Administration;
 using Sli.Server.Auth.Administration.ApiKeys;
@@ -565,10 +566,32 @@ app.MapFallback("{**path}", async context =>
     else
         await DomainHttp.WriteAsync(context, new { error = "not_found" }, StatusCodes.Status404NotFound, context.RequestAborted);
 });
-if (builder.Configuration["SLI_DEPLOYMENT_MODE"] == "native")
+if (app.Configuration["SLI_DEPLOYMENT_MODE"] == "native")
     await app.Services.GetRequiredService<AgentInstallPackages>().PrepareOnStartupAsync(
         app.Services.GetRequiredService<IPostgresConnectionFactory>(), app.Lifetime.ApplicationStopping);
 
+// Native configure starts this API after database migration. A candidate tested
+// behind the upgrade fence must not publish its MSI before the durable commit.
+if (app.Configuration["SLI_DEPLOYMENT_MODE"] == "native" &&
+    app.Configuration["SLI_NATIVE_UPGRADE_TESTING"] != "1")
+{
+    try
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        await using var db = await scope.ServiceProvider.GetRequiredService<IPostgresConnectionFactory>()
+            .OpenAsync(app.Lifetime.ApplicationStopping);
+        await ShippedAgentUpdate.RegisterAsync(db, "/opt/sli/current/agent",
+            scope.ServiceProvider.GetRequiredService<IAgentControlAudit>(), app.Lifetime.ApplicationStopping);
+    }
+    catch (Exception error)
+    {
+        Console.Error.WriteLine(error is AgentControlException { Message: "agent_package_verification_failed" }
+            ? error.Message : "shipped_agent_update_registration_failed");
+        Environment.ExitCode = 1;
+        await app.DisposeAsync();
+        return;
+    }
+}
 app.Run();
 }
 catch(ServerConfigurationException error)

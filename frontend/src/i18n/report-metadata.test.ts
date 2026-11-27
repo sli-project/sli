@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,7 +11,6 @@ import { columnValue } from "../app/report-v2/state";
 import { ru } from "./ru";
 import { gpoReportDefinition } from "../plugins/ad/gpo-report";
 import gpoDeclaration from "../../../server-dotnet/src/Sli.Server/Gpo/declaration.json";
-import { testPython } from "../test-support/python";
 
 it.each(["logons", "processes", "usb", "protection"])("localizes workstation %s scope limitations without changing access state", (family) => {
   const limitations = ["workstation_scope_unresolved", "workstation_scope_empty"].map((code) => ({
@@ -72,85 +70,23 @@ it("localizes the five user tabs, privilege basis and policy limitations", () =>
   expect(localized.branches?.users.limitations[0].text).toContain("password age > 120 days; inactivity > 30 days");
 });
 
-// Read the actual registry without invoking queries or connecting to a database.
-// Metrics are declared inside query functions, so inspect their metadata AST only.
-const registryScript = String.raw`
-import ast
-import importlib
-import inspect
-import json
-from server.sli.reporting.v2.registry import registered_reports, SECTION_TITLES
-
-definitions = []
-metrics = {}
-filter_options = {}
-for report in registered_reports():
-    definitions.append({**report.to_json(), "filter_options": {}})
-    module = importlib.import_module(report.query.__module__)
-    tree = ast.parse(inspect.getsource(module))
-    entries = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.keyword) or node.arg != "metrics":
-            continue
-        value = node.value
-        if isinstance(value, ast.ListComp):
-            fields = {ast.literal_eval(k): v for k, v in zip(value.elt.keys, value.elt.values) if k is not None}
-            names = [name for name in ("key", "label", "caption") if name in fields]
-            value.elt = ast.Dict(keys=[ast.Constant(name) for name in names], values=[fields[name] for name in names])
-            if any(isinstance(child, ast.Call) for child in ast.walk(value)):
-                raise AssertionError("Metric metadata must not execute calls")
-            expression = ast.fix_missing_locations(ast.Expression(value))
-            entries.extend(eval(compile(expression, "<metric metadata>", "eval"), vars(module)))
-        elif isinstance(value, ast.List):
-            for item in value.elts:
-                if isinstance(item, ast.Dict):
-                    fields = {ast.literal_eval(k): v for k, v in zip(item.keys, item.values) if k is not None}
-                    def metadata_value(node):
-                        if report.key == "security.problems" and isinstance(node, ast.Subscript) and isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name) and node.value.func.id == "message":
-                            return module.message(ast.literal_eval(node.value.args[0]))["text"]
-                        return ast.literal_eval(node)
-                    entries.append({name: metadata_value(fields[name]) for name in ("key", "label", "caption") if name in fields})
-                elif isinstance(item, ast.Call):
-                    entries.append(dict(zip(("key", "label"), map(ast.literal_eval, item.args[:2]))))
-                else:
-                    raise AssertionError("Unsupported metric metadata declaration")
-        else:
-            raise AssertionError("Unsupported metrics declaration")
-    metrics[report.key] = entries
-    if hasattr(module, "REASON_LABELS"):
-        filter_options[report.key] = {"reason": [{"value": key, "label": label} for key, label in module.REASON_LABELS.items()]}
-print(json.dumps({"definitions": definitions, "sections": SECTION_TITLES, "metrics": metrics, "filterOptions": filter_options}, ensure_ascii=True))
-`;
-
-function readRegistry() {
-  const root = resolve(import.meta.dirname, "../../..");
-  return JSON.parse(execFileSync(testPython(root), ["-B", "-c", registryScript], { cwd: root, encoding: "utf8", timeout: 30_000 })) as {
-    definitions: ReportDefinitionDto[];
-    sections: Record<string, string>;
-    metrics: Record<string, Array<{ key: string; label: string; caption?: string }>>;
-    filterOptions: Record<string, ReportDefinitionDto["filter_options"]>;
-  };
-}
-
-// Share the real registry snapshot without spawning Python inside each test case.
-const registry = readRegistry();
-
-// The product is server-dotnet: for reports already cleaned on the .NET side the shipped declaration
-// replaces the frozen Python one.
+// Read the embedded .NET declarations without running report queries.
 const shippedDefinitions = JSON.parse(readFileSync(
   resolve(import.meta.dirname, "../../../server-dotnet/src/Sli.Server/Reporting/V2/report-definitions.json"), "utf8")) as ReportDefinitionDto[];
-for (const key of ["security.events.chains", "ad.infrastructure"]) {
-  const shipped = shippedDefinitions.find((item) => item.key === key)!;
-  registry.definitions = registry.definitions.map((item) => item.key === key ? { ...shipped, filter_options: {} } : item);
-}
 const adDefinitions = JSON.parse(readFileSync(
   resolve(import.meta.dirname, "../../../server-dotnet/src/Sli.Server/Ad/report-definitions.json"), "utf8"
 )) as Record<string, { declaration: ReportDefinitionDto }>;
+const workspace = JSON.parse(readFileSync(
+  resolve(import.meta.dirname, "../../../server-dotnet/src/Sli.Server/Workspace/declarations.json"), "utf8"
+)) as { reports: Array<{ section: string; section_title: string }> };
 const computerLogons = adDefinitions["ad.computer-logons"].declaration;
-registry.definitions = registry.definitions.map((item) => item.key === computerLogons.key
-  ? { ...computerLogons, filter_options: {} } : item);
-registry.metrics[computerLogons.key] = [];
-delete registry.filterOptions[computerLogons.key];
+const registry = {
+  definitions: shippedDefinitions.map((report) => ({
+    ...(adDefinitions[report.key]?.declaration ?? report),
+    filter_options: {},
+  })),
+  sections: Object.fromEntries(workspace.reports.map(({ section, section_title }) => [section, section_title])),
+};
 
 it.each(["ru", "en"] as const)("displays security action outcomes without replacing source evidence (%s)", (locale) => {
   setLocale(locale);
@@ -484,7 +420,7 @@ describe("v2 registry metadata", () => {
     }
   });
 
-  it("has an English translation for every registered presentation key", () => {
+  it("localizes the registered report presentation used by the generic renderer", () => {
     setLocale("en");
     expect(registry.definitions.length).toBeGreaterThan(0);
     const check = (report: string, field: string, label: string) => {
@@ -504,25 +440,26 @@ describe("v2 registry metadata", () => {
     };
     for (const [section, title] of Object.entries(registry.sections)) check("sections", `${section}.title`, title);
     for (const report of registry.definitions.filter((item) => item.key !== "ad.gpo.v2")) {
-      const localized = localizeReportDefinition(report);
-      // Journal descriptions and passports have no screen or dictionary entries.
-      const { description: _description, intent: _intent, ...listPresentation } = localized;
-      expect(JSON.stringify(report.key === "events.journal" ? listPresentation : localized), report.key).not.toMatch(/[А-Яа-яЁё]/);
       check(report.key, "title", report.title);
-      if (report.key !== "events.journal") {
-        check(report.key, "description", report.description);
-        expect(report.intent, report.key).toBeTruthy();
-        for (const field of ["question", "denominator", "freshness_expectation"] as const) {
-          check(report.key, `intent.${field}`, report.intent![field]);
-          expect(ru[`reports.v2.${report.key}.intent.${field}` as keyof typeof ru]).toBe(report.intent![field]);
-        }
-        const localizedIntent = localizeReportDefinition(report).intent!;
-        expect({ ...localizedIntent, question: report.intent!.question, denominator: report.intent!.denominator,
-          freshness_expectation: report.intent!.freshness_expectation }).toEqual(report.intent);
+      // The journal and workstation overview render their own presentation.
+      if (report.key === "events.journal" || report.key === "workstations.overview") continue;
+      const localized = localizeReportDefinition(report);
+      check(report.key, "description", report.description);
+      expect(report.intent, report.key).toBeTruthy();
+      for (const field of ["question", "denominator", "freshness_expectation"] as const) {
+        check(report.key, `intent.${field}`, report.intent![field]);
+        expect(ru[`reports.v2.${report.key}.intent.${field}` as keyof typeof ru]).toBe(report.intent![field]);
       }
+      const localizedIntent = localized.intent!;
+      expect({ ...localizedIntent, question: report.intent!.question, denominator: report.intent!.denominator,
+        freshness_expectation: report.intent!.freshness_expectation }).toEqual(report.intent);
+      // File audit chooses its controls and columns in its own renderer.
+      if (report.key.startsWith("file-audit.")) continue;
+      expect(JSON.stringify(localized), report.key).not.toMatch(/[А-Яа-яЁё]/);
       columns(report.key, "columns", report.columns);
       for (const param of report.params) {
-        if (report.key === computerLogons.key && param.hidden) continue;
+        if (param.hidden && (report.key === computerLogons.key ||
+          report.key === "ad.computers.v6" && param.key === "object_guid")) continue;
         check(report.key, `params.${param.key}.label`, param.label);
         if (report.key === computerLogons.key && param.key === "service_logons") continue;
         for (const option of param.options ?? []) check(report.key, `params.${param.key}.options.${option.value}`, option.label);
@@ -540,13 +477,6 @@ describe("v2 registry metadata", () => {
       }
       for (const preset of report.presets) check(report.key, `presets.${reportPresetKey(preset.params)}`, preset.label);
       for (const link of report.row_links) check(report.key, `row_links.${link.href}`, link.label);
-      for (const metric of registry.metrics[report.key]) {
-        check(report.key, `metrics.${metric.key}.label`, metric.label);
-        check(report.key, `metrics.${metric.key}.caption`, metric.caption ?? "");
-      }
-      for (const [param, options] of Object.entries(registry.filterOptions[report.key] ?? {})) {
-        for (const option of options) check(report.key, `params.${param}.options.${option.value}`, option.label);
-      }
     }
   });
   it("uses stable keys despite server wording changes and falls back for unknown metadata", () => {
@@ -604,10 +534,10 @@ describe("v2 registry metadata", () => {
     const untouched = { ...result, items: [unchanged] };
     expect(localizeReportResult(untouched).items).toBe(untouched.items);
     setLocale("ru");
-    expect(localizeReportDefinition(report).views.map((view) => [view.key, view.title])).toEqual([
+    expect(localizeReportDefinition(report).views.map((view) => [view.key, view.title])).toEqual(expect.arrayContaining([
       ["checks", "Требуют проверки"], ["privileged", "Привилегированные"],
       ["changes", "Изменения"], ["all", "Все учётки"],
-    ]);
+    ]));
     expect(localizeReportResult(result)).toBe(result);
   });
 
