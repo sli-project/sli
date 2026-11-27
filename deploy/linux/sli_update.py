@@ -861,12 +861,17 @@ COMMIT;""" % payload
                 require(path.is_file() and path.stat().st_size > 0 and os.access(path, os.R_OK), "update_required_secret_missing")
 
     def ensure_secrets(self, installed):
-        from deploy.linux.sli_secrets import ensure, validate_compose
+        from deploy.linux.sli_secrets import SecretError, ensure, validate_compose
 
         self.inspect_installation(installed)
         config = parse_json(self.compose(["config", "--format", "json"]))
         self.ownership_preflight(installed, config)
-        validate_compose(config)
+        try:
+            validate_compose(config)
+        except SecretError as exc:
+            if isinstance(exc, UpdateError):
+                raise
+            raise UpdateError(str(exc)) from None
         definitions = config.get("secrets", {})
         if not definitions:
             return

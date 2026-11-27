@@ -60,7 +60,9 @@ def verify(archive, trust, **kwargs):
     return verify_package(archive, trust, **kwargs)
 
 
-@pytest.mark.parametrize("module_name", ["scripts.maintenance.release_package", "server.sli.release_package"])
+@pytest.mark.parametrize("module_name", [
+    "deploy.linux.release_package", "scripts.maintenance.release_package", "server.sli.release_package",
+])
 def test_verifies_real_signature_without_executing_payload(signed_package, tmp_path, module_name):
     from importlib import import_module
 
@@ -72,7 +74,9 @@ def test_verifies_real_signature_without_executing_payload(signed_package, tmp_p
     assert set(tmp_path.iterdir()) == before
 
 
-@pytest.mark.parametrize("module_name", ["scripts.maintenance.release_package", "server.sli.release_package"])
+@pytest.mark.parametrize("module_name", [
+    "deploy.linux.release_package", "scripts.maintenance.release_package", "server.sli.release_package",
+])
 @pytest.mark.parametrize("component,kind,owner,restart", [
     ("server", "core-install", "sli.core", "docker-compose"),
     ("server", "core-update", "sli.core", "docker-compose"),
@@ -117,7 +121,9 @@ def test_v2_component_contracts_coexist(component, kind, owner, restart, module_
         package.validate_manifest(dict(manifest, restart_profile="invalid"), package.PackageLimits())
 
 
-@pytest.mark.parametrize("module_name", ["scripts.maintenance.release_package", "server.sli.release_package"])
+@pytest.mark.parametrize("module_name", [
+    "deploy.linux.release_package", "scripts.maintenance.release_package", "server.sli.release_package",
+])
 @pytest.mark.parametrize("installed_edits,error", [
     ({}, None),
     ({"plugin_id": "sli.other"}, "update_component_mismatch"),

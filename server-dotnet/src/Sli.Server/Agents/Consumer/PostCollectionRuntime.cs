@@ -30,10 +30,13 @@ internal sealed class PostCollectionRuntime(NpgsqlConnection processLock, IPostg
         },
         async token => {
             await CheckProcessSessionAsync(token);
-            await using var pending = new NpgsqlCommand("select exists(select 1 from sli_agent_snapshot_cycles where transport_state='pending' or publication_state='pending')", processLock);
-            if (await pending.ExecuteScalarAsync(token) is not true) return PostCollectionBatch.Empty;
             if (!GpoWorkerConfiguration.TryCreate(Environment.GetEnvironmentVariable, ReadBounded, out var dsn))
-                return new(0, 0, new Dictionary<string, int> { ["agent_snapshot_import_unavailable"] = 1 });
+            {
+                await using var pending = new NpgsqlCommand("select exists(select 1 from sli_agent_snapshot_cycles where transport_state='pending' or publication_state='pending')", processLock);
+                return await pending.ExecuteScalarAsync(token) is true
+                    ? new(0, 0, new Dictionary<string, int> { ["agent_snapshot_import_unavailable"] = 1 })
+                    : PostCollectionBatch.Empty;
+            }
             return await snapshots.RunOnceAsync(dsn!, token);
         },
         async token => {

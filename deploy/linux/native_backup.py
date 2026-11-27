@@ -285,7 +285,7 @@ def secret_sources():
     from deploy.linux import native_install as install
 
     inventory = json.loads(install.trusted(Path(__file__).with_name('secrets-manifest.json')))
-    from server.sli.core.ad_credential_secrets import MASTER_KEY_REF, MASTER_KEY_SPEC
+    from deploy.linux.sli_core.ad_credential_secrets import MASTER_KEY_REF, MASTER_KEY_SPEC
     require(inventory['secrets'].get(MASTER_KEY_REF) == MASTER_KEY_SPEC, 'native_backup_inventory_invalid')
     config = json.loads(install.trusted(CONFIG / 'runtime.json'))
     sources = {}

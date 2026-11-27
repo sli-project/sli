@@ -6,6 +6,7 @@ import { PageHeader, Tabs, TabList, TabPanel, StateView } from "../../design-sys
 import { t, type MessageKey } from "../../i18n";
 import { useEffectiveAccess, useTimeZone } from "../App";
 import { navigationRedirect } from "../navigation";
+import { SigmaLiveRules } from "../sigma-live-rules";
 import { PluginSettingsForm } from "./plugin-settings-form";
 import { PluginReadState, PluginSources } from "./plugin-sources";
 import { PluginRadiusSources } from "./plugin-radius-sources";
@@ -17,14 +18,17 @@ const tabIds = ["overview", "connection", "settings", "rules", "reports"] as con
 /** Mounted only after the existing administration access gate has allowed this route. */
 export function PluginPage({ pluginId, title }: { pluginId: string; title: string }) {
   const access = useEffectiveAccess();
-  const [tab, setTab] = useState<string>(() => pluginId === "sli.file-audit"
-    && new URLSearchParams(window.location.search).has(fileAuditAgentParameter) ? "connection" : "overview");
+  const sigmaPlugin = pluginId === "sli.sigma";
+  const [tab, setTab] = useState<string>(() => {
+    if (sigmaPlugin) return "rules";
+    return pluginId === "sli.file-audit" && new URLSearchParams(window.location.search).has(fileAuditAgentParameter)
+      ? "connection" : "overview";
+  });
   const client = useQueryClient();
   const { timeZone } = useTimeZone();
   const plugins = useQuery({ queryKey: ["plugins"], queryFn: api.plugins, refetchInterval: 5_000 });
-  const settings = useQuery({ queryKey: ["plugin-settings", pluginId], queryFn: () => api.pluginSettings(pluginId), enabled: tab === "settings" || tab === "rules" });
+  const settings = useQuery({ queryKey: ["plugin-settings", pluginId], queryFn: () => api.pluginSettings(pluginId), enabled: tab === "settings" || tab === "rules" && !sigmaPlugin });
   const reports = useQuery({ queryKey: ["reports-v2-catalog"], queryFn: api.reportsV2Catalog, enabled: tab === "reports" });
-  const sigma = useQuery({ queryKey: ["sigma-rules"], queryFn: () => api.sigmaRules(), enabled: tab === "rules" && pluginId === "sli.sigma" });
   const item = plugins.isError ? undefined : plugins.data?.items.find((plugin) => plugin.plugin_id === pluginId);
   const canEdit = !!access && (access.platform_owner === true || access.subject.coarse_role === "admin");
   const canManageAgents = canEdit && (access.platform_owner === true || access.capabilities.includes("access.manage"));
@@ -55,16 +59,12 @@ export function PluginPage({ pluginId, title }: { pluginId: string; title: strin
         {tab === "overview" && !domainPlugin && item?.package_version ? <p>{t("pluginPage.version")} · {item.package_version}</p> : null}
         {tab === "connection" || tab === "overview" && domainPlugin ? pluginId === "sli.remote-access" ? <PluginRadiusSources connection/>
           : <PluginSources key={pluginId} pluginId={pluginId} connection={tab === "connection"} canEdit={canManageAgents}/> : null}
-        {tab === "settings" || tab === "rules" ? <PluginReadState loading={settings.isLoading} error={settings.error} retry={() => void settings.refetch()}/> : null}
+        {tab === "settings" || tab === "rules" && !sigmaPlugin ? <PluginReadState loading={settings.isLoading} error={settings.error} retry={() => void settings.refetch()}/> : null}
         {settings.data ? <div hidden={tab !== "settings"}><PluginSettingsForm key={pluginId} data={settings.data} canEdit={canEdit}/></div> : null}
-        {tab === "rules" ? <>
+        {tab === "rules" ? sigmaPlugin ? <SigmaLiveRules/> : <>
           {settings.data?.rules?.length ? <ul className="sli-ds-link-list">{settings.data.rules.map((rule) => <li key={rule.rule_id}>
             {t(rule.name as MessageKey)}{rule.settings.length ? <p><button type="button" className="sli-ds-button" onClick={() => setTab("settings")}>{t("pluginPage.ruleSettings")}</button></p> : null}
           </li>)}</ul> : settings.data ? <p>{t("pluginPage.noRules")}</p> : null}
-          {pluginId === "sli.sigma" ? <>
-            <PluginReadState loading={sigma.isLoading} error={sigma.error} retry={() => void sigma.refetch()}/>
-            {sigma.data?.state === "unavailable" ? <StateView state="unavailable" compact/> : sigma.data?.rules.length ? <ul>{sigma.data.rules.map((rule) => <li key={rule.rule_id}>{rule.title || t("pluginPage.unnamedRule")}</li>)}</ul> : sigma.data ? <p>{t("pluginPage.noRules")}</p> : null}
-          </> : null}
           <p>{t("pluginPage.rulesReadOnly")}</p><a href="/app/platform-settings">{t("pluginPage.policyControls")}</a>
         </> : null}
         {tab === "reports" ? <>

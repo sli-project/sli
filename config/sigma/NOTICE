@@ -1,6 +1,9 @@
-Stage 01: offline package validation only. No rules are enabled or evaluated.
+The live starter set in starter/ contains unmodified SigmaHQ rules from the
+pinned commit 7d8b152a5fc062ebd309f62ae4d8276aca2786af.
+Copyright belongs to the authors named in the corresponding YAML.
+Detection Rule License 1.1 (DRL-1.1), see licenses/DRL-1.1.txt.
 
-The selected, unmodified SigmaHQ rules remain in the separately obtained archive
+The remainder of the historical TEST profile remains in the separate archive
 identified by lock.json. The archive hash identifies the exact ZIP used by the
 design; GitHub may regenerate ZIP bytes for the same commit. A different ZIP
 must be reviewed and relocked, never silently accepted. SHA-256 integrity does
@@ -21,13 +24,13 @@ bundle the library into the server. Any later distribution must preserve the
 library's license/copyright notices, provide the corresponding library source
 as required by LGPL-2.1, and allow replacement/modification of the library.
 Keep it separately installed; do not merge or freeze it into proprietary code.
-Beta 1 excludes Sigma. The optional pySigma installation and its diskcache
+The native starter set uses the SLI matcher. The optional pySigma installation and its diskcache
 and diskcache-stubs dependencies have been removed from requirements.lock.txt
 and software-manifest.json. Remaining ancillary packages retain their hashes.
 The parser version and license in lock.json describe the historical verifier;
 this lock no longer installs that parser. Do not install it transitively to
 restore the retired tool environment. Package integrity checks are unchanged.
 
-The archive is an external input, not committed rule content or runtime data.
+The complete archive is an external input to the offline verifier.
 Unit fixtures are synthetic and require no network or database. The optional
 SLI_SIGMA_ARCHIVE test additionally parses all 25 original pinned YAML files.

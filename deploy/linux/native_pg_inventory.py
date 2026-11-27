@@ -14,50 +14,25 @@ import json
 import re
 from pathlib import Path
 
-from deploy.linux.installed_state import migration_checksum_variants
-
-FORWARD_NAME = re.compile(r"(\d{3})_[a-z0-9_]+\.sql")
-MARKER_START = (r"insert\s+into\s+(?:public\.)?schema_migrations\s*"
-                r"\(\s*version\s*,\s*name\s*\)\s*values")
-MARKER_TUPLE = r"\(\s*(\d+)\s*,\s*'([^']+)'"
-FORWARD_MARKER = re.compile(MARKER_START + r"\s*" + MARKER_TUPLE, re.IGNORECASE | re.DOTALL)
-BASE_MARKER_BLOCK = re.compile(
-    MARKER_START + r"(.*?)on\s+conflict\s*\(\s*version\s*\)", re.IGNORECASE | re.DOTALL,
+from deploy.linux.existing_postgres_bootstrap import (
+    BootstrapError,
+    base_schema_markers,
+    forward_migration_inventory,
 )
-BASE_MARKER = re.compile(MARKER_TUPLE + r"\s*\)")
 
 
-class BootstrapError(RuntimeError):
-    """Invalid canonical migration markers."""
-
-
-def ledger_sources(root: Path) -> dict:
+def ledger_sources(root: Path) -> dict[int, tuple[str, Path]]:
     schema = root / "config/postgres_schema_v8.sql"
-    blocks = BASE_MARKER_BLOCK.findall(schema.read_text(encoding="utf-8"))
-    if not blocks:
-        raise BootstrapError("base_schema_markers_missing")
-    markers = BASE_MARKER.findall(blocks[-1])
-    sources = {int(version): (name, schema) for version, name in markers}
-    if not markers or len(sources) != len(markers):
-        raise BootstrapError("base_schema_markers_invalid")
-
-    forward_versions = set()
-    for path in sorted((root / "config/postgres_migrations").glob("*.sql")):
-        filename = FORWARD_NAME.fullmatch(path.name)
-        if filename is None or path.name.endswith(("_rollback.sql", ".rollback.sql")):
-            continue
-        matches = FORWARD_MARKER.findall(path.read_text(encoding="utf-8"))
-        if not matches:
-            raise BootstrapError("migration_marker_missing")
-        version = int(filename[1])
-        marker, name = matches[-1]
-        if int(marker) != version:
-            raise BootstrapError("migration_marker_mismatch")
-        if version in forward_versions:
-            raise BootstrapError("migration_version_duplicate")
-        forward_versions.add(version)
-        sources[version] = (name, path)
+    sources = {version: (name, schema) for version, name in base_schema_markers(schema)}
+    for migration in forward_migration_inventory(root / "config/postgres_migrations"):
+        sources[migration.version] = (migration.name, migration.path)
     return sources
+
+
+def migration_checksum_variants(body: bytes) -> set[str]:
+    """Accept only LF and CRLF bytes; preserve all other bytes, including lone CR."""
+    lf = body.replace(b"\r\n", b"\n")
+    return {hashlib.sha256(variant).hexdigest() for variant in (lf, lf.replace(b"\n", b"\r\n"))}
 
 
 def _checksum(path: Path) -> str:

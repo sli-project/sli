@@ -12,7 +12,7 @@ public sealed class PluginStatusTests
     [InlineData(null, false)]
     [InlineData("false", false)]
     [InlineData("true", true)]
-    public async Task Plugin_list_uses_the_server_preview_setting(string? configured, bool visible)
+    public async Task Only_remote_access_uses_the_server_preview_setting(string? configured, bool visible)
     {
         var database = new ScriptDatabase { Override = (sql, _) => sql.Contains("read_plugin_states_v1")
             ? new JsonArray(InstallationPackages.Bundled.Select(id =>
@@ -32,8 +32,8 @@ public sealed class PluginStatusTests
         Assert.Contains("sli.gpo", items.Keys);
         Assert.Contains("sli.file-audit", items.Keys);
         Assert.Contains("sli.workstations", items.Keys);
-        foreach (string id in new[] { "sli.remote-access", "sli.sigma" })
-            Assert.Equal(visible, items.ContainsKey(id));
+        Assert.Contains("sli.sigma", items.Keys);
+        Assert.Equal(visible, items.ContainsKey("sli.remote-access"));
         Assert.All(items.Values, item => Assert.Equal("disabled", item["status"]!["state"]!.GetValue<string>()));
     }
 

@@ -2,10 +2,13 @@ using System.Net;
 using System.Text.Json.Nodes;
 using Npgsql;
 using Sli.Server.Access;
+using AdJobPlugin = Sli.Server.Ad.AdJobPlugin;
+using Sli.Server.Agents.SnapshotPublication;
 using Sli.Server.Infrastructure;
 using Sli.Server.Reporting;
 using Sli.Server.Reporting.V2;
-using Sli.Server.Semantic;
+using SemanticDatabase = Sli.Server.Semantic.SemanticDatabase;
+using Sli.Server.Tests.Ad;
 using Sli.Server.Tests.Reporting;
 using Sli.Server.Workstations;
 using Xunit;
@@ -17,6 +20,100 @@ public sealed class NativeWorkstationsReportPostgresTests
     private sealed class Connections(SqlPostgresFixture fixture) : IPostgresConnectionFactory
     {
         public Task<NpgsqlConnection> OpenAsync(CancellationToken ct) => fixture.Pg.OpenAsync(ct, "adlog_user");
+    }
+
+    [Fact]
+    public async Task Published_ad_inventory_advances_once_and_enriches_the_same_row_after_registration()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        int predecessor = MigrationDirectory.Read().Where(item => item.Version < 436).Max(item => item.Version);
+        await fixture.StartAsync(ct, throughVersion: predecessor);
+        string migration = MigrationDirectory.Read(436).Single(item => item.Version == 436).Path;
+        await fixture.Pg.ApplyFileAsync(migration, null, ct);
+        var slot = DateTimeOffset.Parse("2026-11-25T11:00:00Z");
+        var observed = slot.AddMinutes(5);
+        var sample = await NewLogonPairsNativeFixture.SeedAsync(fixture.Pg, observed, 4, ct);
+        await using var owner = await fixture.Pg.OpenAsync(ct);
+        await Ws.Exec(owner, """
+            update plugin_installations_v1 set desired_activation='enabled_manual',component_runtime='running'
+            where plugin_id='sli.workstations'
+            """, ct);
+        var snapshot = NewLogonPairsNativeFixture.SyntheticSnapshot(observed, 4);
+        var dc = snapshot["objects"]![3]!;
+        dc["userAccountControl"] = 8192;
+        dc["name"] = "SYNTHETIC-DC";
+        // The DC bit must win even if its OS happens to look like a client.
+        await NewLogonPairsNativeFixture.StoreComputersAsync(owner, sample.DomainId, observed, snapshot, ct);
+        var manifest = Sli.Server.Ad.AdSnapshotPublisher.Manifest(sample.DomainId,
+            "S-1-5-21-100000001-200000002-300000003", "example.test", slot, observed, AdCoordinatorCycle.Schedule,
+            [Sli.Server.Ad.AdSnapshotPublisher.Member("computers_v6", "sli.ad-computers.snapshot/2.0",
+                snapshot["metadata"]!.Text("snapshot_id")!, observed, "complete", AdJobPlugin.Digest(snapshot))]);
+        await using (var tx = await owner.BeginTransactionAsync(ct))
+        {
+            await AdSnapshotManifest.PublishAsync(owner, tx, manifest, ct);
+            await tx.CommitAsync(ct);
+        }
+
+        var worker = new SnapshotCycleConsumer();
+        var batch = await worker.RunOnceAsync(fixture.Dsn("sli_context_login"), ct);
+        Assert.Equal(sample.DomainId, Ws.Number(batch.Cursor, "workstation_inventory_domain_id"));
+        Assert.Equal(3L, await Ws.Scalar(owner, "select count(*) from sli_plugin_workstations.station_inventory", ct));
+        async Task<string> InventoryVersions() => (string)(await Ws.Scalar(owner, """
+            select jsonb_build_array(
+                (select jsonb_agg(jsonb_build_array(i.xmin::text,to_jsonb(i)) order by station_id) from sli_plugin_workstations.station_inventory i),
+                (select jsonb_agg(jsonb_build_array(c.xmin::text,to_jsonb(c)) order by domain_id) from sli_plugin_workstations.ad_inventory_checkpoints436 c),
+                (select count(*) from sli_plugin_workstations.projection_work))::text
+            """, ct))!;
+        string first = await InventoryVersions();
+        Assert.Null((await worker.RunOnceAsync(fixture.Dsn("sli_context_login"), ct)).Cursor);
+        Assert.Equal(first, await InventoryVersions());
+
+        var connections = new Connections(fixture);
+        var definitions = new ReportDefinitionRegistry();
+        var facts = new ReportFixture.FactsRepo(WorkstationWorkspaceTests.AuthorizedFacts(stationScope: $$"""{"kind":"domain","ids":[{{sample.DomainId}}]}"""));
+        var reader = new WorkstationWorkspaceReader(connections, facts, null!, definitions);
+        await using var host = await ReportFixture.Start(facts.Value, definitions.Get("workstations.overview"),
+            nativeReader: reader, workstationRoutes: true);
+        const string path = "/api/v2/reports/workstations.overview";
+        async Task<JsonObject> Read(string suffix)
+        {
+            using var response = await host.Client.GetAsync(path + suffix, ct);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var result = await ReportFixture.Body(response);
+            Assert.Equal("ok", result.Text("state"));
+            return result;
+        }
+
+        var rows = (await Read("/data?period=7d"))["items"]!.AsArray();
+        Assert.Equal(new[] { "PC-0", "PC-1", "PC-2" }, rows.Select(row => row.Text("display_name")).Order());
+        Assert.All(rows, row =>
+        {
+            Assert.Equal("Windows 11 Pro", row.Text("operating_system"));
+            Assert.Equal(observed, DateTimeOffset.Parse(row.Text("last_logon_utc")!));
+            Assert.Null(row!["agent_key"]);
+            Assert.Null(row["agent_version"]);
+        });
+        var station = rows.Single(row => row.Text("display_name") == "PC-0")!;
+        string stationId = station.Text("station_id")!;
+        long computer = long.Parse(stationId.AsSpan("ws:ad:".Length), System.Globalization.CultureInfo.InvariantCulture);
+        var (agent, _) = await WorkstationInventoryJobPostgresTests.Device(owner, computer);
+        await Ws.Exec(owner, """update sli_agents set rights_probe='{"agent_version":"1.2.3"}'::jsonb where id=@p0""", ct, agent);
+        rows = (await Read("/data?period=7d"))["items"]!.AsArray();
+        Assert.Equal(3, rows.Count);
+        var linked = Assert.Single(rows, row => row.Text("station_id") == stationId);
+        Assert.Equal("1.2.3", linked.Text("agent_version"));
+        Assert.Equal(agent.ToString("D"), linked.Text("agent_key"));
+        var detail = (await Read("/rows/" + stationId + "/detail?period=7d"))["detail"]!;
+        Assert.Equal("not_collected", detail["events"].Text("state"));
+        Assert.False(detail["station"]!["journal_available"]!.GetValue<bool>());
+        Assert.Equal(0L, await Ws.Scalar(owner, "select count(*) from public.workstation_journal_grants412", ct));
+
+        await fixture.Pg.ApplyFileAsync(Path.ChangeExtension(migration, ".rollback.sql"), null, ct);
+        Assert.Equal(3L, await Ws.Scalar(owner, "select count(*) from sli_plugin_workstations.station_inventory", ct));
+        await fixture.Pg.ApplyFileAsync(migration, null, ct);
+        Assert.NotNull((await worker.RunOnceAsync(fixture.Dsn("sli_context_login"), ct)).Cursor);
+        Assert.Equal(3L, await Ws.Scalar(owner, "select count(*) from sli_plugin_workstations.station_inventory", ct));
     }
 
     [Fact]
