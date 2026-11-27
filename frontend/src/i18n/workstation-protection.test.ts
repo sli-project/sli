@@ -8,13 +8,13 @@ import { localizeReportDefinition, reportMetadataText } from "./report-metadata"
 beforeEach(() => { vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined); });
 afterEach(() => { setLocale("ru"); vi.restoreAllMocks(); });
 
-it("keeps protection translations aligned and explains snapshot freshness", () => {
+it("keeps protection translations aligned without methodology text", () => {
   const prefix = "reports.v2.workstations.protection.";
   expect(Object.keys(en).filter((key) => key.startsWith(prefix)).sort())
     .toEqual(Object.keys(ru).filter((key) => key.startsWith(prefix)).sort());
   setLocale("en");
   expect(reportMetadataText("workstations.protection", "description", "fallback"))
-    .toContain("snapshot time shows its freshness");
+    .not.toContain("freshness");
   const view = localizeReportDefinition({ key: "workstations.protection", section: "workstations",
     title: "Защита", description: "", archetype: "journal", params: [], views: [],
     row_key: "id", detail: "fields", export: false, limits: { default: 50, max: 500 },
