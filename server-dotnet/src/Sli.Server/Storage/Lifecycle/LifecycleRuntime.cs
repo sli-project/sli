@@ -207,6 +207,27 @@ internal sealed class LifecycleRuntime : ILifecycleSession
             } while (count == batch);
             result["account_detection_pending_deleted"] = deleted;
         }
+        ready.CommandText = "select to_regprocedure('public.prune_account_check_rows460(text,integer)') is not null";
+        if (await ready.ExecuteScalarAsync(ct) is true)
+        {
+            long deleted = 0;
+            foreach (string family in new[] { "decoy", "watch" })
+            {
+                bool more;
+                do
+                {
+                    await EnsureLocksAsync(ct);
+                    // Commit each page to release row locks and let vacuum
+                    // reclaim its dead tuples during the cleanup.
+                    var page = (await LifecyclePostgres.Rows(db, null,
+                        "select * from public.prune_account_check_rows460(@family,@batch)", ct,
+                        ("family", family), ("batch", batch))).Single();
+                    deleted += LifecycleJson.Number(page, "deleted");
+                    more = page["more"]?.GetValue<bool>() == true;
+                } while (more);
+            }
+            result["account_check_rows_deleted"] = deleted;
+        }
         return result;
     }
     public Task<JsonObject> RetainInboxAsync(DateTime cutoff, DateTime afterReceivedAt, Guid after, int limit, CancellationToken ct) =>

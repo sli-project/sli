@@ -154,9 +154,11 @@ internal sealed partial class SemanticProduction
     private static async Task<(int Jobs, int Events, bool More)> RunDefaultAccounts(
         ISemanticSession session, JsonObject scope, CancellationToken ct)
     {
-        bool queueAvailable = (await session.QueryAsync("""
-            select to_regprocedure('public.subscribe_account_checkpoint455(text,text,jsonb)') is not null as available
-            """, ct)).Single().Flag("available");
+        var schema = (await session.QueryAsync("""
+            select to_regprocedure('public.subscribe_account_checkpoint455(text,text,jsonb)') is not null as queue,
+                   to_regprocedure('public.complete_account_batch460(text,text,jsonb,jsonb)') is not null as compact
+            """, ct)).Single();
+        bool queueAvailable = schema.Flag("queue"), compact = schema.Flag("compact");
         int jobs = 0, evaluated = 0;
         bool more = false;
         foreach (string family in new[] { "decoy", "watch" })
@@ -184,18 +186,36 @@ internal sealed partial class SemanticProduction
                     if (count == 0) throw new InvalidOperationException("account_detection_policy_unavailable");
                     jobs += count;
                 }
-                checks.Add(new JsonObject { ["id"] = ev!["normalized_event_id"].Copy(), ["state"] = state });
+                checks.Add(AccountCheck(ev!, state));
             }
-            if (checks.Count > 0)
-                await session.QueryAsync($"""
-                    insert into semantic_account_{family}_checks(checkpoint_key,normalized_event_id,scope_json,result_code)
-                    select $1,c.id,$2,c.state from jsonb_to_recordset($3) as c(id uuid,state text)
-                    on conflict do nothing
-                    """, ct, checkpoint, scope, checks);
+            await CompleteAccountBatch(session, family, checkpoint, scope, checks, compact, ct);
             evaluated += events.Count;
             more |= queueAvailable && (seeding || events.Count == AccountBatchSize);
         }
         return (jobs, evaluated, more);
+    }
+
+    private static JsonObject AccountCheck(JsonNode row, string state) => new()
+    {
+        ["id"] = row["normalized_event_id"].Copy(),
+        ["event_id"] = row["source_event_id"].Copy(),
+        ["state"] = state
+    };
+
+    private static async Task CompleteAccountBatch(ISemanticSession session, string family, string checkpoint,
+        JsonObject scope, JsonArray checks, bool compact, CancellationToken ct)
+    {
+        if (checks.Count == 0) return;
+        var retained = compact ? SemanticJson.Array(checks.Where(check => check.Text("state") == "observed")) : checks;
+        if (retained.Count > 0)
+            await session.QueryAsync($"""
+                insert into semantic_account_{family}_checks(checkpoint_key,normalized_event_id,scope_json,result_code)
+                select $1,c.id,$2,c.state from jsonb_to_recordset($3) as c(id uuid,state text)
+                on conflict do nothing
+                """, ct, checkpoint, scope, retained);
+        if (compact)
+            await session.QueryAsync("select public.complete_account_batch460($1,$2,$3::jsonb,$4::jsonb)",
+                ct, family, checkpoint, scope, checks);
     }
     private static readonly Dictionary<string,(DateTimeOffset From,DateTimeOffset To)> RansomWaits = new();
     internal static async Task<DetectionOutcome> ManagedRansom(ISemanticSession session, JsonNode source, DateTimeOffset now, CancellationToken ct, DetectionDiagnostics? diagnostics = null)
@@ -238,16 +258,39 @@ internal sealed partial class SemanticProduction
         {
             bool watch = rule.Kind == "account-watch"; string family = watch ? "watch" : "decoy", checkpoint = AccountCheckpoint(rule.Scope,watch,rule.Mode,rule.Revision,rule.Processing);
             await session.QueryAsync("select pg_advisory_xact_lock(hashtextextended($1,0))", ct, checkpoint);
-            var rows = await session.QueryAsync($"select * from public.read_account_{family}_events($1,$2,$3,$4,$5,null::uuid)",ct,Guid.Parse(rule.Scope.Text("installation_id")!),rule.Scope.Text("plugin_id"),rule.Scope.Text("source_instance_id"),rule.Scope.Text("source_generation"),checkpoint);
-            if (rows.Count > 128) throw new InvalidDataException("account_detection_batch_invalid"); int jobs = 0; var states = new JsonObject();
-            foreach (var row in rows)
+            bool compact = (await session.QueryAsync("""
+                select to_regprocedure('public.complete_account_batch460(text,text,jsonb,jsonb)') is not null as compact
+                """, ct)).Single().Flag("compact");
+            int jobs = 0, evaluated = 0;
+            var states = new JsonObject();
+            var definition = rule.Definition();
+            bool seeding;
+            do
             {
-                var (signals,state) = EvaluateAccount(rule.Definition(),row!,now,watch);
-                foreach (var signal in signals) { int count = await EnqueueQW(session,rule.Apply(signal!.AsObject()),ct); if (count == 0) throw new InvalidOperationException("account_detection_policy_unavailable"); jobs += count; }
-                await session.QueryAsync($"insert into semantic_account_{family}_checks(checkpoint_key,normalized_event_id,scope_json,result_code) values($1,$2,$3,$4) on conflict do nothing",ct,checkpoint,Guid.Parse(row.Text("normalized_event_id")!),rule.Scope,state);
-                states[state] = (states[state]?.GetValue<int>() ?? 0) + 1;
-            }
-            return new() { ["state"] = "processed", ["events"] = rows.Count, ["results"] = states, ["jobs"] = jobs };
+                seeding = compact && (await session.QueryAsync(
+                    "select public.prepare_account_checkpoint460($1,$2,$3::jsonb,false) as more",
+                    ct, family, checkpoint, rule.Scope)).Single().Flag("more");
+                var rows = await session.QueryAsync($"select * from public.read_account_{family}_events($1,$2,$3,$4,$5,null::uuid)",
+                    ct, Guid.Parse(rule.Scope.Text("installation_id")!), rule.Scope.Text("plugin_id"),
+                    rule.Scope.Text("source_instance_id"), rule.Scope.Text("source_generation"), checkpoint);
+                if (rows.Count > AccountBatchSize) throw new InvalidDataException("account_detection_batch_invalid");
+                var checks = new JsonArray();
+                foreach (var row in rows.Take(AccountBatchSize - evaluated))
+                {
+                    var (signals, state) = EvaluateAccount(definition, row!, now, watch);
+                    foreach (var signal in signals)
+                    {
+                        int count = await EnqueueQW(session, rule.Apply(signal!.AsObject()), ct);
+                        if (count == 0) throw new InvalidOperationException("account_detection_policy_unavailable");
+                        jobs += count;
+                    }
+                    checks.Add(AccountCheck(row!, state));
+                    states[state] = (states[state]?.GetValue<int>() ?? 0) + 1;
+                }
+                await CompleteAccountBatch(session, family, checkpoint, rule.Scope, checks, compact, ct);
+                evaluated += checks.Count;
+            } while (seeding && evaluated < AccountBatchSize);
+            return new() { ["state"] = "processed", ["events"] = evaluated, ["results"] = states, ["jobs"] = jobs };
         }
         var source = new JsonObject { ["scope"] = rule.Scope.Copy(), ["agent_id"] = rule.Agent, ["config"] = rule.Config.Copy() };
         if (rule.Kind == "file-decoy") return await RunFileDecoy(session,source,ct,rule,now);

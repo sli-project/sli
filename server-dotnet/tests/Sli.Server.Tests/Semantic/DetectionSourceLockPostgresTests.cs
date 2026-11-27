@@ -121,9 +121,14 @@ public sealed class DetectionSourceLockPostgresTests(ITestOutputHelper output)
         } finally {foreach(var gate in gates)gate.Release.TrySetResult();await detecting;}
         Assert.Equal(0,(await detecting).Failed);
         foreach(string family in new[]{"decoy","watch"}) {
-            await using var checks=new NpgsqlCommand($"select count(*) from semantic_account_{family}_checks",owner);
-            Assert.Equal(10L,await checks.ExecuteScalarAsync(ct));
+            await using var checkpoint=new NpgsqlCommand("""
+                select last_evaluated_event_id from account_detection_checkpoints451 where family=@family
+                """, owner);
+            checkpoint.Parameters.AddWithValue("family", family);
+            Assert.Contains(Assert.IsType<long>(await checkpoint.ExecuteScalarAsync(ct)), rows.Select(row => row.EventId));
         }
+        await using(var pending=new NpgsqlCommand("select count(*) from account_detection_pending451",owner))
+            Assert.Equal(0L,await pending.ExecuteScalarAsync(ct));
         await using(var count=new NpgsqlCommand("select count(*) from event_hot",owner))Assert.Equal(10L,await count.ExecuteScalarAsync(ct));
         await fixture.AssertNoSqlErrorsAsync(ct);
     }
