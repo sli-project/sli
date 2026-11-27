@@ -67,6 +67,34 @@ def verify_ledger(connection, release):
     )
 
 
+def verify_problem_queue(connection):
+    assert connection.execute("""
+        select f.fingerprint,q.status,e.domain_ids
+        from public.findings f
+        join public.problem_queue_entries443 q on q.id=f.id
+        left join public.problem_queue_evidence443 e on e.finding_id=f.id
+        where f.fingerprint in ('synthetic:upgrade-421','synthetic:unrelated')
+        order by f.fingerprint
+    """).fetchall() == [
+        ("synthetic:unrelated", "new", None),
+        ("synthetic:upgrade-421", "closed", [1]),
+    ]
+    with connection.transaction():
+        connection.execute("""
+            update public.findings set status='active'
+            where fingerprint='synthetic:unrelated'
+        """)
+        assert connection.execute("""
+            select q.status from public.problem_queue_entries443 q
+            join public.findings f on f.id=q.id
+            where f.fingerprint='synthetic:unrelated'
+        """).fetchone() == ("active",)
+        connection.execute("""
+            update public.findings set status='new'
+            where fingerprint='synthetic:unrelated'
+        """)
+
+
 def verify_workstation_inventory(connection):
     with connection.transaction():
         enabled = connection.execute("""
@@ -164,6 +192,7 @@ os.execve(sys.executable, [sys.executable, '-B', '-m', 'deploy.linux.entrypoint'
             verify_ledger(connection, ROOT)
             verify_acl(connection)
             verify_backfill(connection)
+            verify_problem_queue(connection)
             verify_workstation_inventory(connection)
     finally:
         subprocess.run([*control, "-m", "fast", "-w", "stop"], env=env, check=True)
