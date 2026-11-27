@@ -25,7 +25,11 @@ internal static class GpoPolicyCard
         var policy = snapshot.Rows("gpos").FirstOrDefault(row => row.Text("id") == policyId);
         if (policy is null) return exact is null ? GpoReport.Result("empty") : SnapshotUnavailable();
 
-        var settings = Select("settings", "side", "setting_name", "category", "path", "value_display");
+        var settings = Select("settings", "side", "setting_name", "category", "extension", "path", "value_display", "audit_mode");
+        foreach (var setting in settings.OfType<JsonObject>())
+            if (setting.TryGetPropertyValue("audit_mode", out var mode)
+                && (mode is not JsonValue value || !value.TryGetValue<string>(out var mask) || mask is not ("0" or "1" or "2" or "3" or "4")))
+                setting.Remove("audit_mode");
         var links = Select("links", "scope_name", "order", "enabled", "enforced");
         var permissions = Select("permissions", "trustee_name", "permission");
         var current = Observation(snapshot, policy);

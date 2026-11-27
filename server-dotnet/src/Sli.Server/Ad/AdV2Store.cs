@@ -141,8 +141,10 @@ public sealed class AdV2Store(IPostgresConnectionFactory connections, IConfigura
         JsonObject? activity=null;
         if(users&&request.Tab is "users" or "all"&&fields(["technical","security","privilege"]))
         {
-            var current=AdUsersActivity.Current(sources);
-            if(current["metadata"]?["watch_groups"] is JsonArray{Count:>0})activity=await AdUsersActivity.LoadAsync(db,current,request.Domains,request.Params,false,ct,configuration);
+            var watchGroups = AdUsersActivity.WatchGroups(sources).ToArray();
+            if (watchGroups.Length > 0)
+                activity = await AdUsersActivity.LoadAsync(db, AdUsersActivity.Users(sources), watchGroups,
+                    request.Domains, request.Params, false, ct, configuration);
         }
         var policy=Obj(new{password_age=365,inactivity=90});var exceptions=new JsonObject();
         if(users)
@@ -213,14 +215,8 @@ public sealed class AdV2Store(IPostgresConnectionFactory connections, IConfigura
                 catch (PostgresException e) when (e.SqlState == "42501") { return Result(request.Key, "denied"); }
                 catch (NpgsqlException) { return Result(request.Key, "error", coverage: Obj(new { reason = "semantic_unavailable" })); }
             }
-            if (activity is not null)
-            {
-                sources = sources.Select(source => (JsonObject)source.DeepClone()).ToList();
-                foreach (var source in sources.Where(s => s["snapshot"] is not null))
-                    foreach (var user in source["snapshot"]!["users"]!.AsArray().OfType<JsonObject>())
-                        AdUsersActivity.Enrich(user, activity);
-            }
-            var userResult = AdUsersTabs.Query(request, sources, policy, fields, exceptions, workplaces);
+            var episodes = (activity?["temporary_memberships"] as JsonArray)?.OfType<JsonObject>().ToLookup(row => row.Int("entity_id"));
+            var userResult = AdUsersTabs.Query(request, sources, policy, fields, exceptions, workplaces, episodes: episodes);
             if (activity is not null) AdUsersActivity.ApplyCoverage(userResult, activity, false);
             return userResult;
         }
@@ -296,13 +292,14 @@ public sealed class AdV2Store(IPostgresConnectionFactory connections, IConfigura
     }
     internal static JsonObject Coverage(List<JsonObject> sources) => Obj(new { domains = sources.Select(s => new { domain_id = s.Int("domain_id"), domain_name = s.Text("fqdn"), state = s.Text("source_state") ?? "not_collected", observed_at_utc = s.Text("observed_at_utc") }), observed_at_utc = sources.Select(s => s.Text("observed_at_utc")).Where(s => s is not null).Order().FirstOrDefault(), freshness_threshold_seconds = 86400,
         stale_domain_count = sources.Count(s => AdInventoryRows.Date(s["observed_at_utc"]) is {} at && at < DateTimeOffset.UtcNow.AddDays(-1)) });
-    internal static void Page(JsonObject result, AdV2Request request, List<JsonObject> rows)
+    internal static void Page(JsonObject result, AdV2Request request, List<JsonObject> rows, Func<JsonObject, JsonObject>? materialize = null)
     {
         bool computer=request.Key=="ad.computers.v6"&&request.Tab=="computers";string? sort=request.Sort??(computer?"display_name":null);string direction=request.Descending?"desc":"asc";
         if (sort is not null)
         {
             string path = AdV2Endpoints.Definitions[request.Key]!["declaration"]!["columns"]!.AsArray().First(c => c!.Text("key") == sort)!.Text("path") ?? sort;
-            JsonNode? Value(JsonObject r) => computer&&sort=="enabled"?AdInventoryRows.Bool(r["enabled"]) is {} enabled?JsonValue.Create(enabled?0:1):null:path.Split('.').Aggregate((JsonNode?)r, (n, p) => n?[p]);
+            string[] segments = path.Split('.');
+            JsonNode? Value(JsonObject r) => computer&&sort=="enabled"?AdInventoryRows.Bool(r["enabled"]) is {} enabled?JsonValue.Create(enabled?0:1):null:segments.Aggregate((JsonNode?)r, (n, p) => n?[p]);
             var present = rows.Where(r => Value(r) is not null).ToArray();
             int Compare(JsonNode? left,JsonNode? right)
             {if(left is JsonValue a&&right is JsonValue b&&a.TryGetValue<decimal>(out var x)&&b.TryGetValue<decimal>(out var y))return x.CompareTo(y);return StringComparer.OrdinalIgnoreCase.Compare(left?.ToString(),right?.ToString());}
@@ -312,7 +309,7 @@ public sealed class AdV2Store(IPostgresConnectionFactory connections, IConfigura
         }
         int offset=0;if(request.Cursor is {} cursor){if(computer){long entity=AdCursors.ComputerDecode(cursor,sort!,direction);int index=rows.FindIndex(r=>r.Int("entity_id")==entity);if(index<0)throw new AdInputException("invalid_computers_v6_cursor");offset=index+1;}else if(!int.TryParse(cursor,out offset)||offset<0)throw new AdInputException("report_cursor_invalid");}
         var page = rows.Skip(offset).Take(request.Limit).ToArray(); bool more = offset + page.Length < rows.Count;
-        result["items"] = Array(page); result["filtered_count"] = rows.Count; result["has_more"] = more; result["next_cursor"] = more ? computer?AdCursors.ComputerEncode(sort!,direction,page[^1].Int("entity_id")):(offset + page.Length).ToString(CultureInfo.InvariantCulture) : null;
+        result["items"] = Array(materialize is null ? page : page.Select(materialize)); result["filtered_count"] = rows.Count; result["has_more"] = more; result["next_cursor"] = more ? computer?AdCursors.ComputerEncode(sort!,direction,page[^1].Int("entity_id")):(offset + page.Length).ToString(CultureInfo.InvariantCulture) : null;
     }
     internal const string AdUsersSemanticSql = """
         select linked.entity_id,count(distinct finding.id) as finding_count from findings_active finding

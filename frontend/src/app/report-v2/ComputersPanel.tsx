@@ -86,7 +86,7 @@ export function computerInventoryColumns(columns: ReportColumnDto[], timeZone: s
           aria-label={t(row.enabled ? "reports.computers.enabled" : "reports.computers.disabled")}>{row.enabled ? "✓" : "−"} </span> : null}{text(row.display_name) ?? dash()}</button> },
         computer_type: { label: t("reports.ad.computers.role"), render: (row) => computerRole(row.computer_type) },
         operating_system: { render: (row) => computerOs(row) ?? dash() },
-        last_logon_utc: { label: t("reports.computers.ad_activity"), value: adActivity, render: undefined, sortable: false },
+        last_logon_utc: { label: t("reports.computers.last_logon"), render: (row) => <ComputerLastLogon row={row}/>, sortable: false },
         ip_addresses: { label: t("reports.computers.dns"), render: (row) => addressText(row) ?? dash() },
         laps_state: { label: t("reports.computers.laps"), kind: "datetime", value: (row) => record(row.laps).expiration_utc, render: undefined },
         sli_agent: { label: t("reports.computers.agent"), render: (row) => <AgentSignal row={row}/> },
@@ -97,7 +97,18 @@ export function computerInventoryColumns(columns: ReportColumnDto[], timeZone: s
 
 const computerOs = (row: Row) => typeof row.operating_system === "string" && !/^(unknown|none|null|неизвестно)$/i.test(row.operating_system)
   ? text(row.operating_system) : undefined;
-const adActivity = (row: Row) => text(Object.hasOwn(row, "ad_last_logon_utc") ? row.ad_last_logon_utc : row.last_logon_utc);
+function ComputerLastLogon({ row, withSource = false }: { row: Row; withSource?: boolean }) {
+  const { formatDateTime } = useDateFormatters();
+  const stamp = text(row.last_logon_utc) ?? text(row.ad_last_logon_utc);
+  if (stamp) {
+    const source = row.last_logon_source;
+    const date = formatDateTime(stamp);
+    return withSource && (source === "windows_event" || source === "domain_controllers" || source === "active_directory")
+      ? `${date} · ${t(`reports.computers.last_logon_source.${source}`)}` : date;
+  }
+  return t(row.last_logon_state === "never" ? "reports.v2.ad.computers.v6.params.activity.options.never"
+    : "reports.computers.last_logon_missing");
+}
 
 function addressText(row: Row) {
   const values = record(row.dns_ip).addresses;
@@ -130,7 +141,6 @@ function ComputerFacts({ row }: { row: Row }) {
   const laps = record(row.laps);
   const agent = record(row.sli_agent);
   const address = addressText(row);
-  const activity = adActivity(row);
   return <>
     <section>
       <h3 className="sli-ds-section-title">{t("reports.computers.ad_object")}</h3>
@@ -139,8 +149,7 @@ function ComputerFacts({ row }: { row: Row }) {
         { label: t("reports.computers.ou"), value: text(row.ou_path) },
         { label: t("reports.ad.computers.role"), value: computerRole(row.computer_type) },
         { label: t("reports.computers.os"), value: computerOs(row) },
-        { label: t("reports.computers.ad_activity"), value: activity ? formatDateTime(activity) : null },
-        ...(row.ad_last_logon_utc ? [{ label: t("reports.computers.activity_source"), value: "lastLogonTimestamp" }] : []),
+        { label: t("reports.computers.last_logon"), value: <ComputerLastLogon row={row} withSource/> },
         ...(usable ? [{ label: t("reports.computers.open_problems"), value: <a href={path("security.problems", filters)}>
           {severities.some((level) => counts[level]) ? severities.filter((level) => counts[level]).map((level, index) => <span key={level}>
             {index ? " · " : ""}<SeverityBadge severity={level} label={`${level === "info" ? `● ${t("reports.computers.info")}`

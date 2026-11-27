@@ -29,6 +29,18 @@ function page(items: ReportResultDto["items"], cursor: string | null = null): Re
   };
 }
 
+it("uses the available last logon in the computer card when the replicated timestamp is missing", () => {
+  const lastLogon = "2026-01-12T10:49:00Z";
+  const client = new QueryClient();
+  const { container } = render(<QueryClientProvider client={client}>
+    <ComputerPanel row={{ ...workstation, ad_last_logon_utc: null, last_logon_utc: lastLogon, last_logon_source: "domain_controllers" }}
+      logons={false} logonParams="" changes={[]} canCompare={false} onClose={() => {}} timeZone="UTC"/>
+  </QueryClientProvider>);
+  expect(screen.getByText(t("reports.computers.last_logon"))).toBeTruthy();
+  expect(screen.getByText(`${formatDateTime(lastLogon, true, "UTC")} · ${t("reports.computers.last_logon_source.domain_controllers")}`)).toBeTruthy();
+  expect(container.textContent).not.toContain("lastLogonTimestamp");
+});
+
 it("keeps individual observations selected by row ID through paging and resets on a new result", async () => {
   const first = observation("101", "53");
   const second = observation("102", "37");

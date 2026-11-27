@@ -304,7 +304,8 @@ public sealed class AdReportAdditionsTests
                 create function is_semantic_finding_published_v1(bigint) returns boolean language sql as 'select true';
                 create table servers(id bigint,domain_id bigint,role text);
                 insert into servers values(1,2,'domain_controller');
-                create table event_hot(event_id bigint,time_created_utc timestamptz,event_kind int,domain_id bigint,actor text,target text,source text,computer text,method jsonb,outcome jsonb,fields jsonb);
+                create table event_hot(event_id bigint,time_created_utc timestamptz,event_kind int,domain_id bigint,actor text,target text,source text,computer text,method jsonb,outcome jsonb,fields jsonb,
+                    ad_user_logon_recorder435 bigint,ad_user_workplace_type435 smallint);
                 create table event_cold_facts (like event_hot);
                 create table event_cold_daily(day date,event_kind int,domain_id bigint,actor text,target text,source text,computer text,method jsonb,outcome jsonb,grouping_key bytea,event_count bigint,first_seen_utc timestamptz,last_seen_utc timestamptz);
                 insert into event_cold_daily values('2026-10-17',4624,2,'S-1-5-21-100000001-200000002-300000003-1001',null,'synthetic-ad','dc01.example.test',

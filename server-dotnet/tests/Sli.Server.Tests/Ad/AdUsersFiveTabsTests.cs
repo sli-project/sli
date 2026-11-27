@@ -179,6 +179,42 @@ public sealed class AdUsersFiveTabsTests
         string csv = Csv(Query(s, "disabled")); Assert.Contains("fixture-3", csv); Assert.DoesNotContain("fixture-1", csv);
         Assert.Throws<AdInputException>(() => Query(s, "active", cursor: "-1"));
     }
+    [Theory]
+    [InlineData("all")]
+    [InlineData("privileged")]
+    public void Paged_inventory_matches_eager_rows_and_full_population_totals(string tab)
+    {
+        var first = Account(1, password: "2025-01-01T00:00:00Z", activity: Observed);
+        first["privilegedMemberships"] = Direct();
+        first["servicePrincipalNames"] = new JsonArray("host/synthetic.example.test");
+        var second = Account(2, false, Observed, Observed, locked: true);
+        second["memberships"]!["effective"] = Effective("nested");
+        var third = Account(3, password: Observed, activity: Observed);
+        third["privilegedMemberships"] = Direct();
+        var other = Account(4);
+        other["department"] = "Synthetic department";
+        var sources = new List<JsonObject> { Source(Snapshot(first, second, third, other)) };
+        var episodes = new[] { Obj(new { entity_id = 1, group = "Synthetic group", evidence = new[] { 1, 2 } }) }
+            .ToLookup(row => row.Int("entity_id"));
+        var request = Request(tab, tab == "privileged" ? Obj(new { as_of = "2026-10-07" }) : new(), limit: 1)
+            with { Sort = "reason", Descending = true, QualifyNames = true };
+        JsonObject Run(AdV2Request selection) => AdUsersTabs.Query(selection, sources, Policy(),
+            fields => !fields.Contains("contact"), episodes: episodes);
+
+        var page = Run(request);
+        Assert.True(JsonNode.DeepEquals(Run(request with { Action = "export" }), page));
+        Assert.Equal(tab == "all" ? 4 : 3, page.Int("filtered_count"));
+        Assert.Equal(4, page["coverage"].Int("population"));
+        Assert.Equal("Synthetic department", Assert.Single(page["filter_options"]!["department"]!.AsArray()).Text("value"));
+        Assert.Equal(2, Metrics(page)["attention"]);
+        Assert.Equal("1", page.Text("next_cursor"));
+        var nextRequest = request with { Cursor = page.Text("next_cursor") };
+        Assert.True(JsonNode.DeepEquals(Run(nextRequest with { Action = "export" }), Run(nextRequest)));
+        var filtered = request with { Params = Obj(new { q = "fixture-1", reason = "temporary_membership" }) };
+        var filteredPage = Run(filtered);
+        Assert.Equal([1L], Ids(filteredPage));
+        Assert.True(JsonNode.DeepEquals(Run(filtered with { Action = "export" }), filteredPage));
+    }
     [Fact] public void Semantic_links_exact_entity_and_finding_count()
     { var r = Query(Snapshot(Account(1), Account(2)), "semantic"); Assert.Equal(new long[] { 1 }, Ids(r)); Assert.Equal(1, r["items"]![0].Int("queue_entity_id")); Assert.Equal(2, r["items"]![0].Int("finding_count")); }
     [Theory][InlineData("stale", "stale")][InlineData("inactive", "partial")][InlineData("unknown", "partial")]

@@ -18,7 +18,7 @@ const legacyEntries: Array<NavigationEntryDto & { parent: string }> = [
   { id: "platform-settings", label: "shell.nav.platform-settings", path: "/platform-settings", icon: "settings", capabilities: ["access.manage"], reports: ["decoys.registry", "watch.registry"], parent: "/admin/status" },
   { id: "access-requests", label: "shell.nav.access-requests", path: "/access-requests", icon: "key", capabilities: ["access.manage"], parent: "/access" },
   { id: "local-accounts", label: "access.admin.title", path: "/admin", icon: "users", capabilities: ["access.manage"], parent: "/access" },
-  { id: "session-settings", label: "operations.settings.title", path: "/settings", icon: "settings", capabilities: ["access.manage"], parent: "/admin/language-time" },
+  { id: "session-settings", label: "shell.adminNav.locale", path: "/settings", icon: "settings", capabilities: ["access.manage"], parent: "/admin/language-time" },
 ];
 
 /** Prefer a page's own menu entry before falling back to its related destination. */

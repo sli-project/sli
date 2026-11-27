@@ -10,7 +10,7 @@ import gpoDeclaration from "../../../../server-dotnet/src/Sli.Server/Gpo/declara
 const older = "2026-11-21T12:00:00Z";
 const newer = "2026-11-22T02:00:00Z";
 const policies = [
-  { id: "linked", display_name: "Linked policy", modification_time: older, link_count: 2, setting_count: 3,
+  { id: "linked", display_name: "Linked policy", guid: "b0be2c76-bdae-4110-a727-6158b8f606d3", modification_time: older, link_count: 2, setting_count: 3,
     computer_directory_version: 7, computer_sysvol_version: 7 },
   { id: "updated", display_name: "Updated policy", modification_time: newer, link_count: 0, setting_count: 1,
     computer_directory_version: 12, computer_sysvol_version: 11, unlinked: true },
@@ -18,10 +18,16 @@ const policies = [
     computer_directory_version: 7, computer_sysvol_version: null },
 ];
 const snapshot = { observed_at: newer, computer_directory_version: 7, computer_sysvol_version: 7 };
+const auditGuid = "{0CCE9215-69AE-11D9-BED3-505054503030}";
 const details = {
   settings: [
     { id: "timeout", side: "computer", setting_name: "Timeout", path: "Security/Screen lock", category: "Security", value_display: "600 seconds" },
     { id: "audit", side: "computer", setting_name: "Audit", category: "Logging", value_display: "<img src=x>" },
+    { id: "audit-subcategory", side: "computer", setting_name: "SubcategoryGuid", path: "AuditSetting/SubcategoryGuid", category: "AuditSetting", value_display: auditGuid, audit_mode: "3" },
+    { id: "audit-legacy", side: "computer", setting_name: "SubcategoryGuid", path: "AuditSetting/SubcategoryGuid", category: "AuditSetting", value_display: "{0CCE9242-69AE-11D9-BED3-505054503030}" },
+    { id: "audit-value", side: "computer", setting_name: "SettingValue", path: "AuditSetting/SettingValue", category: "AuditSetting", value_display: "3" },
+    { id: "audit-target", side: "computer", setting_name: "PolicyTarget", path: "AuditSetting/PolicyTarget", category: "AuditSetting", value_display: "System" },
+    { id: "audit-mode", side: "computer", setting_name: "AuditSetting", path: "AuditSetting/AuditSetting", category: "AuditSetting", value_display: "Success and Failure" },
     { id: "theme", side: "user", setting_name: "Theme", category: "Desktop", value_display: "Enabled" },
   ],
   links: [{ id: "link", scope_name: "Workstations", order: 1, enabled: true, enforced: false }],
@@ -104,6 +110,21 @@ function openDetails(id = "linked", tab = "settings", selected?: string) {
   if (selected) params.set("setting", selected);
   return openAddress("/app/report/ad.gpo.v2?" + params);
 }
+
+it.each([
+  ["en", "Logon", "Success and failure", "Advanced Audit Policy Configuration"],
+  ["ru", "Вход в систему", "Успех и отказ", "Расширенная конфигурация политики аудита"],
+] as const)("shows readable audit settings for %s", async (locale, name, value, path) => {
+  setLocale(locale);
+  const { container } = openDetails("linked", "settings", "audit-subcategory");
+  const setting = await screen.findByRole("button", { name });
+  expect(within(setting.closest("tr")!).getByText(value)).toBeTruthy();
+  expect(screen.getByRole("button", { name: locale === "en" ? "Kerberos Authentication Service" : /Служба проверки подлинности Kerberos/ })).toBeTruthy();
+  expect(screen.getAllByText(value).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(new RegExp(path)).length).toBeGreaterThan(0);
+  expect(screen.queryByText(/^(PolicyTarget|SettingValue|SubcategoryGuid|AuditSetting)$/i)).toBeNull();
+  expect(container.textContent).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+});
 
 it("links the inventory name to the identified snapshot and keeps its filtered list address", async () => {
   renderReport();
