@@ -48,7 +48,10 @@ public sealed class GpoEndpointTests
         Assert.Equal(first.Id.ToString("D"), exact["coverage"].Text("snapshot_id"));
         Assert.Equal(first.ObservedAt, Stamp(exact["coverage"].Text("observed_at_utc")));
         Assert.Equal("Synthetic policy", Assert.Single(exact.Rows("items")).Text("display_name"));
-        Assert.Equal("600", Assert.Single(exact["collections"].Rows("settings")).Text("value_display"));
+        var settings = exact["collections"].Rows("settings").ToArray();
+        Assert.Equal("600", Assert.Single(settings, setting => setting.Text("id") == "timeout").Text("value_display"));
+        Assert.Equal("3", Assert.Single(settings, setting => setting.Text("id") == "logon-audit").Text("audit_mode"));
+        Assert.False(Assert.Single(settings, setting => setting.Text("id") == "other-audit").ContainsKey("audit_mode"));
         Assert.Equal("Old scope", Assert.Single(exact["collections"].Rows("links")).Text("scope_name"));
         Assert.Equal(7, Assert.Single(exact["collections"].Rows("versions")).Number("computer_directory_version"));
 
@@ -75,6 +78,14 @@ public sealed class GpoEndpointTests
             payload["settings"] = new JsonArray(new JsonObject
             {
                 ["id"] = "timeout", ["gpo_id"] = "synthetic-policy", ["side"] = "computer", ["value_display"] = value,
+            }, new JsonObject
+            {
+                ["id"] = "logon-audit", ["gpo_id"] = "synthetic-policy", ["side"] = "computer",
+                ["setting_name"] = "SubcategoryGuid", ["value_display"] = "{0CCE9215-69AE-11D9-BED3-505054503030}", ["audit_mode"] = "3",
+            }, new JsonObject
+            {
+                ["id"] = "other-audit", ["gpo_id"] = "synthetic-policy", ["side"] = "computer",
+                ["setting_name"] = "SubcategoryGuid", ["value_display"] = "{0CCE9242-69AE-11D9-BED3-505054503030}", ["audit_mode"] = "invalid",
             });
             payload["links"] = new JsonArray(new JsonObject
             {

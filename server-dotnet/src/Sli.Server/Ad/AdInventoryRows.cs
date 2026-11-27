@@ -19,12 +19,26 @@ internal static class AdInventoryRows
     internal static int? Age(JsonNode? value, DateTimeOffset at) => Date(value) is {} time ? (int)Math.Floor((at - time).TotalDays) : null;
     internal static bool Privileged(JsonObject raw) => (raw["memberships"]?["effective"] as JsonArray ?? []).Any(g => Bool(g?["watchGroup"]) == true) || (raw["privilegedMemberships"] as JsonArray ?? []).Any(g => g!.Text("relation") == "direct");
     public static void RedactUser(JsonObject raw, Func<IEnumerable<string>, bool> fields)
+        => UserRedactor(fields)(raw);
+
+    internal static Action<JsonObject> UserRedactor(Func<IEnumerable<string>, bool> fields)
     {
-        foreach (var (category, keys) in RawFields) if (!fields([category])) foreach (var key in keys!.AsArray()) raw.Remove(key!.ToString());
-        if(!fields(["identity_basic","technical","security","privilege","contact","hr"]))
+        var hidden = RawFields.Where(category => !fields([category.Key]))
+            .SelectMany(category => category.Value!.AsArray()).Select(key => key!.ToString()).ToArray();
+        bool allFields = fields(["identity_basic", "technical", "security", "privilege", "contact", "hr"]);
+        bool security = !allFields && fields(["security"]);
+        return raw =>
         {
-            var states=new JsonObject();if(fields(["security"]))foreach(string key in new[]{"directory","exact_last_logon","password_last_set","last_logon_timestamp"})states[key]=new JsonObject{["status"]=raw["sourceStates"]?[key]?["status"]?.DeepClone(),["observed_at"]=raw["sourceStates"]?[key]?["observed_at"]?.DeepClone()};raw["sourceStates"]=states;
-        }
+            foreach (string key in hidden) raw.Remove(key);
+            if (!allFields)
+            {
+                var states = new JsonObject();
+                if (security)
+                    foreach (string key in new[] { "directory", "exact_last_logon", "password_last_set", "last_logon_timestamp" })
+                        states[key] = new JsonObject { ["status"] = raw["sourceStates"]?[key]?["status"]?.DeepClone(), ["observed_at"] = raw["sourceStates"]?[key]?["observed_at"]?.DeepClone() };
+                raw["sourceStates"] = states;
+            }
+        };
     }
     public static void SecurityFacts(JsonObject user)
     {
@@ -42,7 +56,7 @@ internal static class AdInventoryRows
         if (state == "partial" && (exact is not null || stamp is not null)) return (exact > stamp || stamp is null ? user["exactLastLogon"] : user["lastLogonTimestamp"], exact is not null && stamp is not null ? "newest of partial lastLogon and lastLogonTimestamp" : exact is not null ? "partial lastLogon across DCs" : "lastLogonTimestamp");
         return stamp is not null ? (user["lastLogonTimestamp"], "lastLogonTimestamp") : (null, null);
     }
-    public static JsonObject User(JsonObject user, string? observed, JsonObject? policy=null, JsonObject? exceptions=null)
+    public static JsonObject User(JsonObject user, string? observed, JsonObject? policy=null, JsonObject? exceptions=null, bool includeDetails = true)
     {
         SecurityFacts(user); DateTimeOffset? time = observed is null ? null : DateTimeOffset.Parse(observed, CultureInfo.InvariantCulture); var row = new JsonObject();
         var map = new Dictionary<string, string> { ["id"] = "id", ["entity_id"] = "entityId", ["display_name"] = "displayName", ["sam"] = "samAccountName", ["upn"] = "userPrincipalName", ["enabled"] = "enabled", ["department"] = "department", ["company"] = "company", ["title"] = "title", ["ou"] = "ou", ["mail"] = "mail", ["admin_count"] = "adminCount", ["password_not_required"] = "passwordNotRequired", ["kerberos_no_preauth"] = "doesNotRequirePreAuth", ["reversible_encryption"] = "allowReversiblePasswordEncryption", ["smartcard_required"] = "smartcardLogonRequired", ["account_not_delegated"] = "accountNotDelegated", ["password_last_set"] = "passwordLastSet", ["password_never_expires"] = "passwordNeverExpires", ["created"] = "whenCreated", ["changed"] = "whenChanged", ["sid"] = "sid", ["guid"] = "objectGuid", ["dn"] = "distinguishedName", ["description"] = "description", ["spn"] = "servicePrincipalNames", ["employee_id"] = "employeeID", ["service_account_type"] = "serviceAccountType" };
@@ -55,52 +69,92 @@ internal static class AdInventoryRows
         row["effective_count"] = (user["memberships"]?["effective"] as JsonArray ?? []).Count;
         row["watch_groups"] = Array((user["memberships"]?["effective"] as JsonArray ?? []).Where(g => Bool(g?["watchGroup"]) == true).Select(g => g!.Text("name")));
         var activity = Activity(user); row["activity_at"] = Date(activity.Value) is {} stamp ? PythonIso(stamp):null; row["activity_source"] = activity.Source;
-        UserObservations(row,user,observed,policy??Obj(new{password_age=365,inactivity=90}),exceptions);
+        UserObservations(row, user, observed, policy ?? DefaultHygienePolicy, exceptions, includeDetails);
         return row;
     }
     static readonly JsonObject ReasonTemplates=AdV2Store.Resource("user-reasons");
+    static readonly JsonObject DefaultHygienePolicy = new() { ["password_age"] = 365, ["inactivity"] = 90 };
     internal static string PythonIso(DateTimeOffset stamp)=>stamp.UtcDateTime.ToString(stamp.Ticks%TimeSpan.TicksPerSecond==0?"yyyy-MM-dd'T'HH:mm:ss'+00:00'":"yyyy-MM-dd'T'HH:mm:ss.ffffff'+00:00'",CultureInfo.InvariantCulture);
-    internal static JsonObject Hygiene(JsonObject user,string? observed,JsonObject policy)
+    internal static JsonObject Hygiene(JsonObject user, string? observed, JsonObject policy, bool includeDetails = true)
     {
-        var result=new JsonObject();string? at=user["sourceStates"]?["directory"]?.Text("observed_at")??observed;
+        var result = new JsonObject();
+        var time = Date(JsonValue.Create(user["sourceStates"]?["directory"]?.Text("observed_at") ?? observed));
         foreach(var (kind,field,stateField) in new[]{("password_age","passwordLastSet","password_last_set"),("inactivity","lastLogonTimestamp","last_logon_timestamp")})
-        {
-            var fact=Date(user[field]);var time=Date(JsonValue.Create(at));string? source=user["sourceStates"]?[stateField]?.Text("status")??user["sourceStates"]?["directory"]?.Text("status");
-            string? reason=source is not null and not ("observed" or "complete" or "completed")?"source_untrustworthy":fact is null?"fact_missing_or_invalid":time is null?"observation_time_missing_or_invalid":fact>time?"fact_after_observation":null;
-            var evaluation=Obj(new{status=reason is not null?"unknown":(time!.Value-fact!.Value).TotalDays>policy.Int(kind)?"exceeded":"within_policy",reason,threshold_days=policy.Int(kind),value=fact is null?null:PythonIso(fact.Value),observed_at=time is null?null:PythonIso(time.Value)});
-            if(kind=="inactivity")evaluation["limitation"]="lastLogonTimestamp — приблизительный реплицируемый атрибут; возможна задержка репликации. Это не доказательство отсутствия входов.";
-            result[kind]=evaluation;
-        }
+            result[kind] = EvaluateHygiene(user, time, field, stateField, policy.Int(kind), includeDetails);
         return result;
     }
-    static void UserObservations(JsonObject row,JsonObject user,string? observed,JsonObject policy,JsonObject? exceptions)
+    static JsonObject EvaluateHygiene(JsonObject user, DateTimeOffset? time, string field, string stateField, long threshold, bool includeDetails)
+    {
+        var fact = Date(user[field]);
+        string? source = user["sourceStates"]?[stateField]?.Text("status") ?? user["sourceStates"]?["directory"]?.Text("status");
+        string? reason = source is not null and not ("observed" or "complete" or "completed") ? "source_untrustworthy"
+            : fact is null ? "fact_missing_or_invalid"
+            : time is null ? "observation_time_missing_or_invalid"
+            : fact > time ? "fact_after_observation" : null;
+        string status = reason is not null ? "unknown" : (time!.Value - fact!.Value).TotalDays > threshold ? "exceeded" : "within_policy";
+        if (!includeDetails) return new JsonObject { ["status"] = status };
+        var evaluation = Obj(new
+        {
+            status, reason, threshold_days = threshold,
+            value = fact is null ? null : PythonIso(fact.Value),
+            observed_at = time is null ? null : PythonIso(time.Value)
+        });
+        if (stateField == "last_logon_timestamp")
+            evaluation["limitation"] = "lastLogonTimestamp — приблизительный реплицируемый атрибут; возможна задержка репликации. Это не доказательство отсутствия входов.";
+        return evaluation;
+    }
+    static void UserObservations(JsonObject row, JsonObject user, string? observed, JsonObject policy, JsonObject? exceptions, bool includeDetails)
     {
         string TextValue(JsonNode? value)=>value is null||string.IsNullOrWhiteSpace(value.ToString())?"—":value.ToString();
         var observations=new List<JsonObject>();
         JsonObject Add(string key,string? summary=null,string? evidence=null)
-        {var item=(JsonObject)ReasonTemplates[key]!.DeepClone();if(summary is not null)item["summary"]=summary;if(evidence is not null)item["observed"]=evidence;observations.Add(item);return item;}
+        {
+            var template = ReasonTemplates[key]!.AsObject();
+            var item = includeDetails ? template.DeepClone().AsObject()
+                : new JsonObject { ["key"] = key, ["label"] = template["label"]?.DeepClone(), ["order"] = template["order"]?.DeepClone() };
+            if (includeDetails && summary is not null) item["summary"] = summary;
+            if (includeDetails && evidence is not null) item["observed"] = evidence;
+            observations.Add(item);
+            return item;
+        }
         var flags=new List<string>();var attention=new List<string>();
         foreach(var (field,label) in new[]{("passwordNeverExpires","Пароль не истекает"),("passwordNotRequired","Пароль не требуется"),("smartcardLogonRequired","Требуется смарт-карта"),("accountNotDelegated","Учётная запись чувствительна, не делегируется"),("doesNotRequirePreAuth","Kerberos pre-authentication не требуется")})if(Bool(user[field])==true)flags.Add(label);
         foreach(var (field,label) in new[]{("allowReversiblePasswordEncryption","Разрешено обратимое шифрование пароля"),("trustedForDelegation","TrustedForDelegation = true"),("trustedToAuthForDelegation","TrustedToAuthForDelegation = true"),("useDesKeyOnly","UseDESKeyOnly = true")})if(Bool(user[field])==true){flags.Add(label);attention.Add(label);}
         if(Bool(user["lockedOut"])==true)Add("locked_out",evidence:$"Заблокирована; снимок: {observed}");
         if(Bool(row["account_expired"])==true)Add("account_expired",$"AccountExpirationDate: {TextValue(user["accountExpirationDate"])}",$"AccountExpirationDate = {TextValue(user["accountExpirationDate"])}; снимок = {observed}");
         if(Bool(user["passwordExpired"])==true||Date(user["passwordExpiry"]) is {} expiry&&expiry<Date(JsonValue.Create(observed)))Add("password_expired",Bool(user["passwordExpired"])==true?"PasswordExpired = true":$"Истечение: {TextValue(user["passwordExpiry"])}",$"PasswordExpired = {(Bool(user["passwordExpired"])==true?"True":"False")}; вычисленная дата = {TextValue(user["passwordExpiry"])}");
-        if(attention.Count>0)Add("sensitive_uac_flag",string.Join("; ",attention),string.Join("; ",attention))["flags"]=Array(attention);
-        var hygiene=Hygiene(user,observed,policy);string? snapshot=user["sourceStates"]?["directory"]?.Text("observed_at")??observed;
-        var spnPassword=Hygiene(user,snapshot,Obj(new{password_age=365,inactivity=90}))["password_age"]!;
-        foreach(var (key,condition) in new[]{("password_not_required",Bool(user["passwordNotRequired"])==true),("kerberos_no_preauth",Bool(user["doesNotRequirePreAuth"])==true),("spn_privileged",user["servicePrincipalNames"] is JsonArray{Count:>0}&&Privileged(user)),("spn_old_password",user["servicePrincipalNames"] is JsonArray{Count:>0}&&spnPassword.Text("status")=="exceeded"),("privileged_password_never_expires",Bool(user["passwordNeverExpires"])==true&&Privileged(user))})
+        if (attention.Count > 0)
+        {
+            string? text = includeDetails ? string.Join("; ", attention) : null;
+            var item = Add("sensitive_uac_flag", text, text);
+            if (includeDetails) item["flags"] = Array(attention);
+        }
+        var hygiene = Hygiene(user, observed, policy, includeDetails);
+        string? snapshot = user["sourceStates"]?["directory"]?.Text("observed_at") ?? observed;
+        bool hasSpn = user["servicePrincipalNames"] is JsonArray { Count: > 0 };
+        var spnPassword = hasSpn ? policy.Int("password_age") == 365 ? hygiene["password_age"]!
+            : EvaluateHygiene(user, Date(JsonValue.Create(snapshot)), "passwordLastSet", "password_last_set", 365, includeDetails) : null;
+        foreach(var (key,condition) in new[]{("password_not_required",Bool(user["passwordNotRequired"])==true),("kerberos_no_preauth",Bool(user["doesNotRequirePreAuth"])==true),("spn_privileged",hasSpn&&Privileged(user)),("spn_old_password",spnPassword.Text("status")=="exceeded"),("privileged_password_never_expires",Bool(user["passwordNeverExpires"])==true&&Privileged(user))})
             if(condition)
             {
-                var item=Add(key);item["observed"]=$"{item.Text("condition")}; UAC = {TextValue(user["userAccountControl"])}; SPN = {(user["servicePrincipalNames"] is JsonArray {Count:>0} spns?string.Join("; ",spns.Select(n=>n!.ToString())):"—")}; pwdLastSet = {TextValue(user["passwordLastSet"])}; снимок: {snapshot}";
+                var item = Add(key);
+                if (!includeDetails) continue;
+                item["observed"]=$"{item.Text("condition")}; UAC = {TextValue(user["userAccountControl"])}; SPN = {(user["servicePrincipalNames"] is JsonArray {Count:>0} spns?string.Join("; ",spns.Select(n=>n!.ToString())):"—")}; pwdLastSet = {TextValue(user["passwordLastSet"])}; снимок: {snapshot}";
                 item["evidence"]=new JsonObject{["uac"]=user["userAccountControl"]?.DeepClone(),["spn"]=user["servicePrincipalNames"]?.DeepClone(),["password_last_set"]=user["passwordLastSet"]?.DeepClone(),["snapshot_at"]=snapshot};
-                if(key=="spn_old_password")item["password_evaluation"]=spnPassword.DeepClone();
+                if(key=="spn_old_password")item["password_evaluation"]=spnPassword!.DeepClone();
             }
         if(user["temporaryMemberships"] is JsonArray{Count:>0} episodes)
-            Add("temporary_membership",string.Join(", ",episodes.Select(e=>e!.Text("group")??"None").Distinct().Order(StringComparer.Ordinal)),episodes.Count.ToString(CultureInfo.InvariantCulture))["evidence"]=Array(episodes.Select(e=>e!["evidence"]));
+        {
+            var item = Add("temporary_membership", includeDetails
+                ? string.Join(", ", episodes.Select(e => e.Text("group") ?? "None").Distinct().Order(StringComparer.Ordinal)) : null,
+                includeDetails ? episodes.Count.ToString(CultureInfo.InvariantCulture) : null);
+            if (includeDetails) item["evidence"] = Array(episodes.Select(e => e!["evidence"]));
+        }
         foreach(var (kind,evaluation) in hygiene)
         {
             string status=evaluation!.Text("status")!;if(status=="within_policy"||kind=="inactivity"&&status=="exceeded"&&Bool(user["enabled"])!=true)continue;
             bool unknown=status=="unknown";string key=kind=="password_age"?(unknown?"password_age_unknown":"password_age"):(unknown?"enabled_activity_unknown":"inactive_threshold"),field=kind=="password_age"?"pwdLastSet":"lastLogonTimestamp";
+            if (!includeDetails) { Add(key); continue; }
             string detail=evaluation.Text("reason") switch{"source_untrustworthy"=>"Источник неполон или недостоверен","fact_missing_or_invalid"=>"Дата отсутствует или некорректна","observation_time_missing_or_invalid"=>"Момент наблюдения отсутствует или некорректен","fact_after_observation"=>"Дата позже момента наблюдения",_=>"Порог принятой политики превышен"};
             var item=Add(key,unknown?"Неизвестно: "+detail:$"Более {evaluation.Int("threshold_days")} дней",$"{field} = {TextValue(evaluation!["value"])}; снимок = {observed}");
             item["condition"]=$"Возраст наблюдаемого {field} > {evaluation.Int("threshold_days")} дней";item["qualification"]=unknown?"Неизвестно: "+detail:$"Наблюдаемый возраст превышает принятую политику {evaluation.Int("threshold_days")} дней.";item["limitation"]=evaluation.Text("limitation")??"pwdLastSet подтверждает дату установки пароля, а не его стойкость.";item["policy"]=evaluation.DeepClone();
@@ -114,9 +168,24 @@ internal static class AdInventoryRows
         observations=observations.OrderBy(r=>r.Int("order")).ThenBy(r=>r.Text("summary"),StringComparer.Ordinal).ToList();
         bool Information(JsonObject item)=>item.Text("key") is "password_age_unknown" or "enabled_activity_unknown" or "identity_key_missing" or "group_graph_partial";
         var reasons=observations.Where(r=>!Information(r)).ToArray();var limitations=observations.Where(Information).ToArray();
-        row["reasons"]=Array(reasons);row["reason_keys"]=Array(reasons.Select(r=>r.Text("key")));row["reason_text"]=reasons.Length==0?null:string.Join(", ",reasons.Select(r=>r.Text("label")));row["hygiene"]=hygiene;row["severity"]=reasons.Any(r=>r.Text("severity")=="high")?"high":reasons.Length>0?"medium":null;row["service_exception"]=serviceException?.DeepClone();
-        row["information_limitations"]=Array(limitations);row["information_keys"]=Array(limitations.Select(r=>r.Text("key")));row["information_text"]=limitations.Length>0?string.Join(", ",limitations.Select(r=>r.Text("label"))):null;
-        row["review_details"]=Array(observations.Select(r=>{var detail=(JsonObject)r.DeepClone();detail["category"]=Information(r)?"information":"confirmed";return detail;}));foreach(var(kind,evaluation)in hygiene)row[kind+"_policy"]=evaluation!["status"]!.DeepClone();row["flags"]=Array(flags);
+        row["reasons"] = new JsonArray(reasons);
+        row["reason_keys"] = new JsonArray(reasons.Select(r => JsonValue.Create(r.Text("key"))).ToArray());
+        row["reason_text"] = reasons.Length == 0 ? null : string.Join(", ", reasons.Select(r => r.Text("label")));
+        row["information_limitations"] = new JsonArray(limitations);
+        row["information_keys"] = new JsonArray(limitations.Select(r => JsonValue.Create(r.Text("key"))).ToArray());
+        row["information_text"] = limitations.Length > 0 ? string.Join(", ", limitations.Select(r => r.Text("label"))) : null;
+        foreach (var (kind, evaluation) in hygiene) row[kind + "_policy"] = evaluation!["status"]!.DeepClone();
+        if (!includeDetails) return;
+        row["hygiene"] = hygiene;
+        row["severity"] = reasons.Any(r => r.Text("severity") == "high") ? "high" : reasons.Length > 0 ? "medium" : null;
+        row["service_exception"] = serviceException?.DeepClone();
+        row["review_details"] = new JsonArray(observations.Select(r =>
+        {
+            var detail = r.DeepClone().AsObject();
+            detail["category"] = Information(r) ? "information" : "confirmed";
+            return detail;
+        }).ToArray());
+        row["flags"] = Array(flags);
     }
     public static JsonObject Computer(JsonObject raw, JsonObject source, string observed, JsonObject parameters)
     {
@@ -138,7 +207,24 @@ internal static class AdInventoryRows
         Reason(type == "unknown", "unknown_type", "Тип объекта не определён"); Reason(Bool(raw["enabled"]) == true && age > threshold, "stale_activity", "Активность старше " + threshold + " дней"); Reason(Bool(raw["enabled"]) == true && age is null, "unavailable_activity", "Нет доступной даты активности"); Reason((raw.Int("userAccountControl") & 524288) != 0 || Bool(raw["trustedForDelegation"]) == true, "unconstrained_delegation", "Неограниченное делегирование");
         row["reasons"] = Array(reasons); row["reason_text"] = string.Join(", ", reasons.Select(r => r.Text("label"))); row["quality_issues"] = new JsonArray(); row["quality_text"] = null; row["semantic_findings"] = new JsonArray();
         row["ad_last_logon_utc"] = raw["lastLogonTimestamp"]?.DeepClone();
-        row["last_logon_utc"]=raw["eventLastSeen"]?.DeepClone()??raw["exactLastLogon"]?.DeepClone()??raw["lastLogonTimestamp"]?.DeepClone();
+
+        var eventLogon = Date(raw["eventLastSeen"]);
+        var controllerLogon = Date(raw["exactLastLogon"]);
+        var directoryLogon = Date(raw["lastLogonTimestamp"]);
+        var lastLogon = new[] { eventLogon, controllerLogon, directoryLogon }.Max();
+        row["last_logon_utc"] = lastLogon is {} logon ? PythonIso(logon) : null;
+        row["last_logon_source"] = lastLogon is null ? null
+            : lastLogon == eventLogon ? "windows_event"
+            : lastLogon == controllerLogon ? "domain_controllers" : "active_directory";
+        row["last_logon_age_days"] = lastLogon is {} last ? Math.Max(0, (int)Math.Floor((time - last).TotalDays)) : (int?)null;
+        var replicatedLogon = raw["sources"]?["last_logon_timestamp"];
+        var exactLogon = raw["sources"]?["exact_last_logon"];
+        var controllers = exactLogon?["details"];
+        long discovered = controllers.Int("discovered_dc_count");
+        bool never = lastLogon is null && replicatedLogon.Text("status") == "missing_in_source"
+            && exactLogon.Text("status") is "missing_in_source" or "no_record"
+            && discovered > 0 && controllers.Int("successful_dc_count") == discovered;
+        row["last_logon_state"] = lastLogon is not null ? "observed" : never ? "never" : "unknown";
         row["ou_path"]=raw["ou"]?.DeepClone()??row["ou_path"]?.DeepClone();row["operating_system_build"]=raw["osBuild"]?.DeepClone();row["classification"]=raw["classification"]?.DeepClone()??Obj(new{result=type,state=type=="unknown"?"unknown":"observed",rule_id="base_inventory_os_family",evidence=new[]{"OperatingSystem="+(raw.Text("osName")??"не передано")}});
         row["classification"]!["role_hint"]=raw["roleHint"]?.DeepClone();row["classification"]!["role_evidence"]=raw["roleEvidence"]?.DeepClone()??new JsonArray();
         row["collection"]=new JsonObject{["collected_at"]=raw["collectedAt"]?.DeepClone(),["query_dc"]=raw["queryDc"]?.DeepClone()??source["snapshot"]?["metadata"]?["query_dc"]?.DeepClone(),["collector_version"]=raw["collectorVersion"]?.DeepClone()??source["snapshot"]?["metadata"]?["collector_version"]?.DeepClone()};
@@ -232,12 +318,15 @@ internal static class AdInventoryRows
     internal static bool MatchesComputerActivity(JsonObject row, string? activity, long configuredThreshold)
     {
         int? days = row["activity"]?["age_days"]?.GetValue<int>();
+        int? lastLogonDays = row["last_logon_age_days"]?.GetValue<int>();
         long threshold = configuredThreshold > 0 ? configuredThreshold : 90;
         return activity switch
         {
             "missing" => days is null,
-            "within_30_days" => days <= 30,
-            "days_31_to_90" => days is >= 31 and <= 90,
+            "within_30_days" => lastLogonDays is >= 0 and <= 30,
+            "days_31_to_90" => lastLogonDays is >= 31 and <= 90,
+            "over_90_days" => lastLogonDays is > 90,
+            "never" => row.Text("last_logon_state") == "never",
             "over_60_days" => days > 60,
             "within_threshold" => days <= threshold,
             "over_threshold" => days > threshold,

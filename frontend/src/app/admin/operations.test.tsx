@@ -15,7 +15,7 @@ import { formatDateTime } from "../../shared/date-time";
 const history = { key: "ad.snapshot_history_days", value: "365", source: "default", environment: "SLI_AD_SNAPSHOT_HISTORY_DAYS" };
 const overview = () => ({ storage: {
   disk_pressure: { disk: { used_human: "20 GB", free_human: "80 GB" } },
-  footprint: { components: [{ key: "postgres_database", human: "9 GB" }, { key: "clickhouse_volume_history", human: "11 GB" }],
+  footprint: { components: [{ key: "postgres_database", human: "12.5 GB" }, { key: "clickhouse_volume_history", human: "11 GB" }],
     backups: { last_backup_at_utc: "2026-11-13T10:00:00Z" } },
 } });
 function mount() {
@@ -47,7 +47,9 @@ it.each(["ru", "en"] as const)("keeps empty storage facts out of the error state
 it.each(["ru", "en"] as const)("renders available facts without collection diagnostics in %s", async (locale) => {
   setLocale(locale); mount();
   const disk = await screen.findByRole("table", { name: locale === "ru" ? "Диск" : "Disk" });
-  for (const value of ["9 GB", "80 GB"]) expect(within(disk).getByText(value)).toBeTruthy();
+  const database = within(disk).getByRole("row", { name: /База данных PostgreSQL|PostgreSQL database/ });
+  expect(within(database).getByText(locale === "ru" ? "12,5 ГБ" : "12.5 GB")).toBeTruthy();
+  expect(within(disk).getByText(locale === "ru" ? "80 ГБ" : "80 GB")).toBeTruthy();
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(locale === "ru" ? "Хранение" : "Storage");
   expect(screen.getByRole("table", { name: locale === "ru" ? "Резервная копия" : "Backup" }).textContent).toContain("13");
   expect(screen.queryByText(/Автообновление|не подтвержд|Это не оценка|Диагностика|Долгих запросов/)).toBeNull();
@@ -79,12 +81,12 @@ it("omits tables without API values and retains a measured zero", async () => {
   await waitFor(() => expect(document.querySelector('[aria-busy="true"]')).toBeNull());
   expect(screen.queryByRole("table")).toBeNull(); cleanup();
   state.storage.mockResolvedValue({ storage: { footprint: { components: [{ key: "postgres_database", human: "0 B" }] } } }); mount();
-  const disk = await screen.findByRole("table", { name: "Диск" }); expect(within(disk).getByText("0 B")).toBeTruthy();
+  const disk = await screen.findByRole("table", { name: "Диск" }); expect(within(disk).getByText("0 Б")).toBeTruthy();
   expect(within(disk).queryByRole("columnheader", { name: "Свободно" })).toBeNull();
 });
 it.each([
-  { bytes: 1048576, text: "1.0 MB" },
-  { bytes: 0, text: "0 B" },
+  { bytes: 1048576, text: "1 МБ" },
+  { bytes: 0, text: "0 Б" },
   { bytes: null, text: "—" },
 ])("keeps the logical database measurement separate from partition capacity ($text)", async ({ bytes, text }) => {
   state.storage.mockResolvedValue({ storage: {
@@ -97,8 +99,8 @@ it.each([
   const disk = await screen.findByRole("table", { name: t("operations.disk.title") });
   const database = within(disk).getByRole("row", { name: /База данных/ });
   const partition = within(disk).getByRole("row", { name: /Раздел диска/ });
-  expect(within(database).getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["База данных", text, "—"]);
-  expect(within(partition).getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["Раздел диска", "20 GB", "80 GB"]);
+  expect(within(database).getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["База данных PostgreSQL", text, "—"]);
+  expect(within(partition).getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["Раздел диска", "20 ГБ", "80 ГБ"]);
 });
 it("saves retention once and reports the time", async () => {
   mount(); const input = await screen.findByRole("spinbutton", { name: "История изменений AD/GPO" });

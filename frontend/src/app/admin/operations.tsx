@@ -4,7 +4,7 @@ import { api, type PlatformSetting, type StorageOverview, type StorageGrowth } f
 import { DataTable, PageHeader, StateView, type TableColumn } from "../../design-system";
 import { t } from "../../i18n";
 import { EMPTY_VALUE, formatNumber } from "../../shared/format";
-import { localizeByteSize } from "../../shared/byte-size";
+import { formatByteSize, localizeByteSize } from "../../shared/byte-size";
 import { formatDateTime, isValidTimeZone, zonedParts } from "../../shared/date-time";
 import { useEffectiveAccess, useTimeZone } from "../App";
 import { bootstrapEffectiveRole } from "../access-control";
@@ -16,6 +16,7 @@ function DiskTable({ data, growth }: { data: StorageOverview; growth?: StorageGr
   const components = data.storage.footprint?.components ?? [];
   const database = components.find((item) => item.key === "postgres_database");
   const disk = data.storage.disk_pressure?.disk;
+  const volume = disk?.used_bytes == null && !hasSize(disk?.used_human) ? data.storage.postgres_volume : undefined;
   const measured = growth?.measured_growth?.components;
   const daily = (key: "database_bytes" | "disk_used_bytes") => {
     const value = measured?.[key];
@@ -23,8 +24,11 @@ function DiskTable({ data, growth }: { data: StorageOverview; growth?: StorageGr
       ? `${value.bytes_per_day < 0 ? "−" : ""}${localizeByteSize(value.per_day_human)}` : null;
   };
   const rows: DiskRow[] = [
-    { key: "database", label: t("operations.disk.database"), used: database?.human, growth: daily("database_bytes") },
-    { key: "disk", label: t("operations.disk.partition"), used: disk?.used_human, free: disk?.free_human, growth: daily("disk_used_bytes"), days: growth?.forecast?.estimated_days },
+    { key: "database", label: t("operations.disk.database"), used: formatByteSize(database?.bytes) ?? localizeByteSize(database?.human), growth: daily("database_bytes") },
+    { key: "disk", label: volume ? t("operations.disk.postgresVolume", { mount: volume.mount_point }) : t("operations.disk.partition"),
+      used: volume ? formatByteSize(volume.used_bytes) : formatByteSize(disk?.used_bytes) ?? localizeByteSize(disk?.used_human),
+      free: volume ? formatByteSize(volume.free_bytes) : formatByteSize(disk?.free_bytes) ?? localizeByteSize(disk?.free_human),
+      growth: volume ? null : daily("disk_used_bytes"), days: volume ? null : growth?.forecast?.estimated_days },
   ];
   const used = rows.some((row) => hasSize(row.used));
   const free = rows.some((row) => hasSize(row.free));
@@ -34,17 +38,17 @@ function DiskTable({ data, growth }: { data: StorageOverview; growth?: StorageGr
   const columns: TableColumn<DiskRow>[] = [
     { key: "label", label: t("operations.disk.what") },
     ...(used ? [{ key: "used", label: t("operations.disk.used"), align: "end" as const,
-      render: (row: DiskRow) => hasSize(row.used) ? localizeByteSize(row.used) : EMPTY_VALUE }] : []),
+      render: (row: DiskRow) => hasSize(row.used) ? row.used : EMPTY_VALUE }] : []),
     ...(free ? [{ key: "free", label: t("operations.disk.free"), align: "end" as const,
-      render: (row: DiskRow) => hasSize(row.free) ? localizeByteSize(row.free) : EMPTY_VALUE }] : []),
+      render: (row: DiskRow) => hasSize(row.free) ? row.free : EMPTY_VALUE }] : []),
     ...(hasGrowth ? [{ key: "growth", label: t("operations.disk.growth"), align: "end" as const,
-      render: (row: DiskRow) => hasSize(row.growth) ? localizeByteSize(row.growth) : EMPTY_VALUE }] : []),
+      render: (row: DiskRow) => hasSize(row.growth) ? row.growth : EMPTY_VALUE }] : []),
     ...(hasDays ? [{ key: "days", label: t("operations.disk.days"), align: "end" as const,
       render: (row: DiskRow) => formatNumber(row.days) }] : []),
   ];
   return <section id="storage-diagnostics" className="sli-ds-home-section">
-    <h2 className="sli-ds-section-title">{t("operations.disk.title")}</h2>
-    <DataTable columns={columns} rows={rows} rowKey={(row) => row.key} caption={t("operations.disk.title")} showFooter={false} stickyHeader={false}/>
+    <h2 id="storage-disk-title" className="sli-ds-section-title">{t("operations.disk.title")}</h2>
+    <DataTable columns={columns} rows={rows} rowKey={(row) => row.key} labelledBy="storage-disk-title" showFooter={false} stickyHeader={false}/>
   </section>;
 }
 
@@ -87,7 +91,7 @@ function OperationsContent({ role }: { role: string }) {
       {t("operations.page.unavailable")} <button className="sli-ds-button" onClick={() => void storage.refetch()}>{t("state.retry")}</button>
     </p> : storage.data ? <DiskTable data={storage.data} growth={growth.data}/> : null}
     {retention ? <section className="sli-ds-home-section">
-    <h2 className="sli-ds-section-title">{t("operations.retention.title")}</h2>
+    <h2 id="storage-retention-title" className="sli-ds-section-title">{t("operations.retention.title")}</h2>
     <form id="storage-retention" onSubmit={(event) => { event.preventDefault(); if (canEdit && changed && valid && !save.isPending) save.mutate(); }}>
       <DataTable columns={[
         { key: "what", label: t("operations.retention.what"), render: () => <label htmlFor={field}>{t("operations.retention.adHistory")}</label> },
@@ -99,15 +103,15 @@ function OperationsContent({ role }: { role: string }) {
           <span>{t("operations.retention.default", { days: 365 })}</span>
           {error ? <span id={`${field}-error`} role="alert" className="sli-ds-field__error" style={{ gridColumn: "1 / -1" }}>{error}</span> : null}
         </div> },
-      ]} rows={[retention]} rowKey={(row) => row.key} caption={t("operations.retention.title")} showFooter={false} stickyHeader={false}/>
+      ]} rows={[retention]} rowKey={(row) => row.key} labelledBy="storage-retention-title" showFooter={false} stickyHeader={false}/>
       {savedAt ? <p role="status">{t("operations.retention.saved", { time })}</p> : null}
     </form>
     </section> : null}
     {canReadSettings && settings.isError ? <p role="alert">{t("operations.retention.loadError")} <button className="sli-ds-button" onClick={() => void settings.refetch()}>{t("state.retry")}</button></p> : null}
     {backup && Number.isFinite(Date.parse(backup)) ? <section className="sli-ds-home-section">
-      <h2 className="sli-ds-section-title">{t("operations.backup.title")}</h2>
+      <h2 id="storage-backup-title" className="sli-ds-section-title">{t("operations.backup.title")}</h2>
       <DataTable columns={[{ key: "last", label: t("operations.backup.last"), render: () => formatDateTime(backup, timeZone) }]}
-        rows={[{ key: "backup" }]} rowKey={(row) => row.key} caption={t("operations.backup.title")} showFooter={false} stickyHeader={false}/>
+        rows={[{ key: "backup" }]} rowKey={(row) => row.key} labelledBy="storage-backup-title" showFooter={false} stickyHeader={false}/>
     </section> : null}
     {canEdit && storage.data?.storage.retired_clickhouse_data ? <p>{t("operations.clickhouse.cleanup")} <code>sudo rm -rf -- /srv/sli-db/clickhouse</code></p> : null}
   </section>;

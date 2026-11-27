@@ -58,6 +58,58 @@ public sealed class ComputersV6SourceContractTests
         ["snapshot"] = snapshot.DeepClone(), ["domain_id"] = 7, ["fqdn"] = "example.test"
     }, snapshot["metadata"]!["completed_at"]!.ToString(), new JsonObject());
 
+    [Theory]
+    [InlineData(0, "within_30_days")]
+    [InlineData(30, "within_30_days")]
+    [InlineData(31, "days_31_to_90")]
+    [InlineData(61, "days_31_to_90")]
+    [InlineData(90, "days_31_to_90")]
+    [InlineData(91, "over_90_days")]
+    public void Available_logon_belongs_to_one_activity_bucket(int days, string expected)
+    {
+        var snapshot = Snapshot();
+        var item = Item(snapshot);
+        item["lastLogonTimestamp"] = null;
+        item["eventLastSeen"] = null;
+        var observed = DateTimeOffset.Parse(snapshot["metadata"]!["completed_at"]!.ToString());
+        item["exactLastLogon"] = observed.AddDays(-days).ToString("O");
+        var row = Report(snapshot);
+        string[] buckets = ["within_30_days", "days_31_to_90", "over_90_days", "never"];
+        Assert.Equal(new[] { expected }, buckets.Where(bucket => AdInventoryRows.MatchesComputerActivity(row, bucket, 60)));
+    }
+
+    [Fact]
+    public void Most_recent_valid_logon_is_used_for_the_display_and_bucket()
+    {
+        var snapshot = Snapshot();
+        var item = Item(snapshot);
+        var observed = DateTimeOffset.Parse(snapshot["metadata"]!["completed_at"]!.ToString());
+        item["eventLastSeen"] = observed.AddDays(-91).ToString("O");
+        item["exactLastLogon"] = observed.AddDays(-2).ToString("O");
+        item["lastLogonTimestamp"] = observed.AddDays(-40).ToString("O");
+        var row = Report(snapshot);
+        Assert.Equal(observed.AddDays(-2), AdInventoryRows.Date(row["last_logon_utc"]));
+        Assert.Equal("domain_controllers", row["last_logon_source"]!.GetValue<string>());
+        Assert.True(AdInventoryRows.MatchesComputerActivity(row, "within_30_days", 90));
+    }
+
+    [Fact]
+    public void Never_requires_a_collected_no_logon_result()
+    {
+        var snapshot = Snapshot();
+        var item = Item(snapshot);
+        foreach (string field in new[] { "lastLogonTimestamp", "exactLastLogon", "eventLastSeen" }) item[field] = null;
+        SetStatus(snapshot, "missing_in_source", "last_logon_timestamp");
+        SetStatus(snapshot, "not_collected", "exact_last_logon", false);
+        Assert.False(AdInventoryRows.MatchesComputerActivity(Report(snapshot), "never", 90));
+        SetStatus(snapshot, "missing_in_source", "exact_last_logon");
+        State(snapshot, "exact_last_logon")["details"] = new JsonObject
+        {
+            ["discovered_dc_count"] = 2, ["successful_dc_count"] = 2
+        };
+        Assert.True(AdInventoryRows.MatchesComputerActivity(Report(snapshot), "never", 90));
+    }
+
     [Fact]
     public void Production_source_is_accepted_without_mutating_the_document()
     {

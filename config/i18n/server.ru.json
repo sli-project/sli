@@ -976,6 +976,8 @@
   "reports.v2.ad.computers.v6.params.activity.options.within_30_days": "До 30 дней",
   "reports.v2.ad.computers.v6.params.activity.options.days_31_to_90": "31–90 дней",
   "reports.v2.ad.computers.v6.params.activity.options.over_60_days": "Более 60 дней",
+  "reports.v2.ad.computers.v6.params.activity.options.over_90_days": "Более 90 дней",
+  "reports.v2.ad.computers.v6.params.activity.options.never": "Никогда",
   "reports.v2.ad.computers.v6.params.threshold_days.label": "Порог давности",
   "reports.v2.ad.computers.v6.params.threshold_days.options.30": "30 дней",
   "reports.v2.ad.computers.v6.params.threshold_days.options.60": "60 дней",

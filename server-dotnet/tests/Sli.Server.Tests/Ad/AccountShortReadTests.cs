@@ -177,7 +177,9 @@ public sealed class AccountShortReadTests(AccountShortReadTests.Database databas
         const long domain = 23;
         const string dailySid = "S-1-5-21-100000001-200000002-300000003-1003";
         const string paddedSid = "S-1-5-21-100000001-200000002-300000003-1004";
+        const string wideSid = "S-1-5-21-100000001-200000002-300000003-1005";
         const string historicalSid = "S-1-5-fixture-ß";
+        string wideSource = new('\u4E00', 500);
         await using (var seed = await fixture.Pg.OpenAsync(ct))
         {
             await PostCollectionPostgres.Sql(seed, """
@@ -206,10 +208,12 @@ public sealed class AccountShortReadTests(AccountShortReadTests.Database databas
                     (47010,24,24,3,$1,$2,'other-domain.example.test','{"LogonType":"2"}','{}','{}'),
                     (47011,23,24,3,$1,$2,'wrong-recorder.example.test','{"LogonType":"2"}','{}','{}'),
                     (47012,23,23,15,$3||U&'\2003',$2,'padded.example.test',jsonb_build_object('LogonType',U&'\00A0' || '11' || U&'\2003'),'{}','{}'),
-                    (47013,23,23,14,$4,$2,'legacy-unicode.example.test','{"LogonType":" 2 "}','{}','{}')
+                    (47013,23,23,14,$4,$2,'legacy-unicode.example.test','{"LogonType":" 2 "}','{}','{}'),
+                    (47014,23,23,13,$5,$2,$6,'{"LogonType":"2"}','{}','{}')
                 ) v(id,domain_id,server_id,age,actor,target,workplace,method,outcome,fields)
                 """, seed);
-            foreach (string sid in new[] { Sid, Actor, paddedSid, historicalSid }) hot.Parameters.Add(new() { Value = sid });
+            foreach (string value in new[] { Sid, Actor, paddedSid, historicalSid, wideSid + new string('\u2003', 450), wideSource })
+                hot.Parameters.Add(new() { Value = value });
             await hot.ExecuteNonQueryAsync(ct);
 
             var retained = EventReadService.ShortBoundary(null).AddDays(-2);
@@ -231,12 +235,13 @@ public sealed class AccountShortReadTests(AccountShortReadTests.Database databas
         await using var app = await fixture.Pg.OpenAsync(ct, "adlog_user");
         var window = new AdPeriod(DateTimeOffset.UtcNow.AddDays(-365), DateTimeOffset.UtcNow);
         var unfiltered = await AdAccountEvents.ReadAsync(app, [domain], [4624], window, ct);
-        string[] sids = [Sid.ToLowerInvariant(), dailySid, paddedSid, Actor];
+        string[] sids = [Sid.ToLowerInvariant(), dailySid, paddedSid, wideSid, Actor];
         var expected = new Dictionary<string, (string Computer, string Kind)>
         {
             [Sid.ToLowerInvariant()] = ("hot-first.example.test", "rdp"),
             [dailySid.ToLowerInvariant()] = ("daily.example.test", "local"),
             [paddedSid.ToLowerInvariant()] = ("padded.example.test", "local"),
+            [wideSid.ToLowerInvariant()] = (wideSource, "local"),
         };
         await Compare(sids, expected);
         expected[historicalSid.ToLowerInvariant()] = ("legacy-unicode.example.test", "local");

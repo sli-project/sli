@@ -259,7 +259,7 @@ public sealed class PasswordThresholdPostgresTests(ITestOutputHelper output)
     {
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new SqlPostgresFixture();
-        await fixture.StartAsync(ct, throughVersion: upgrade ? 426 : null);
+        await fixture.StartAsync(ct, throughVersion: upgrade ? 435 : null);
         await using var owner = await fixture.Pg.OpenAsync(ct);
         var start = DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.AddHours(-7).ToUnixTimeSeconds());
         await ShortEventAdmissionPostgresTests.WriteAsync(fixture,

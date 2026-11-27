@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
-from pathlib import Path
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -127,6 +127,57 @@ def test_untracked_pointer_is_rejected_for_bundled_plugin(inventory, tmp_path):
     atomic_json(tmp_path / "plugins/sli.fixture/active.json", {"generation": "f" * 64})
     with pytest.raises(PackageError, match="plugin_pointer_mismatch"):
         state.validate(installed, observed, tmp_path)
+
+
+@pytest.mark.parametrize(("case", "reason"), [
+    ("bundled", None),
+    ("selected", None),
+    ("duplicate-pointer", "invalid JSON document"),
+    ("wrong-version", "update_plugin_pointer_mismatch"),
+    ("changed-asset", "update_plugin_payload_changed"),
+    ("ui-contract", "plugin_ui_unsupported_api"),
+    ("handler-rights", "handler_not_allowlisted"),
+])
+def test_native_pointer_decisions_match_updater(tmp_path, case, reason):
+    plugin_id = "sli.remote-access"
+    generation = "a" * 64
+    plugin = tmp_path / "plugins" / plugin_id
+    release = plugin / "versions" / generation
+    current = {"version": "1.0.0", "generation": generation if case != "bundled" else None}
+    installed = {"plugins": {plugin_id: current}}
+    if case != "bundled":
+        (release / "backend").mkdir(parents=True)
+        (release / "ui").mkdir()
+        jobs = json.loads((state.ROOT / "config/plugin_packages/sli.remote-access.jobs-v3.json").read_text("utf-8"))
+        asset = b"export const version = '1.0.0';"
+        descriptor = {"plugin_id": plugin_id, "version": "1.0.0", "ui_api": "sli.plugin-ui.v1",
+                      "routes": [f"/extensions/{plugin_id}/accounts"], "required_capabilities": [],
+                      "entry": {"path": "entry.js", "sha256": hashlib.sha256(asset).hexdigest()}}
+        if case == "ui-contract":
+            descriptor["ui_api"] = "sli.plugin-ui.invalid"
+        if case == "handler-rights":
+            jobs["handlers"][0]["resource_profile"] = "heavy"
+        files = {"ui/descriptor.json": json.dumps(descriptor).encode(), "ui/entry.js": asset,
+                 "backend/jobs-v3.json": json.dumps(jobs).encode()}
+        for name, body in files.items():
+            (release / name).write_bytes(body)
+        manifest = {"plugin_id": plugin_id, "plugin_version": "2.0.0" if case == "wrong-version" else "1.0.0",
+                    "files": [{"path": name, "size": len(body), "sha256": hashlib.sha256(body).hexdigest()}
+                              for name, body in files.items()],
+                    "core_api": jobs["core_api"], "handlers": [row["handler_id"] for row in jobs["handlers"]]}
+        (release / "release.json").write_text(json.dumps(manifest), encoding="utf-8")
+        pointer = json.dumps({"generation": generation})
+        if case == "duplicate-pointer":
+            pointer = f'{{"generation":"{generation}","generation":"{generation}"}}'
+        (plugin / "active.json").write_text(pointer, encoding="utf-8")
+        if case == "changed-asset":
+            (release / "ui/entry.js").write_bytes(b"x" * len(asset))
+    for check in (state.pointers_match, state.native_pointers_match):
+        if reason:
+            with pytest.raises(ValueError, match=reason):
+                check(tmp_path, installed)
+        else:
+            assert check(tmp_path, installed) is None
 
 
 @pytest.mark.parametrize("bad", [None, "checksum", "migration_checksum", "name", "hole"])
