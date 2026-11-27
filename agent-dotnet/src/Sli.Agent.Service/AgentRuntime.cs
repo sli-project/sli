@@ -32,7 +32,6 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
     private FilePacketQueue? _queue;
     private AgentHttpClient? _http;
     private AgentIdentity? _identity;
-    private MsiAgentUpdate? _updates;
     private DateTimeOffset? _lastCapture;
     private string? _lastCapturePolicy;
     private string? _dcCatchUpChannel;
@@ -109,15 +108,6 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
             }
             var assignment = await _http!.GetIdentityAsync(_fileAuditCatalog is not null, cancellationToken).ConfigureAwait(false);
             if (assignment["agent_removal"] is not null) throw new AgentException("agent_removal_requires_admin");
-            _updates ??= new MsiAgentUpdate(_options.StateDir, _files, clock);
-            try
-            {
-                await _updates.CheckAsync(assignment["agent_update"] as JsonObject, _http, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception exception) when (exception is AgentException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
-            {
-                error ??= exception is AgentException update ? update.Code : "agent_update_stage_failed";
-            }
             var policy = AgentPolicy.Parse(assignment, _identity.AgentId, _catalog);
             bool fileAuditReadDiagnostics = assignment[FileAuditReadError.Capability] is JsonValue fileAuditFeature
                 && fileAuditFeature.TryGetValue<bool>(out var supported) && supported;
@@ -176,6 +166,10 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
             if (policy.AdDc is null && auditReport is not null) await _http.PostAsync("/api/v1/agent/windows-audit-report", auditReport, cancellationToken).ConfigureAwait(false);
             if (fileResult?.Report is { } fileReport)
                 _fileAuditReport.Start(fileReport, _http, fileAuditReadDiagnostics, cancellationToken);
+            if (assignment["agent_update"] is JsonObject offer)
+                await _http.PostAsync("/api/v1/agent/update-result", new JsonObject
+                { ["sha256"] = offer["sha256"]?.DeepClone(), ["version"] = typeof(AgentRuntime).Assembly.GetName().Version!.ToString(3),
+                    ["status"] = "rejected", ["reason"] = "agent_update_msi_required" }, cancellationToken).ConfigureAwait(false);
             var eventActive = state == "active" && source is not null && (policy.AdDc is not null || policy.Workstations is not null);
             active = eventActive || state == "active" && (policy.Snapshots.Count > 0 || policy.FileAudit is not null || policy.NpsModules.Count > 0);
             var capturePolicy = CanonicalJson.Serialize(new JsonObject { ["dc"] = policy.AdDc?.DeepClone(), ["ws"] = policy.Workstations?.DeepClone() });

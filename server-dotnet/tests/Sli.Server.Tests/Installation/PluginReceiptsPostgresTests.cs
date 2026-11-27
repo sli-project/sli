@@ -45,6 +45,9 @@ public sealed class PluginReceiptsPostgresTests
                 create table sli_agent_packet_inbox(packet_id text primary key,imported_at timestamptz);
                 create table sli_agent_snapshot_cycles(module_id text not null,
                     transport_state text,completed_at timestamptz,publication_state text,published_at timestamptz);
+                create table sli_agents(id integer, status text, assigned_modules jsonb, collection_policy jsonb,
+                    file_audit jsonb, registration_host_name text);
+                create table sli_agent_module_bindings(agent_id integer, module_id text);
                 """, ct);
         }
         public async Task SqlAsync(string sql, CancellationToken ct)
@@ -116,9 +119,6 @@ public sealed class PluginReceiptsPostgresTests
         await using var f = new Fixture(preview: true);
         await f.StartAsync(ct);
         await f.SqlAsync("""
-            create table sli_agents(id integer, status text, assigned_modules jsonb, collection_policy jsonb,
-                file_audit jsonb, registration_host_name text);
-            create table sli_agent_module_bindings(agent_id integer, module_id text);
             insert into sli_agents values
                 (1, 'active', '[{"module_id":"sli.file-audit","enabled":true,"config":{"roots":[{}]}}]',
                  '{"interval_seconds":60}', '{}', 'file.example.test');
@@ -192,7 +192,9 @@ public sealed class PluginReceiptsPostgresTests
         await Pulse("error", new JsonObject { ["failure_at"] = stamp });
         Assert.Equal("error", (await ReadStatus())["state"]!.ToString());
         await Pulse("idle", new JsonObject());
-        Assert.Equal(stamp, (await ReadStatus())["last_data_at"]!.ToString());
+        var idle = await ReadStatus();
+        Assert.Equal("working", idle["state"]!.ToString());
+        Assert.Equal(stamp, idle["last_data_at"]!.ToString());
     }
 
     [Fact]
@@ -202,9 +204,6 @@ public sealed class PluginReceiptsPostgresTests
         await using var f = new Fixture(); await f.StartAsync(ct);
         await f.SqlAsync("""
             insert into sli_agent_receipts values ('runtime','sli.windows.ad-dc','2026-10-25');
-            create table sli_agents(id integer, status text, assigned_modules jsonb, collection_policy jsonb,
-                file_audit jsonb, registration_host_name text);
-            create table sli_agent_module_bindings(agent_id integer, module_id text);
             insert into sli_agents values
                 (1, 'active', '[{"module_id":"sli.workstations","enabled":true}]',
                  '{"interval_seconds":60}', '{}', 'station.example.test');

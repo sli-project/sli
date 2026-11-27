@@ -21,6 +21,7 @@ public sealed partial class InstallationService
     {
         string[] modules = items.OfType<JsonObject>()
             .SelectMany(item => PluginModules.GetValueOrDefault(Text(item["plugin_id"])) ?? [])
+            .Concat(items.OfType<JsonObject>().Any(item => Text(item["plugin_id"]) == "sli.sigma") ? ["sli.windows.ad-dc"] : Array.Empty<string>())
             .Where(module => module is not ("sli.vpn-nps" or "sli.radius-accounting")).Distinct().ToArray();
         if (modules.Length == 0) return new JsonArray();
         try
@@ -46,6 +47,21 @@ public sealed partial class InstallationService
         { return null; }
     }
 
+    private async Task<JsonArray?> RadiusStatusSourcesAsync(CancellationToken ct)
+    {
+        try
+        {
+            return await database.ReadAsync(s => s.QueryAsync("""
+                select distinct source_instance_id, left(source_display_name, 253) as source_name
+                from public.radius_vpn_operations_v1
+                where source_activation='manual_enabled' and subscription_activation='manual_enabled'
+                order by source_name, source_instance_id
+                """, ct), ct);
+        }
+        catch (Exception e) when (e is NpgsqlException or TimeoutException or InvalidOperationException)
+        { return null; }
+    }
+
     private async Task<JsonObject?> SigmaStatusAsync(CancellationToken ct)
     {
         try
@@ -66,7 +82,7 @@ public sealed partial class InstallationService
     }
 
     private static JsonObject PluginPresentation(JsonObject item, JsonObject receipts,
-        IReadOnlyDictionary<string, JsonObject> moduleReceipts, JsonArray? sources, JsonObject? sigma, DateTimeOffset now)
+        IReadOnlyDictionary<string, JsonObject> moduleReceipts, JsonArray? sources, JsonArray? radius, JsonObject? sigma, DateTimeOffset now)
     {
         string id = Text(item["plugin_id"]);
         bool enabled = Bool(item["enabled"]);
@@ -84,10 +100,18 @@ public sealed partial class InstallationService
                 .FirstOrDefault(name => name.Length > 0)).Where(name => name is not null)
                 .Order(StringComparer.OrdinalIgnoreCase).Select(name => (JsonNode?)JsonValue.Create(name)).ToArray());
         }
+        if (remote && radius is not null)
+        {
+            item["source_count"] = radius.Count;
+            item["source_names"] = new JsonArray(radius.OfType<JsonObject>().Select(row => Text(row["source_name"]))
+                .Where(name => name.Length > 0).Select(name => (JsonNode?)JsonValue.Create(name)).ToArray());
+        }
         var failed = collecting.Where(row => StatusTime(row["failure_at"], now) is not null)
             .MaxBy(row => StatusTime(row["failure_at"], now));
         var telemetry = sigma?["telemetry"] as JsonObject;
-        bool hasSource = remote ? Bool(item["configured"]) : sigmaPlugin ? Bool(sigma?["has_source"]) : collecting.Length > 0;
+        bool hasSource = remote ? radius?.Count > 0 : sigmaPlugin
+            ? Bool(sigma?["has_source"]) || sources?.OfType<JsonObject>().Any(row => Text(row["module"]) == "sli.windows.ad-dc") == true
+            : collecting.Length > 0;
         // Use the cadence of the module that produced each timestamp. A snapshot's
         // schedule must never make a stale event stream appear current.
         var evidence = collecting.Select(source =>
@@ -101,7 +125,7 @@ public sealed partial class InstallationService
             .OrderByDescending(value => now - value.At <= value.Interval)
             .ThenByDescending(value => now - value.At <= value.Interval ? value.At : value.At + value.Interval)
             .FirstOrDefault();
-        bool unavailable = agentBacked && sources is null || sigmaPlugin && sigma is null
+        bool unavailable = (agentBacked || sigmaPlugin) && sources is null || sigmaPlugin && sigma is null || remote && radius is null
             || hasSource && Text(receipts["state"]) == "unavailable" && observation.At is null;
         var failure = StatusTime(failed?["failure_at"], now) ?? (hasSource ? StatusTime(telemetry?["failure_at"], now) : null)
             ?? (unavailable ? now : (DateTimeOffset?)null);
@@ -110,9 +134,35 @@ public sealed partial class InstallationService
         if (status.State == "error" && failure is null && collecting.Select(row => Text(row["agent_id"])).Distinct().Count() == 1)
             failed = collecting.FirstOrDefault(row => Text(row["source_name"]).Length > 0);
 
+        string reason = status.State switch
+        {
+            "no_sources" when id == "sli.file-audit" && assigned.Length > 0 => "no_folders",
+            "error" when unavailable => "status_unavailable",
+            "error" when failure is null => "collection_delayed",
+            "error" => "collection_failed",
+            _ => status.State
+        };
+        string? action = reason switch
+        {
+            "no_folders" => "select_file_folders",
+            "no_sources" => id switch
+            {
+                "sli.file-audit" => "connect_file_server",
+                "sli.workstations" => "install_workstation_agent",
+                "sli.remote-access" => "connect_nps",
+                "sli.sigma" => "connect_sigma_events",
+                _ => "connect_domain_controller"
+            },
+            "waiting" => "check_first_delivery",
+            "collection_delayed" or "collection_failed" => "check_collection",
+            "status_unavailable" => "reload_status",
+            _ => null
+        };
         return new JsonObject
         {
             ["state"] = status.State,
+            ["reason"] = reason,
+            ["next_action"] = action,
             ["last_data_at"] = status.LastDataAt?.ToString("O", CultureInfo.InvariantCulture),
             ["error_at"] = status.ErrorAt?.ToString("O", CultureInfo.InvariantCulture),
             ["error_object"] = status.State == "error" ? failed?["source_name"]?.DeepClone() : null

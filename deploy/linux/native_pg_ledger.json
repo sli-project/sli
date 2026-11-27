@@ -647,6 +647,10 @@
     "config/postgres_migrations/436_workstation_ad_inventory.sql": "029ea2ddacedec206c850442b6e8e87d31896222e101a119c05b2b7b37989e22",
     "config/postgres_migrations/442_agent_unicode_host_names.rollback.sql": "6cb56e445aaeeb4198a84ee5a90f2bd1b37636b3832393abccfb0e876f853352",
     "config/postgres_migrations/442_agent_unicode_host_names.sql": "d41ac836c39ae430d80c9de064dfca94057c60f9491ceb26a8a5746215dc2567",
+    "config/postgres_migrations/443_problem_queue_read.rollback.sql": "516a6b2739e9a570bf0cf3ca6cb7694c727dc6217cde69fa58a740c9fc965a94",
+    "config/postgres_migrations/443_problem_queue_read.sql": "60112689d352c225ed0bb6d6165c3bf857897f1079292d3c42a1f00269d2b056",
+    "config/postgres_migrations/444_detection_campaigns.rollback.sql": "f8e766b8a18fbef5288e6a6fc3c3b0ba2fa58f082622c925f599aacac9a68109",
+    "config/postgres_migrations/444_detection_campaigns.sql": "c9cf66a020cc7e7fc25d58544424feb797a72a8b7bdc4a7005fc04ed8603e2ba",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },

@@ -123,23 +123,67 @@ public sealed partial class ProblemRepository
               and active_rule.expires_at>statement_timestamp() and active_rule.semantic_type=findings.rule_code)
         then semantic_finding_suppressed_v160(findings.id,findings.rule_code) else false end
         """;
-    internal const string Population = """
-        from findings_active findings left join lateral (
+    private const string QueueSuppressed = """
+        case when (findings.id,findings.rule_code) in (
+            select copy.finding_id,rule.semantic_type from semantic_suppressions rule
+            join finding_event_copies337 copy on copy.domain_id=rule.domain_id
+                and left(copy.method#>>'{$principals,SubjectUserSid}',256)=left(rule.scope_value,256)
+                and copy.method#>>'{$principals,SubjectUserSid}'=rule.scope_value
+            where rule.kind='suppression' and rule.state='active' and rule.expires_at>statement_timestamp()
+                and rule.scope_kind='subject_sid'
+            union
+            select copy.finding_id,rule.semantic_type from semantic_suppressions rule
+            join finding_event_copies337 copy on copy.domain_id=rule.domain_id and copy.event_kind=4719
+            where rule.kind='suppression' and rule.state='active' and rule.expires_at>statement_timestamp()
+                and rule.scope_kind='bucket')
+        then semantic_finding_suppressed_v160(findings.id,findings.rule_code) else false end
+        """;
+    internal const string QueueWorkMem = "work_mem='8MB'";
+    private const string Population = "from findings_active findings";
+    private const string PageRisk = """
+         left join lateral (
             select s.*,u.username as responsible_username from semantic_suppressions s join auth_users u on u.id=s.responsible_user_id
             where s.finding_id=findings.id and s.kind='risk_acceptance' order by s.id desc limit 1
         ) risk on true
         """;
+    private const string QueueRisk = """
+         left join (
+            select distinct on (s.finding_id) s.finding_id,s.state,s.expires_at
+            from semantic_suppressions s join auth_users u on u.id=s.responsible_user_id
+            where s.kind='risk_acceptance' order by s.finding_id,s.id desc
+        ) risk on risk.finding_id=findings.id
+        """;
+    private const string QueueEvidence = " left join problem_queue_evidence443 witnesses on witnesses.finding_id=findings.id";
+    private const string QueueExternal = " left join problem_queue_external443 external_evidence on external_evidence.finding_id=findings.id";
+    private static string QueueState(string status) =>
+        $"case ({status}) when 'deferred' then 'deferred' when 'active' then 'active' when 'review' then 'active' when 'closed' then 'resolved' when 'false_positive' then 'resolved' else 'open' end";
+    private static bool IsQueueList(FindingQuery query) => query.QueueList && query.QueueView is not null && query.Cohort is null;
     // Keep the Home caller signature without selecting a retired event source.
-    internal static (string Page, string Summary, Dictionary<string, object?> Arguments) FindingsQueries(FindingQuery query, bool populationOnly = false, bool shortEvents = true, bool usePasswordProjection = false)
+    internal static (string Page, string Summary, Dictionary<string, object?> Arguments) FindingsQueries(FindingQuery query, bool populationOnly = false, bool shortEvents = true, bool usePasswordProjection = false, bool useQueueRead = false)
     {
+        useQueueRead &= IsQueueList(query);
         var args = new Dictionary<string, object?>();
         string effectiveStatus = query.QueueView is null ? EffectiveStatus : $"case when d.until_at>statement_timestamp() and findings.status in ('new','confirmed','repeated') then 'deferred' else ({EffectiveStatus}) end";
-        string queueState = $"case ({effectiveStatus}) when 'deferred' then 'deferred' when 'active' then 'active' when 'review' then 'active' when 'closed' then 'resolved' when 'false_positive' then 'resolved' else 'open' end";
-        var admission = new List<string> { "is_semantic_finding_published_v1(findings.id)", "(findings.rule_code<>'semantic.qw.file-acl-broad-write' or semantic_finding_in_domains_v265(findings.id,null))" };
+        string queueState = QueueState(effectiveStatus);
+        var admission = new List<string>();
+        if (!useQueueRead) admission.Add("is_semantic_finding_published_v1(findings.id)");
+        if (!useQueueRead || query.Domains is null)
+            admission.Add("(findings.rule_code<>'semantic.qw.file-acl-broad-write' or semantic_finding_in_domains_v265(findings.id,null))");
         var clauses = new List<string>();
         if (query.Risk == "accepted") clauses.Add(Accepted); else if (query.Risk != "all") clauses.Add("not " + Accepted);
-        if (!query.Suppressed && query.Risk != "accepted") admission.Add("not (" + Suppressed + ")");
-        if (query.Domains is not null) { args["domains"] = query.Domains; admission.Add("semantic_finding_in_domains_v265(findings.id,@domains::bigint[])"); }
+        if (!query.Suppressed && query.Risk != "accepted")
+            admission.Add("not (" + (useQueueRead ? QueueSuppressed : Suppressed) + ")");
+        if (query.Domains is not null) {
+            args["domains"] = query.Domains;
+            string coreDomainMatch = query.Domains.Length == 1
+                ? "cardinality(witnesses.domain_ids)=1 and witnesses.domain_ids[1]=(@domains::bigint[])[1]"
+                : "witnesses.domain_ids <@ @domains::bigint[]";
+            admission.Add(useQueueRead ? $"""
+                case when external_evidence.finding_id is not null or findings.rule_code='semantic.qw.file-acl-broad-write'
+                    then semantic_finding_in_domains_v265(findings.id,@domains::bigint[])
+                    else coalesce({coreDomainMatch},false) end
+                """ : "semantic_finding_in_domains_v265(findings.id,@domains::bigint[])");
+        }
         if (query.EntityId is not null) { args["entity"] = query.EntityId; clauses.Add("exists(select 1 from finding_entities linked where linked.finding_id=findings.id and linked.entity_id=@entity)"); }
         if (!string.IsNullOrEmpty(query.Status)) {
             if (query.PageQueue && query.Status == "new") clauses.Add($"({EffectiveStatus}) in ('new','confirmed','repeated')");
@@ -162,7 +206,12 @@ public sealed partial class ProblemRepository
         }
         if (!string.IsNullOrEmpty(query.From)) { args["from"] = query.From; clauses.Add("findings.last_seen_utc::timestamptz>=@from::timestamptz"); }
         if (!string.IsNullOrEmpty(query.To)) { args["to"] = query.To; clauses.Add("findings.last_seen_utc::timestamptz<@to::timestamptz"); }
-        if (!string.IsNullOrEmpty(query.Search)) { args["q"] = "%" + query.Search + "%"; clauses.Add("(findings.title ilike @q or findings.actor ilike @q or findings.target ilike @q or findings.summary ilike @q or findings.rule_code ilike @q)"); }
+        if (!string.IsNullOrEmpty(query.Search)) {
+            args["q"] = "%" + query.Search + "%";
+            const string search = "(findings.title ilike @q or findings.actor ilike @q or findings.target ilike @q or findings.summary ilike @q or findings.rule_code ilike @q)";
+            clauses.Add(useQueueRead
+                ? $"findings.id in (select findings.id from findings_active findings where {search})" : search);
+        }
         if (query.FindingId is {} finding) { args["finding"] = finding; clauses.Add("findings.id=@finding"); }
         if (query.RuleCode is {} rule) { args["rule"] = rule; clauses.Add("findings.rule_code=@rule"); }
         if (query.CreatedFrom is {} createdFrom) { args["created_from"] = createdFrom; clauses.Add("findings.created_at>=@created_from::timestamptz"); }
@@ -179,18 +228,22 @@ public sealed partial class ProblemRepository
             ? $" where case when {string.Join(" and ", clauses)} then {string.Join(" and ", admission)} else false end"
             : " where " + string.Join(" and ", admission.Concat(clauses));
         args["limit"] = query.Limit + 1;
-        string population = Population + (query.QueueView is null ? "" : " left join finding_queue_deferrals d on d.finding_id=findings.id");
+        string deferral = query.QueueView is null ? "" : " left join finding_queue_deferrals d on d.finding_id=findings.id";
+        string population = useQueueRead
+            ? "from problem_queue_visible443 findings" + QueueRisk + deferral +
+                (query.GroupQueue || query.Domains is not null ? QueueEvidence : "") + (query.Domains is null ? "" : QueueExternal)
+            : Population + PageRisk + deferral;
         string prefix = "", groupFields = "", summaryPopulation = population, summaryWhere = where;
         if (query.GroupQueue) {
             args["cohort_zone"] = query.Timezone;
-            // findings_active is a security-barrier view. Rejoining it for
-            // every representative can rescan the full view per group. Keep
-            // its admission boundary, but evaluate it once for this statement.
-            population = population.Replace("from findings_active findings", "from queue_findings findings", StringComparison.Ordinal);
-            prefix = "with queue_findings as materialized (select * from findings_active)," +
-                ProblemCohorts.Queue(population, where, effectiveStatus, Accepted,
-                    query.QueueView is null ? "" : $", ({queueState}), (({effectiveStatus})='false_positive')" +
-                        (query.QueueAssigneesVisible ? ", coalesce(findings.assigned_to,'')" : ""), query.QueueAssigneesVisible, usePasswordProjection)[5..];
+            if (!useQueueRead)
+                population = population.Replace("from findings_active findings", "from queue_findings findings", StringComparison.Ordinal);
+            prefix = ProblemCohorts.Queue(population, where, effectiveStatus, Accepted,
+                query.QueueView is null ? "" : $", ({queueState}), (({effectiveStatus})='false_positive')" +
+                    (query.QueueAssigneesVisible ? ", coalesce(findings.assigned_to,'')" : ""),
+                query.QueueAssigneesVisible, usePasswordProjection, useQueueRead);
+            if (!useQueueRead)
+                prefix = "with queue_findings as materialized (select * from findings_active)," + prefix[5..];
             population += " join queue_groups on queue_groups.id=findings.id";
             where = " where true"; summaryPopulation = "from queue_groups"; summaryWhere = "";
             groupFields = ",queue_groups.problem_cohort,queue_groups.occurrence_count,queue_groups.queue_cursor_id,queue_groups.first_seen_utc::text as first_seen_utc,queue_groups.last_seen_utc::text as last_seen_utc,queue_groups.severity as severity,queue_groups.password_facts - 'cohort_key' as presentation_facts";
@@ -205,20 +258,44 @@ public sealed partial class ProblemRepository
         }
         if (populationOnly) return (prefix, "", args);
         string pageWhere = where;
-        if (query.QueueView is not (null or "all")) { args["queue_view"] = query.QueueView; pageWhere += $" and ({queueState})=@queue_view"; }
+        if (query.QueueView is not (null or "all")) {
+            args["queue_view"] = query.QueueView;
+            pageWhere += $" and ({(useQueueRead && query.GroupQueue ? QueueState("queue_groups.status") : queueState)})=@queue_view";
+            if (useQueueRead && !query.GroupQueue)
+                pageWhere += query.QueueView switch {
+                    "active" => " and findings.status in ('active','review')",
+                    "deferred" => " and findings.status in ('new','confirmed','repeated')",
+                    "resolved" => " and findings.status in ('closed','false_positive')",
+                    _ => ""
+                };
+        }
         string seen = query.GroupQueue ? "queue_groups.last_seen_utc" : "coalesce(findings.last_seen_utc,findings.updated_at::text)::timestamptz";
         string cursorId = query.GroupQueue ? "queue_groups.queue_cursor_id" : "findings.id";
+        string candidateSeen = useQueueRead && !query.GroupQueue ? "coalesce(findings.last_seen_utc,findings.updated_at)" : seen;
         if (query.BeforeId is {} before) {
             args["before"] = before;
             if (query.BeforeSeen is {} stamp) {
                 args["before_seen"] = stamp;
-                pageWhere += $" and ({seen},{cursorId}) {(query.OldestFirst ? ">" : "<")} (@before_seen,@before)";
+                pageWhere += $" and ({candidateSeen},{cursorId}) {(query.OldestFirst ? ">" : "<")} (@before_seen,@before)";
             } else pageWhere += $" and {cursorId}<@before";
         }
         string order = query.GroupQueue ? "queue_groups.queue_cursor_id desc," : query.PageQueue ? "findings.id desc," : $"case ({EffectiveStatus}) when 'new' then 1 when 'repeated' then 2 when 'confirmed' then 3 when 'active' then 4 when 'review' then 5 when 'false_positive' then 6 when 'closed' then 7 else 8 end,";
         if (query.QueueView is not null) {
             string direction = query.OldestFirst ? "asc" : "desc";
             order = $"{seen} {direction},{cursorId} {direction},";
+            if (useQueueRead) {
+                string candidates = query.GroupQueue ? "from queue_groups" : population;
+                string columns = query.GroupQueue ? "queue_groups.*" : "findings.id,findings.superseded_by_finding_id";
+                string representative = query.GroupQueue ? "offset 0" :
+                    "and f.superseded_by_finding_id is not distinct from queue_groups.superseded_by_finding_id limit 1";
+                population = $"""
+                    from (select {columns} {candidates}{pageWhere}
+                        order by {candidateSeen} {direction},{cursorId} {direction} limit @limit) queue_groups
+                    join lateral (select * from findings_active f where f.id=queue_groups.id {representative}) findings on true
+                    {PageRisk}{deferral}
+                    """;
+                pageWhere = "";
+            }
         }
         string riskAudit = query.QueueList ? "null::jsonb" : """
             (select coalesce(jsonb_agg(to_jsonb(a) order by a.id desc),'[]'::jsonb) from (
@@ -227,7 +304,7 @@ public sealed partial class ProblemRepository
             """;
         const string review = "semantic_finding_review_v160(findings.id)";
         string reviewHint = query.QueueList
-            ? $"case when findings.rule_code not in ('semantic.qw.password-brute-force','semantic.qw.password-spray') then {review} end"
+            ? $"case when findings.rule_code not in ('semantic.qw.password-brute-force','semantic.qw.password-spray') then {(useQueueRead ? ProblemCohorts.Sql("queue-review") : review)} end"
             : review;
         string page = $"""
             {prefix}
@@ -259,12 +336,15 @@ public sealed partial class ProblemRepository
         await DirectRuntimeAuthorization.LoadAsync(db, tx, clock.GetUtcNow().UtcDateTime, ct);
         bool usePasswordProjection = query.GroupQueue && query.QueueList &&
             (await One(tx, "select to_regprocedure('public.password_queue_presentation399(bigint,text)') is not null as enabled", null, ct))?["enabled"]?.GetValue<bool>() == true;
-        var (page, summarySql, args) = FindingsQueries(query, usePasswordProjection: usePasswordProjection);
+        bool useQueueRead = IsQueueList(query) &&
+            (await One(tx, "select to_regclass('public.problem_queue_visible443') is not null as enabled", null, ct))?["enabled"]?.GetValue<bool>() == true;
+        if (useQueueRead && query.GroupQueue) await Execute(tx, "set local " + QueueWorkMem, new(), ct);
+        var (page, summarySql, args) = FindingsQueries(query, usePasswordProjection: usePasswordProjection, useQueueRead: useQueueRead);
         JsonArray rows, summary;
         if (query.GroupQueue) {
             // Page and counters share the same classified population and
             // statement snapshot. Do not evaluate every finding twice.
-            string prefix = FindingsQueries(query, populationOnly: true, usePasswordProjection: usePasswordProjection).Page;
+            string prefix = FindingsQueries(query, populationOnly: true, usePasswordProjection: usePasswordProjection, useQueueRead: useQueueRead).Page;
             var bundle = await One(tx, prefix + $"""
                 select (select coalesce(jsonb_agg(to_jsonb(item)),'[]'::jsonb) from ({page[prefix.Length..]}) item) as items,
                     (select coalesce(jsonb_agg(to_jsonb(counter)),'[]'::jsonb) from ({summarySql[prefix.Length..]}) counter) as summary

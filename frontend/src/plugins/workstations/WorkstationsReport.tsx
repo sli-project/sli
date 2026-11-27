@@ -127,9 +127,14 @@ export function WorkstationsReport({ definition, initialSearch: providedSearch }
       setSearch(new URL(href, window.location.origin).searchParams);
     }}/>;
 
+  const emptyMessage = !params ? "workstations.workspace.invalid_period"
+    : activeSearch.get("cursor") ? "workstations.workspace.fleet_empty_page"
+    : params.has("search") || params.has("domain") || params.has("source_instance_id") || values.collection && values.collection !== "all"
+      ? "workstations.workspace.fleet_empty_filtered"
+    : "workstations.workspace.fleet_empty";
   return <div className="sli-workstations"><ReportLayout title={t("workstations.overview.title")} state={state} metrics={<></>}
     periodPicker={!denied ? <div ref={setPeriodTarget}/> : undefined}
-    meta={windowBounds && !denied ? <><span>{t("workstations.workspace.event_period")}: {formatDateTime(windowBounds.from)} — {formatDateTime(windowBounds.to)}</span><span>{timeZone}</span></> : null}
+    meta={windowBounds && !denied ? <span>{t("workstations.workspace.event_period")}: {formatDateTime(windowBounds.from)} — {formatDateTime(windowBounds.to)}</span> : null}
     actions={!denied ? <button type="button" className="sli-ds-button" disabled={query.isFetching} onClick={refresh}>{t("workstations.workspace.refresh")}</button> : null}
     filters={!denied ? <FilterBar periodTarget={periodTarget} align="start" layout="grid" primaryKeys={["search", "collection", "period"]}
       fields={[{ key: "search", label: t("workstations.workspace.search"), kind: "text", placeholder: t("workstations.workspace.search_placeholder") },
@@ -139,12 +144,12 @@ export function WorkstationsReport({ definition, initialSearch: providedSearch }
         ] }, periodField()]} values={values} defaults={{ search: "", collection: "all", period: { preset: "7d" } }} onApply={apply}/> : null}
     stateView={state === "denied" ? <ReportDenied reportKey={WORKSTATIONS_KEY}/>
       : state === "partial" || state === "stale" || state === "processing" ? <></>
-      : state === "empty" || state === "not_collected" ? <p className="sli-workstations__local-state" role="status">{t(params ? "workstations.workspace.fleet_empty" : "workstations.workspace.invalid_period")}</p>
+      : state === "empty" || state === "not_collected" ? <p className="sli-workstations__local-state" role="status">{t(emptyMessage)}</p>
       : <StateView state={state} onRetry={() => activeSearch.get("cursor") ? update({ cursor: null }) : void query.refetch()}/> }>
     {result && !invalid ? <div ref={list} className="sli-workstations__fleet"><DataTable caption={t("workstations.overview.stations")} columns={columns} rows={rows}
       rowKey={row => row.station_id} compact density="compact" onRowClick={open} selectedKey={activeSearch.get("selected_station")}
       total={result.filtered_count} pageSize={{ value: size, options: sizes, onChange: selectSize }}
-      emptyContent={<p>{t("workstations.workspace.fleet_empty")}</p>}
+      emptyContent={<p>{t(emptyMessage)}</p>}
       pagination={{ start: page.start, busy: query.isFetching,
         onPrevious: page.hasPrevious ? () => update({ cursor: page.previousCursor, selected_station: null }) : undefined,
         onNext: result.has_more && result.next_cursor ? () => update({ cursor: result.next_cursor, selected_station: null }) : undefined }}/></div> : null}

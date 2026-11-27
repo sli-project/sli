@@ -7,7 +7,7 @@ import { Button, Checkbox, DataTable, DetailDrawer, FactList, FilterChips, Pager
   periodBounds, type PeriodValue, type TableColumn, useOverlays } from "../../design-system";
 import { getLocale, t } from "../../i18n";
 import { eventSemanticText } from "../../i18n/event-metadata";
-import { browserTimeZone, dayKey, formatClockWithOffset, formatDateTime, localDateTimeToUtc } from "../../shared/date-time";
+import { browserTimeZone, formatClockWithOffset, formatDateTime, formatTableTime, localDateTimeToUtc } from "../../shared/date-time";
 import { EMPTY_VALUE, formatNumber } from "../../shared/format";
 import { useEffectiveAccess, useTimeZone } from "../App";
 import { ReportDenied } from "./ReportDenied";
@@ -123,7 +123,7 @@ function problemRow(row: RecordRow) {
 
 function timeLabel(value: string, zone: string, short = false) {
   if (!value || !Number.isFinite(Date.parse(value))) return EMPTY_VALUE;
-  if (short && dayKey(value, zone) === dayKey(new Date(), zone)) return formatClockWithOffset(new Date(value), zone, true).time;
+  if (short) return formatTableTime(value, zone);
   return formatDateTime(value, zone, { withTime: true, seconds: true });
 }
 
@@ -525,7 +525,7 @@ function ProblemPanel({ publicRow, detail, detailError, retryDetails, domain, zo
     row.whatCode === "security.problems.presentation.spray_what";
   const summary = spray && facts ? t("problems.queue.sprayObservation", { facts })
     : [description, facts && t("problems.queue.observation", { facts })].filter(Boolean).join(" ");
-  return <DetailDrawer responsive open title={row.cardTitle} eyebrow={`#${row.id}`} onClose={onClose}
+  return <DetailDrawer responsive open title={row.cardTitle} onClose={onClose}
     headerActions={<><Button variant="ghost" aria-label={t("problems.queue.previous")} disabled={!previous} onClick={previous}>↑</Button>
       <Button variant="ghost" aria-label={t("problems.queue.next")} disabled={!next} onClick={next}>↓</Button></>}
     footer={<>

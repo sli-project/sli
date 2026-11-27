@@ -41,10 +41,9 @@ public static class AgentUpdateEndpoints
             if(report) {
                 var result=await service.ReportAsync(db,tx,agent,body!,ct);await tx.CommitAsync(ct);await DomainHttp.WriteAsync(context,result,200,ct);
             } else {
-                var package=await service.DownloadPackageAsync(db,tx,agent,AgentUpdateInput.PackageQuery(context.Request.QueryString.Value??""),ct);
-                await using var content=package.Content;
+                await using var content=await service.DownloadAsync(db,tx,agent,AgentUpdateInput.PackageQuery(context.Request.QueryString.Value??""),ct);
                 await tx.CommitAsync(ct);
-                context.Response.StatusCode=200;context.Response.ContentType=package.ContentType;context.Response.ContentLength=content.Length;
+                context.Response.StatusCode=200;context.Response.ContentType="application/zip";context.Response.ContentLength=content.Length;
                 // Source sends the complete assigned archive, ignoring Range and
                 // conditional headers. No bytes or success headers before commit.
                 await content.CopyToAsync(context.Response.Body,ct);

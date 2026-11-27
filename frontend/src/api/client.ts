@@ -118,7 +118,6 @@ export type AgentItem = {
     connection: "online" | "offline" | "never_seen"; requested_at: string; reported_at: string | null } | null;
   id: string; host_id: string; status: "active" | "disabled" | "replaced"; last_seen: string | null;
   certificate_reissue_required?: boolean; server_id?: number | null; agent_version?: string | null; replacement_version?: string | null; replaced_by?: string | null;
-  update?: { status: "updating" | "updated" | "failed"; version: string; reason: string | null } | null;
   created_at?: string;
   inventory_hidden_reason?: "administrator_removed" | "registration_replaced" | "never_seen_expired" | null;
   host_name?: string | null; hostname?: string | null; instance_name?: string | null;
@@ -148,6 +147,9 @@ export type PluginState = {
   source_names?: string[];
   status?: {
     state: "disabled" | "no_sources" | "waiting" | "working" | "error";
+    reason?: "disabled" | "no_sources" | "no_folders" | "waiting" | "working" | "status_unavailable" | "collection_delayed" | "collection_failed";
+    next_action?: "select_file_folders" | "connect_file_server" | "install_workstation_agent" | "connect_nps" | "connect_sigma_events"
+      | "connect_domain_controller" | "check_first_delivery" | "check_collection" | "reload_status" | null;
     last_data_at: string | null;
     error_at: string | null;
     error_object: string | null;

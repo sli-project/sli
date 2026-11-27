@@ -403,6 +403,11 @@ export function AdStateReport({ definition, initialSearch }: { definition: Repor
       title={String(collision.spn ?? EMPTY_VALUE)} actual={Number(collision.owner_count)}
       condition={copy("spn_rule")} basis={copy("spn_basis")} object={String(collision.spn ?? EMPTY_VALUE)}
       affected={collision.owners} onClose={closeDetail}/> : undefined;
+  const emptyMessages: Partial<Record<string, string>> = {
+    parameter_changes: "no_ad_changes", spn_collisions: "no_collisions", semantic: "no_linked_findings",
+  };
+  const emptyMessage = emptyMessages[active.key];
+  const confirmedEmpty = current.data?.state === "ok" || current.data?.state === "empty";
 
   return <Tabs items={displayViews.map((view) => {
     const count = countFor(view.key);
@@ -430,7 +435,7 @@ export function AdStateReport({ definition, initialSearch }: { definition: Repor
           selectedKey={detailKey} onRowClick={active.key === "spn_collisions" ? selectDetail : undefined}
           showFooter={active.key === "parameter_changes" && Boolean(changes.hasNextPage)} hasMore={active.key === "parameter_changes" && changes.hasNextPage}
           loadingMore={changes.isFetchingNextPage} onLoadMore={() => void changes.fetchNextPage()} total={active.key === "parameter_changes" ? countFor(active.key) : undefined}
-          emptyContent={active.key === "spn_collisions" && countFor(active.key) === 0 ? copy("no_collisions") : EMPTY_VALUE}/>
+          emptyContent={confirmedEmpty && emptyMessage ? copy(emptyMessage) : EMPTY_VALUE}/>
       </>}
     </ReportLayout>
   </Tabs>;

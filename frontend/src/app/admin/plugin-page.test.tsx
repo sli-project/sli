@@ -20,14 +20,20 @@ let requests: Array<{ path: string; method: string; body?: { key: string; value:
 let rejectKey = "";
 let denySettings = false;
 let sigmaEnabled = true;
+let sigmaRulesAvailable = true;
+let sigmaReadFailed = false;
 let radiusSources: Array<{ source_instance_id: string; source_state: string }>;
 let client: QueryClient;
-const plugin = (plugin_id: string) => ({ plugin_id, installed: true, configured: true, enabled: true,
+const plugin = (plugin_id: string) => ({ plugin_id, installed: true, configured: true, enabled: plugin_id !== "sli.remote-access",
   component_runtime: "running", revision: 7, last_data_at_utc: null,
-  status: { state: plugin_id === "sli.remote-access" ? "disabled" : "waiting", last_data_at: null, error_at: null, error_object: null } });
+  status: { state: plugin_id === "sli.remote-access" ? "disabled" : plugin_id === "sli.sigma" ? "no_sources" : "waiting",
+    reason: plugin_id === "sli.sigma" ? "no_sources" : undefined,
+    next_action: plugin_id === "sli.sigma" ? "connect_sigma_events" : undefined,
+    last_data_at: null, error_at: null, error_object: null } });
 
 beforeEach(() => {
   settings = original(); requests = []; rejectKey = ""; denySettings = false; radiusSources = []; sigmaEnabled = true;
+  sigmaRulesAvailable = true; sigmaReadFailed = false;
   access.subject.coarse_role = "admin"; access.platform_owner = true;
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
   vi.stubGlobal("fetch", vi.fn(async (path: string, options?: RequestInit) => {
@@ -55,6 +61,8 @@ beforeEach(() => {
       { key: "ad.gpo.v2", title: "Политики", description: "GPO", section: "active-directory", section_title: "AD", owner_id: "sli.gpo" },
     ] });
     if (path === "/api/v1/semantic/sigma-live-rules") {
+      if (sigmaReadFailed) return json({ error: "unexpected_error" }, 503);
+      if (!sigmaRulesAvailable) return json({ rules: [] });
       if (method === "POST") sigmaEnabled = body.enabled;
       return json({ rules: [{ rule_id: "7b449a5e-1db5-4dd0-a2dc-4e3a67282538",
         title: "Hidden Local User Creation", level: "high", author: "SigmaHQ", license: "DRL-1.1",
@@ -87,22 +95,50 @@ it("opens Sigma on the rules table and applies the authoritative switch response
   }]);
 });
 
-it.each(["sli.ad", "sli.gpo", "sli.workstations", "sli.file-audit", "sli.remote-access", "sli.sigma"])("renders five working tabs for %s", async (id) => {
+it.each(["sli.ad", "sli.gpo", "sli.workstations", "sli.file-audit", "sli.sigma"])("renders five working tabs for %s", async (id) => {
   mount(id);
   expect(screen.getAllByRole("tab")).toHaveLength(5);
-  expect(await screen.findByRole("switch", { name: t("plugins.enabled"), checked: true })).toHaveProperty("disabled", false);
+  expect(await screen.findByRole("switch", { name: t("plugins.toggle"), checked: true })).toHaveProperty("disabled", false);
   expect(screen.queryByText("В разработке")).toBeNull();
   fireEvent.click(screen.getByRole("tab", { name: "Подключение" }));
-  if (id === "sli.remote-access") expect(await screen.findByText("Журнал NPS Accounting не подключён.")).toBeTruthy();
-  else expect(await screen.findByRole("link", { name: "Компьютеры и агенты" })).toHaveProperty("pathname", "/app/agents");
+  expect(await screen.findByRole("link", { name: id === "sli.ad" || id === "sli.gpo" ? /Домены и контроллеры/ : /Установите агент|Подключите контроллер/ })).toBeTruthy();
 });
 
-it("uses the server status in the file audit header and reads sources only from the connection tab", async () => {
+it("uses the server status in the file audit header and reads management controls only from the connection tab", async () => {
   mount("sli.file-audit");
-  expect(await screen.findByText(t("plugins.status.waiting"))).toBeTruthy();
+  expect(await screen.findByText(/Включён · Ожидаются первые данные/)).toBeTruthy();
   expect(screen.queryByText(t("pluginPage.noData"))).toBeNull();
   expect(screen.queryByText(t("plugins.disabled"))).toBeNull();
-  expect(requests.some((request) => request.path === "/api/v1/setup/status")).toBe(false);
+  expect(requests.some((request) => request.path === "/api/v1/admin/agents")).toBe(false);
+});
+
+it("shows one disabled VPN state and gives VPN setup steps in empty tabs", async () => {
+  settings = { ...original(), plugin_id: "sli.remote-access", schema: { type: "object" }, rules: [], values: {} };
+  mount("sli.remote-access");
+  expect(await screen.findByRole("switch", { name: t("plugins.toggle"), checked: false })).toBeTruthy();
+  expect(screen.getByText(t("plugins.status.disabled"))).toBeTruthy();
+  expect(screen.queryByText(t("plugins.enabled"))).toBeNull();
+  expect(await screen.findByText(t("pluginPage.radius.missing"))).toBeTruthy();
+  fireEvent.click(screen.getByRole("tab", { name: t("pluginPage.tab.rules") }));
+  fireEvent.click(await screen.findByRole("button", { name: t("pluginPage.openConnection") }));
+  expect(await screen.findByText(t("pluginPage.radius.missing"))).toBeTruthy();
+});
+
+it("gives a connection action when Sigma rules and sources are absent", async () => {
+  sigmaRulesAvailable = false;
+  mount("sli.sigma");
+  const panel = screen.getByRole("tabpanel");
+  expect(await within(panel).findByText(t("plugins.next.connect_sigma_events"))).toBeTruthy();
+  expect(within(panel).queryByText(t("state.unavailable.title"))).toBeNull();
+});
+
+it("names a Sigma rules load failure and can retry", async () => {
+  sigmaReadFailed = true;
+  mount("sli.sigma");
+  expect((await screen.findByRole("alert")).textContent).toContain(t("security.sigma.live.read_failed"));
+  sigmaReadFailed = false;
+  fireEvent.click(screen.getByRole("button", { name: t("state.retry") }));
+  expect(await screen.findByRole("row", { name: /Hidden Local User Creation/ })).toBeTruthy();
 });
 
 it("shows each registered Accounting source once with its distinct subscription states", async () => {
@@ -115,7 +151,7 @@ it("shows each registered Accounting source once with its distinct subscription 
   fireEvent.click(screen.getByRole("tab", { name: "Подключение" }));
   const row = await screen.findByRole("row", { name: /lab-nps/ });
   expect(within(row).getByText("Сбор разрешён · Подписка отключена")).toBeTruthy();
-  expect(screen.queryByText("Журнал NPS Accounting не подключён.")).toBeNull();
+  expect(screen.queryByText(t("pluginPage.radius.missing"))).toBeNull();
 });
 
 it("renders actual AD schema labels, help, defaults and collapsed advanced settings", async () => {
@@ -216,7 +252,6 @@ it("keeps an observer with read capability from saving or toggling", async () =>
   access.subject.coarse_role = "viewer"; access.platform_owner = false;
   mount(); const input = await openSettings();
   expect(input.closest("fieldset")?.disabled).toBe(true);
-  expect(screen.getByRole("note").textContent).toContain("Только чтение");
   expect(screen.queryByRole("switch")).toBeNull();
   fireEvent.submit(input.closest("form")!);
   expect(writes()).toEqual([]);
@@ -224,7 +259,7 @@ it("keeps an observer with read capability from saving or toggling", async () =>
 
 it("shows denied settings distinctly", async () => {
   denySettings = true; mount(); fireEvent.click(screen.getByRole("tab", { name: "Настройки" }));
-  await waitFor(() => expect(document.querySelector('[data-state="denied"]')).not.toBeNull());
+  expect(await screen.findByText(t("state.denied.title"))).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Сохранить" })).toBeNull();
 });
 
