@@ -329,6 +329,36 @@ public sealed class AdReportDomainSelectionTests
             Assert.True(response.StatusCode == HttpStatusCode.OK, probe.Failure?.ToString() ?? await response.Content.ReadAsStringAsync(Ct)); var body = JsonNode.Parse(await response.Content.ReadAsStringAsync(Ct))!;
             Assert.Equal(selected ? "shared" : "beta.example.test\\shared", body["items"]![0]!["display_name"]!.ToString());
         }
+        // Directory facts can fill a gap only when their run matches the computer manifest's attestation.
+        await PostCollectionPostgres.Sql(db, """
+            create table ad_context_runs(run_id uuid,domain_id bigint,bundle_sha256 bytea,status text,observed_at_utc timestamptz);
+            create table ad_context_entity_versions(id bigint,entity_id bigint,source_run_id uuid,source_section text,
+                valid_from_utc timestamptz,last_observed_at_utc timestamptz,valid_to_utc timestamptz,attributes_json jsonb);
+            create table ad_context_evidence(source_run_id uuid,evidence_key text);
+            with latest as (
+                select distinct on (domain_id) domain_id,manifest_id,slot_start_utc
+                from ad_snapshot_manifests order by domain_id,slot_start_utc desc
+            )
+            insert into ad_context_runs
+                select manifest_id,domain_id,decode(repeat('11',32),'hex'),'completed',slot_start_utc from latest;
+            insert into ad_snapshot_manifest_sources(manifest_id,family,source_state,observed_at_utc,payload_sha256,source_id)
+                select run_id,'ad_context_base','complete',observed_at_utc,
+                       case when domain_id=11 then bundle_sha256 else decode(repeat('22',32),'hex') end,run_id::text
+                from ad_context_runs;
+            insert into ad_context_entity_versions
+                select domain_id,domain_id,run_id,'directory_accounts',observed_at_utc,observed_at_utc,null,
+                       '{"record_key":"computer","identity":{"kind":"ad_computer","object_guid":"00000000-0000-0000-0000-000000000001"},
+                         "attributes":{"operating_system":"Windows Server 2022","last_logon_timestamp_utc":"2026-11-01T12:00:00Z"}}'
+                from ad_context_runs;
+            insert into ad_context_evidence select run_id,'adctx:' || run_id::text || ':computer' from ad_context_runs;
+            """, Ct);
+        var enriched = await actual.ReadAsync(Request("ad.computers.v6", Registered), _ => true, Ct);
+        var computers = enriched["items"]!.AsArray().ToDictionary(row => (long)row!["domain_id"]!);
+        Assert.Equal("Windows Server 2022", computers[11]?["operating_system"]?.ToString());
+        Assert.Equal(DateTimeOffset.Parse("2026-11-01T12:00:00Z"), AdInventoryRows.Date(computers[11]!["last_logon_utc"]));
+        Assert.Null(computers[22]!["operating_system"]);
+        Assert.Null(computers[22]!["last_logon_utc"]);
+
         // A corrupt domain is unavailable; its payload is never used and another domain survives.
         await PostCollectionPostgres.Sql(db, "update computers_v6_source_snapshots set payload_json=jsonb_set(payload_json,'{objects,0,name}','\"foreign-corrupt\"') where domain_id=22", Ct);
         var partial = await actual.ReadAsync(Request("ad.computers.v6", Registered), _ => true, Ct);

@@ -85,13 +85,15 @@ public sealed class AdV2Store(IPostgresConnectionFactory connections, IConfigura
         string table = family == "users_v2" ? "users_report_v2_snapshots" : "computers_v6_source_snapshots", identifier = family == "users_v2" ? "snapshot_id" : "snapshot_uuid",scope=family=="users_v2"?"scope_json":"source_options_json";
         var rows = await AdJson.ReadAsync(db, $"""
             select d.id as domain_id,d.fqdn,m.manifest_id::text,m.coverage_state,s.source_state,s.observed_at_utc,
-                   encode(s.payload_sha256,'hex') as payload_sha256,snap.payload_json::text as payload,snap.{scope}::text as scope
+                   encode(s.payload_sha256,'hex') as payload_sha256,snap.payload_json::text as payload,snap.{scope}::text as scope,
+                   $3 and exists(select 1 from ad_snapshot_manifest_sources member
+                       where member.manifest_id=m.manifest_id and member.family='ad_context_base') as has_directory_context
             from domains d left join lateral(select manifest_id,coverage_state from ad_snapshot_manifests where domain_id=d.id
                 order by slot_start_utc desc,manifest_id desc limit 1) m on true
             left join ad_snapshot_manifest_sources s on s.manifest_id=m.manifest_id and s.family=$2
             left join {table} snap on snap.domain_id=d.id and snap.{identifier}::text=s.source_id and snap.payload_sha256=s.payload_sha256
             where d.id=any($1) order by d.id
-            """, ct, domains, family);
+            """, ct, domains, family, computerDirectoryFacts);
         foreach (var row in rows) if (row.Text("payload") is {} text)
         {
             JsonObject payload;
@@ -113,7 +115,7 @@ public sealed class AdV2Store(IPostgresConnectionFactory connections, IConfigura
             {
                 var aliases=await AdJson.ReadAsync(db,"select normalized_value,entity_id from ad_context_entity_aliases where domain_id=$1 and alias_type='object_guid' and normalized_value=any($2)",ct,row.Int("domain_id"),payload["objects"]!.AsArray().Select(o=>o!.Text("objectGuid")!.ToLowerInvariant()).ToArray());
                 var ids=new JsonObject(); foreach(var alias in aliases) ids[alias.Text("normalized_value")!]=alias["entity_id"]!.DeepClone(); row["entity_ids"]=ids;
-                if (computerDirectoryFacts && aliases.Count > 0)
+                if (aliases.Count > 0 && row["has_directory_context"]!.GetValue<bool>())
                     row["computer_directory_attributes"] = await ComputerDirectoryAttributes(db, row, aliases.Select(a => a.Int("entity_id")).ToArray(), ct);
             }
         }
