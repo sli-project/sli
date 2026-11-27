@@ -1094,15 +1094,27 @@ def migration_required(previous, candidate, previous_digest, root):
     require((bound is None or bound == previous_digest)
             and isinstance(new, list) and len(new) > len(old) and new[:len(old)] == old,
             'native_upgrade_migration_not_authorized')
-    from deploy.linux.installed_state import ledger_matches
-    from scripts.maintenance.existing_postgres_bootstrap import forward_migration_inventory
+    from deploy.linux.existing_postgres_bootstrap import forward_migration_inventory
+    from deploy.linux.native_pg_inventory import migration_checksum_variants, verify_ledger
 
-    checksums = {str(path.relative_to(root)): digest(path)
-                 for path in (root / 'config/postgres_migrations').glob('*.sql')}
-    ledger_matches({**candidate, 'migrations': checksums}, {
-        'migration_ledger': new, 'migration_ledger_max': max(row['version'] for row in new)})
+    # The preceding release pins the prefix. Check the full candidate ledger's
+    # shape and bind every forward SQL file in this release to its attestation.
+    verify_ledger(new, new)
+    migration_root = root / 'config/postgres_migrations'
+    by_version = {row['version']: row for row in new}
+    seen = set()
+    for path in migration_root.glob('*.sql'):
+        match = re.fullmatch(r'(\d+)_.*\.sql', path.name)
+        if match and not re.search(r'(?:\.rollback|_rollback)\.sql$', path.name):
+            version = int(match[1])
+            require(version not in seen and version in by_version, 'update_migration_ledger_mismatch')
+            body = path.read_bytes()
+            hashes = (migration_checksum_variants(body) if re.fullmatch(r'\d+_[A-Za-z0-9_]+\.sql', path.name)
+                      else {hashlib.sha256(body).hexdigest()})
+            require(by_version[version]['sha256'] in hashes, 'update_migration_ledger_mismatch')
+            seen.add(version)
     # Every new ledger entry must have actual forward SQL in this release.
-    inventory = {item.version: item for item in forward_migration_inventory(root / 'config/postgres_migrations')}
+    inventory = {item.version: item for item in forward_migration_inventory(migration_root)}
     for row in new[len(old):]:
         item = inventory.get(row['version'])
         require(item is not None and item.name == row['name'] and item.sha256 == row['sha256'],

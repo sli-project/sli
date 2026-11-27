@@ -12,7 +12,7 @@ from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 
 from deploy.linux import sli_secrets as subject
-from server.sli.agents.ca import IssuingCA
+from deploy.linux.sli_core.ca import IssuingCA
 
 ROOT = Path(__file__).resolve().parents[2]
 

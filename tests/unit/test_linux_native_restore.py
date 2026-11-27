@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 import pytest
 
 from deploy.linux import native_restore as restore, sli_secrets
-from server.sli.agents.ca import IssuingCA
+from deploy.linux.sli_core.ca import IssuingCA
 
 
 def issuing_ca(material):

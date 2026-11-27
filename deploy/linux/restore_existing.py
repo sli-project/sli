@@ -17,7 +17,7 @@ from pathlib import Path
 import psycopg
 
 from deploy.linux import backup, migrate, operation_wait
-from server.sli.core.secret_files import secret_value
+from deploy.linux.sli_core.secret_files import secret_value
 
 
 ROLE_CREATE = re.compile(r'^CREATE ROLE ("(?:[^"]|"")*"|[a-z_][a-z_0-9]*);$', re.MULTILINE)
@@ -64,7 +64,7 @@ def analyze_postgres(passfile: Path, jobs: int) -> None:
 def reconcile_owner(connection, *, sync: bool = False) -> None:
     """Check the restored credential; changing it requires explicit opt-in."""
     from argon2.exceptions import InvalidHashError, VerificationError
-    from server.sli.access.auth import PASSWORD_HASHER
+    from deploy.linux.sli_core.auth import PASSWORD_HASHER
 
     password = secret_value("SLI_PLATFORM_OWNER_PASSWORD")
     row = connection.execute(

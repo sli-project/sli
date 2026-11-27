@@ -12,9 +12,9 @@ import subprocess
 import sys
 
 from deploy.linux import native_pg_inventory as inventory
-from deploy.linux.installed_state import migration_checksum_variants
+from deploy.linux.existing_postgres_bootstrap import base_schema_markers, forward_migration_inventory
+from deploy.linux.native_pg_inventory import migration_checksum_variants
 from deploy.linux.operation_wait import made_progress
-from scripts.maintenance.existing_postgres_bootstrap import base_schema_markers, forward_migration_inventory
 
 
 ERRORS = (

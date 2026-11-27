@@ -14,15 +14,15 @@ import psycopg
 from psycopg import sql
 
 from deploy.linux import backup
-from deploy.linux.installed_state import migration_checksum_variants
-from scripts.maintenance.existing_postgres_bootstrap import (
+from deploy.linux.existing_postgres_bootstrap import (
     base_schema_markers,
     create_platform_owner,
     forward_migration_inventory,
     load_baseline,
     render_baseline_schema,
 )
-from server.sli.core.secret_files import secret_value
+from deploy.linux.native_pg_inventory import migration_checksum_variants
+from deploy.linux.sli_core.secret_files import secret_value
 
 ROOT = Path(__file__).resolve().parents[2]
 STAND = Path(__file__).resolve().parent
@@ -166,27 +166,36 @@ def configure_job_logins(connection) -> None:
 
 
 def configure_workstation_history() -> None:
-    if os.environ.get("SLI_CORE_JOB_WORKSTATIONS_RETENTION", "0") != "1":
-        return
-    from server.sli.storage.workstation_history import configured_history, ensure_schema
+    # The native release has the workstation ClickHouse history adapter disabled.
+    if os.environ.get("SLI_DEPLOYMENT_MODE") != "native":
+        if os.environ.get("SLI_CORE_JOB_WORKSTATIONS_RETENTION", "0") != "1":
+            return
+        from server.sli.storage.workstation_history import configured_history, ensure_schema
 
-    history = configured_history()
-    if history is None:
-        raise RuntimeError("workstation_history_unavailable")
-    ensure_schema(history.port)
+        history = configured_history()
+        if history is None:
+            raise RuntimeError("workstation_history_unavailable")
+        ensure_schema(history.port)
 
 
 def configure_permanent_history() -> None:
     """Prepare copy-only history before Compose admits the lifecycle worker."""
-    from server.sli.storage import ad_snapshot_change_history, permanent_fact_history
-
-    if not permanent_fact_history.primary_read_enabled():
+    mode = os.environ.get("ADLOG_HISTORY_READ_MODE", "disabled").strip().lower()
+    if mode == "disabled":
         return
-    port = permanent_fact_history.configured_read_port()
-    if port is None:
-        raise RuntimeError("permanent_history_unavailable")
-    permanent_fact_history.ensure_schema(port)
-    ad_snapshot_change_history.ensure_schema(port)
+    if mode != "primary":
+        raise ValueError("history_read_mode_invalid")
+    if os.environ.get("SLI_DEPLOYMENT_MODE") == "native":
+        raise ValueError("history_read_mode_invalid")
+    else:
+        from server.sli.storage import ad_snapshot_change_history, permanent_fact_history
+
+        permanent_fact_history.primary_read_enabled()
+        port = permanent_fact_history.configured_read_port()
+        if port is None:
+            raise RuntimeError("permanent_history_unavailable")
+        permanent_fact_history.ensure_schema(port)
+        ad_snapshot_change_history.ensure_schema(port)
 
 
 def pgpass_escape(value: str) -> str:
