@@ -7,8 +7,8 @@ internal static class AdAuthenticationHistory
 {
     internal static async Task<(List<JsonObject> Events,List<JsonObject> Bounds,bool Truncated)> ReadAsync(
         NpgsqlConnection db, long domain, long[] servers, DateTimeOffset start, DateTimeOffset end, CancellationToken ct,
-        IConfiguration? config=null)
+        IConfiguration? config=null, bool forComparison=false)
     {
-        return (await AdAccountEvents.ReadLogonsAsync(db, domain, servers, new(start,end), ct, config), [], false);
+        return (await AdAccountEvents.ReadLogonsAsync(db, domain, servers, new(start,end), ct, config, forComparison), [], false);
     }
 }

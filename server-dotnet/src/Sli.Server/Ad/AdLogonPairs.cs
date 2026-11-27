@@ -134,8 +134,8 @@ internal static class AdLogonPairs
             return new Context(computers, userRows, servers.Select(s => s.Int("id")).ToArray(), sources.Concat(users).Any(s => s.Text("source_state") != "complete"));
         }, async (context, baseline, start, end) =>
         {
-            var prior=await AdAuthenticationHistory.ReadAsync(db,request.Domains.Single(),context.Servers,baseline,start,ct,config:config);
-            var current=await AdAuthenticationHistory.ReadAsync(db,request.Domains.Single(),context.Servers,start,end,ct,config:config);
+            var prior=await AdAuthenticationHistory.ReadAsync(db,request.Domains.Single(),context.Servers,baseline,start,ct,config:config,forComparison:true);
+            var current=await AdAuthenticationHistory.ReadAsync(db,request.Domains.Single(),context.Servers,start,end,ct,config:config,forComparison:true);
             // Retention is not proof of collection coverage.
             return new History(prior.Events,current.Events,[],false,false);
         }, ct);
