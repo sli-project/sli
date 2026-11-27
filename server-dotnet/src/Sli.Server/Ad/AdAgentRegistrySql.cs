@@ -26,12 +26,56 @@ internal static class AdAgentRegistrySql
 
             select a.id as agent_id,a.created_at,a.last_seen,a.status,e.id as entity_id,e.domain_id,b.bound_at,
                    removal.state as removal_state,removal.reported_at as removed_at,
-                   guid.alias_value as object_guid,version.version
+                   guid.alias_value as object_guid,
+                   coalesce(nullif(a.rights_probe->>'agent_version',''),version.version,issued.version) as version
             from sli_agents a left join unique_bindings b on b.agent_id=a.id
             left join sli_agent_removals removal on removal.agent_id=a.id
-            left join entities_v2 e on e.id=b.entity_id
+            left join lateral (
+                select details->>'agent_version' as version,details->>'server_id' as server_id
+                from sli_agent_audit where target=a.id::text and action='issue' order by id desc limit 1
+            ) issued on true
+            left join lateral (
+                select s.domain_id from sli_agent_audit recorded join servers s on s.id::text=recorded.details->>'server_id'
+                where recorded.target=a.id::text and recorded.action='module_assign'
+                  and recorded.actor='system:agent-registration' and recorded.details->>'module_id'='sli.windows.ad-dc'
+                order by recorded.id desc limit 1
+            ) registered_dc on true
+            left join servers pinned_dc on pinned_dc.id::text=issued.server_id
+            left join lateral (
+                select min(d.id) as id,count(*) as matches
+                from sli_agent_snapshot_bindings snapshot
+                join domains d on d.domain_sid=snapshot.domain_sid and not d.is_archived
+                where snapshot.agent_id=a.id and snapshot.module_id='sli.ad-snapshot'
+            ) snapshot_domain on true
+            cross join lateral (
+                select lower(rtrim(btrim(a.registration_host_name),'.$')) as host,
+                       coalesce(snapshot_domain.id,registered_dc.domain_id,pinned_dc.domain_id) as domain_id
+            ) registration
+            left join lateral (
+                select min(computer.id) as entity_id
+                from entities_v2 computer
+                join domains d on d.id=computer.domain_id and not d.is_archived
+                join storage_v2_entity_type t on t.id=computer.entity_type_id and t.value='ad_computer'
+                left join ad_context_entity_versions v on v.entity_id=computer.id
+                  and v.source_section='directory_accounts' and v.valid_to_utc is null
+                left join ad_context_entity_aliases sam on sam.entity_id=computer.id and sam.domain_id=d.id
+                  and sam.alias_type='sam_account_name' and sam.normalized_value=split_part(registration.host,'.',1)||'$'
+                cross join lateral (select lower(rtrim(v.attributes_json->'attributes'->>'dns_host_name','.')) as dns) host
+                where b.entity_id is null and not exists(select 1 from bindings known where known.agent_id=a.id)
+                  and snapshot_domain.matches <= 1
+                  and registration.host <> '' and a.status <> 'replaced'
+                  and (registration.domain_id is null or registration.domain_id=d.id)
+                  and (
+                    (strpos(registration.host,'.') > 0 and host.dns=registration.host)
+                    or ((registration.host=split_part(registration.host,'.',1)||'.'||lower(d.fqdn)
+                         or (registration.domain_id=d.id and strpos(registration.host,'.')=0))
+                        and (sam.entity_id is not null or split_part(host.dns,'.',1)=registration.host))
+                  )
+                having count(distinct computer.id)=1
+            ) by_name on true
+            left join entities_v2 e on e.id=coalesce(b.entity_id,by_name.entity_id)
               and e.entity_type_id=(select id from storage_v2_entity_type where value='ad_computer')
-            left join ad_context_entity_aliases guid on guid.entity_id=e.id and guid.alias_type='object_guid'
+            left join ad_context_entity_aliases guid on guid.entity_id=e.id and guid.domain_id=e.domain_id and guid.alias_type='object_guid'
             left join lateral (
                 select version from sli_agent_update_results u where u.agent_id=a.id
                 order by observed_at desc,package_sha256,status limit 1

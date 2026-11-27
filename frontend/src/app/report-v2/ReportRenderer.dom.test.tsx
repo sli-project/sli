@@ -1884,6 +1884,22 @@ it("shows only the four non-overlapping Computers activity choices and sends the
   await waitFor(() => expect(requested.some((url) => url.includes("activity=over_90_days"))).toBe(true));
 });
 
+it.each([
+  ["en", "There were no computer changes in the selected period."],
+  ["ru", "За выбранный период изменений компьютеров нет."],
+] as const)("shows one empty state for computer changes (%s)", async (locale, message) => {
+  setLocale(locale);
+  const raw = { ...adDefinitions["ad.computers.v6"].declaration, filter_options: {} };
+  const body = page({ report_key: raw.key, state: "empty", items: [], filtered_count: 0 });
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) =>
+    Response.json(String(input).includes("/data?") ? body : raw)));
+  window.history.replaceState(null, "", `/app/report/${raw.key}?tab=changes`);
+  renderReport(raw.key);
+  const empty = await screen.findByText(message);
+  expect(empty.closest('[data-state="empty"][role="status"]')?.textContent).toBe(message);
+  expect(screen.queryByRole("table")).toBeNull();
+});
+
 it.each(["ru", "en"] as const)("keeps user and computer inventories free of source warnings and view notes (%s)", async (locale) => {
   setLocale(locale);
   for (const [key, tab] of [["ad.users.v2", "all"], ["ad.computers.v6", "computers"]]) {

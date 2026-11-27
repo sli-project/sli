@@ -71,8 +71,8 @@ public sealed class AdReviewChecksTests : IClassFixture<AdReviewChecksTests.Data
             await Pg.StartAsync(CancellationToken.None);
             await using var db = await Pg.OpenAsync(CancellationToken.None);
             await PostCollectionPostgres.Sql(db, """
-                create table domains(id bigint primary key,fqdn text);
-                insert into domains values(1,'one.example.test'),(2,'two.example.test');
+                create table domains(id bigint primary key,fqdn text,domain_sid text,is_archived boolean not null default false);
+                insert into domains(id,fqdn) values(1,'one.example.test'),(2,'two.example.test');
                 create table auth_users(id bigint,previous_login_at timestamptz);
                 create table platform_settings(key text,value text);
                 create table ad_snapshot_manifests(manifest_id uuid,domain_id bigint,slot_start_utc timestamptz,assembled_at_utc timestamptz,coverage_state text);
@@ -85,14 +85,17 @@ public sealed class AdReviewChecksTests : IClassFixture<AdReviewChecksTests.Data
                 create table event_hot(event_id bigint,time_created_utc timestamptz,event_kind int,domain_id bigint,actor text,target text,source text,computer text,method jsonb,outcome jsonb,fields jsonb);
                 create table event_cold_facts (like event_hot);
                 create table event_cold_daily(day date,event_kind int,domain_id bigint,actor text,target text,source text,computer text,method jsonb,outcome jsonb,grouping_key bytea,event_count bigint,first_seen_utc timestamptz,last_seen_utc timestamptz);
-                create table sli_agents(id uuid,host_id uuid,created_at timestamptz,last_seen timestamptz,status text);
-                create table sli_agent_audit(target text,occurred_at timestamptz,actor text,action text);
+                create table sli_agents(id uuid,host_id uuid,created_at timestamptz,last_seen timestamptz,status text,
+                    registration_host_name text,rights_probe jsonb not null default '{}');
+                create table sli_agent_audit(id bigint,target text,occurred_at timestamptz,actor text,action text,details jsonb);
+                create table sli_agent_snapshot_bindings(agent_id uuid,module_id text,domain_sid text,primary key(agent_id,module_id));
                 create table sli_agent_group_approval_links(enrollment_token_id uuid,request_id uuid);
                 create table sli_agent_group_requests(id uuid,computer_entity_id bigint);
                 create table core_entity_scope_resources(natural_key text,plugin_id text,source_instance_id text,entity_type text,resolution text,entity_id bigint,observed_at_utc timestamptz);
                 create table core_entity_associations(source_entity_id bigint,target_entity_id bigint,relation text,created_at_utc timestamptz);
                 create table sli_agent_removals(agent_id uuid,state text,reported_at timestamptz);
                 create table entities_v2(id bigint,domain_id bigint,entity_type_id bigint);
+                create table ad_context_entity_versions(entity_id bigint,source_section text,valid_to_utc timestamptz,attributes_json jsonb);
                 create table storage_v2_entity_type(id bigint,value text);
                 create table sli_agent_update_results(agent_id uuid,version text,observed_at timestamptz,package_sha256 text,status text);
                 """, CancellationToken.None);
