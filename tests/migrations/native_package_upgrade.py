@@ -17,13 +17,19 @@ PG_BIN = Path("/usr/lib/postgresql/18/bin")
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def seed(connection):
+def seed(connection, *, exercise_backfill):
+    connection.execute("""
+        insert into public.findings(fingerprint,rule_code,title,severity,status,
+                                    first_seen_utc,last_seen_utc,evidence_count)
+        values ('synthetic:unrelated','synthetic.rule','Fixture','high','new',now()::text,now()::text,0);
+    """)
+    if not exercise_backfill:
+        return
     connection.execute(r"""
         insert into public.findings(fingerprint,rule_code,title,severity,status,
                                     first_seen_utc,last_seen_utc,evidence_count)
         values ('synthetic:upgrade-421','semantic.security.dc_service_installed','Fixture','high',
-                'new',now()::text,now()::text,1),
-               ('synthetic:unrelated','synthetic.rule','Fixture','high','new',now()::text,now()::text,0);
+                'new',now()::text,now()::text,1);
         insert into public.finding_event_copies337(finding_id,event_id,time_created_utc,event_kind,
                     domain_id,computer,method,outcome,fields,source_sha256,evidence_role,event_record_id)
         select id,1,now(),4697,1,'dc.example.test',
@@ -67,7 +73,10 @@ def verify_ledger(connection, release):
     )
 
 
-def verify_problem_queue(connection):
+def verify_problem_queue(connection, *, exercise_backfill):
+    expected = [("synthetic:unrelated", "new", None)]
+    if exercise_backfill:
+        expected.append(("synthetic:upgrade-421", "closed", [1]))
     assert connection.execute("""
         select f.fingerprint,q.status,e.domain_ids
         from public.findings f
@@ -75,10 +84,7 @@ def verify_problem_queue(connection):
         left join public.problem_queue_evidence443 e on e.finding_id=f.id
         where f.fingerprint in ('synthetic:upgrade-421','synthetic:unrelated')
         order by f.fingerprint
-    """).fetchall() == [
-        ("synthetic:unrelated", "new", None),
-        ("synthetic:upgrade-421", "closed", [1]),
-    ]
+    """).fetchall() == expected
     with connection.transaction():
         connection.execute("""
             update public.findings set status='active'
@@ -109,7 +115,7 @@ def verify_workstation_inventory(connection):
         assert connection.execute("select public.advance_workstation_ad_inventory436()").fetchone() == (None,)
 
 
-def exercise(previous, work):
+def exercise(previous, work, previous_version):
     # Match the installer and package runner's endpoints inside the private namespaces.
     subprocess.run(["ip", "link", "set", "lo", "up"], check=True)
     socket = work / "socket"
@@ -184,15 +190,19 @@ os.execve(sys.executable, [sys.executable, '-B', '-m', 'deploy.linux.entrypoint'
         with psycopg.connect(host="127.0.0.1", dbname="sli", user="postgres", password=password,
                              autocommit=True) as connection:
             assert 180000 <= connection.info.server_version < 190000
-            assert connection.execute("select max(version) from public.schema_migrations").fetchone() == (420,)
+            assert connection.execute("select max(version) from public.schema_migrations").fetchone() == (
+                previous_version,
+            )
             verify_ledger(connection, previous)
             verify_acl(connection)
-            seed(connection)
+            exercise_backfill = previous_version < 421
+            seed(connection, exercise_backfill=exercise_backfill)
             native_pg_migrate.migrate(ROOT)
             verify_ledger(connection, ROOT)
             verify_acl(connection)
-            verify_backfill(connection)
-            verify_problem_queue(connection)
+            if exercise_backfill:
+                verify_backfill(connection)
+            verify_problem_queue(connection, exercise_backfill=exercise_backfill)
             verify_workstation_inventory(connection)
     finally:
         subprocess.run([*control, "-m", "fast", "-w", "stop"], env=env, check=True)
@@ -210,4 +220,4 @@ if __name__ == "__main__":
             cleanup.callback(shutil.rmtree, path)
         work = Path(cleanup.enter_context(tempfile.TemporaryDirectory(prefix="sli-upgrade-ci.", dir="/run")))
         work.chmod(0o755)
-        exercise(Path(sys.argv[1]).resolve(strict=True), work)
+        exercise(Path(sys.argv[1]).resolve(strict=True), work, int(sys.argv[2]))

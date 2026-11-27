@@ -1,10 +1,10 @@
 begin;
-select pg_advisory_xact_lock(hashtext('sli_workstation_ad_inventory436'));
+select pg_advisory_xact_lock(hashtext('sli_workstation_ad_inventory448'));
 do $$ begin
     if not pg_has_role(session_user,'adlog_storage_owner','MEMBER')
-       or not exists(select 1 from public.schema_migrations where version=435 and name='user_activity_indexes')
-       or exists(select 1 from public.schema_migrations where version>=436) then
-        raise exception 'workstation_ad_inventory436_preflight';
+       or not exists(select 1 from public.schema_migrations where version=447 and name='sigma_live')
+       or exists(select 1 from public.schema_migrations where version>=448) then
+        raise exception 'workstation_ad_inventory448_preflight';
     end if;
 end $$;
 -- The package runner enters as the storage owner. The AD source
@@ -121,5 +121,5 @@ end $$;
 revoke all on function public.advance_workstation_ad_inventory436() from public;
 grant execute on function public.advance_workstation_ad_inventory436() to adlog_context_worker;
 
-insert into public.schema_migrations(version,name) values(436,'workstation_ad_inventory');
+insert into public.schema_migrations(version,name) values(448,'workstation_ad_inventory');
 commit;
