@@ -5,7 +5,18 @@
   "settings": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
-    "properties": {},
+    "properties": {
+      "file_audit.excluded_accounts": {
+        "type": "array",
+        "default": [],
+        "maxItems": 100,
+        "items": { "type": "string", "maxLength": 184, "pattern": "^S-1-5-21-[0-9]+-[0-9]+-[0-9]+-[0-9]+$" },
+        "x-group": "basic",
+        "x-secret": false,
+        "x-label": "plugins.sli.file-audit.settings.excluded_accounts.label",
+        "x-help": "plugins.sli.file-audit.settings.excluded_accounts.help"
+      }
+    },
     "required": [],
     "additionalProperties": false,
     "x-core-settings": [

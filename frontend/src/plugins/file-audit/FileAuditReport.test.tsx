@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ApiResponseError } from "../../api/client";
 import type { ReportDefinitionDto, ReportResultDto } from "../../api/report-v2-types";
 import { FileAuditReport } from "./FileAuditReport";
 import { t } from "../../i18n";
+import { OverlayProvider } from "../../design-system";
+import { TimeZoneContext } from "../../shared/time-zone";
 import reportDefinitions from "../../../../server-dotnet/src/Sli.Server/Reporting/V2/report-definitions.json";
 
 const mocks = vi.hoisted(() => ({ definition: vi.fn(), data: vi.fn(), detail: vi.fn(), agents: vi.fn(), agentAction: vi.fn(), access: {
@@ -33,7 +35,11 @@ const result = (key: string, params: URLSearchParams): ReportResultDto => ({
 let client: QueryClient;
 function mount(initial = declaration()) {
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-  return render(<QueryClientProvider client={client}><FileAuditReport definition={initial}/></QueryClientProvider>);
+  return render(<QueryClientProvider client={client}>
+    <TimeZoneContext.Provider value={{ timeZone: "UTC", setTimeZone: () => undefined }}>
+      <OverlayProvider><FileAuditReport definition={initial}/></OverlayProvider>
+    </TimeZoneContext.Provider>
+  </QueryClientProvider>);
 }
 beforeEach(() => {
   localStorage.clear();
@@ -106,6 +112,51 @@ it.each([
   const row = await screen.findByRole("row", { name: /Fixture share/ });
   expect(row.textContent).toContain(t(message));
   expect(row.textContent).not.toContain(t("file-audit.screen.no_batch"));
+});
+
+it("shows all catalog shares and applies audit to the two confirmed selections", async () => {
+  const shares = ["Finance", "Projects", "Archive", "Public", "NETLOGON", "SYSVOL"];
+  const agent_id = "11111111-1111-4111-8111-111111111111";
+  const source_instance_id = "synthetic-source";
+  let verified = false;
+  let receivedBatch = false;
+  mocks.data.mockImplementation(async (key, params) => ({ ...result(key, params),
+    filtered_count: shares.length, has_more: false, next_cursor: null,
+    items: shares.map((share_name, index) => ({
+      id: share_name, share_name, source_name: "fs.example.test", path: `C:\\Shares\\${share_name}`,
+      agent_id, source_instance_id, collection_scope_id: `scope:${index}`, audit_revision: 3,
+      audit_state: index === 0 || verified && index <= 2 ? "enabled" : "disabled",
+      audit_checked_at: index === 0 || verified && index <= 2 ? "2026-11-26T08:00:00Z" : null,
+      audit_policy_revision: verified ? 4 : 3,
+      audit_received_at: receivedBatch && index === 1 ? "2026-11-26T08:15:00Z" : null,
+    })),
+  }));
+  mocks.agentAction.mockResolvedValue({ command_id: "apply-shares", policy_revision: 4, state: "pending" });
+  mount(declaration("file-audit.overview"));
+  const table = within(await screen.findByRole("table", { name: t("file-audit.screen.overview") }));
+  expect(table.getAllByRole("row").slice(1)).toHaveLength(6);
+  expect(table.getByRole("row", { name: /Finance/ }).textContent).toContain(t("file-audit.resources.enabled"));
+  expect(table.getByRole("row", { name: /Projects/ }).textContent).toContain(t("file-audit.resources.disabled"));
+  for (const share of ["Projects", "Archive"]) await userEvent.click(within(table.getByRole("row", { name: new RegExp(share) })).getByRole("checkbox"));
+  expect(table.getByRole("checkbox", { name: t("file-audit.resources.selectPage") })).toHaveProperty("indeterminate", true);
+  await userEvent.click(screen.getByRole("button", { name: t("file-audit.resources.enable") }));
+  const dialog = within(await screen.findByRole("dialog", { name: t("file-audit.resources.enable") }));
+  expect(dialog.getByText("fs.example.test · Projects")).toBeTruthy();
+  expect(dialog.getByText("fs.example.test · Archive")).toBeTruthy();
+  await userEvent.click(dialog.getByRole("button", { name: t("file-audit.resources.confirmEnable") }));
+  await waitFor(() => expect(mocks.agentAction).toHaveBeenCalledExactlyOnceWith("file-audit", {
+    agent_id, source_instance_id, expected_revision: 3, action: "apply", collection_scope_ids: ["scope:1", "scope:2"],
+  }));
+  expect(await table.findAllByText(t("file-audit.resources.applying"))).toHaveLength(2);
+  verified = true;
+  await act(() => client.invalidateQueries({ queryKey: ["report-v2", "file-audit"] }));
+  const projects = within(table.getByRole("row", { name: /Projects/ }));
+  expect(await projects.findByText(t("file-audit.screen.no_batch"))).toBeTruthy();
+  expect(projects.getByText(new RegExp(t("file-audit.resources.enabled")))).toBeTruthy();
+  receivedBatch = true;
+  await act(() => client.invalidateQueries({ queryKey: ["report-v2", "file-audit"] }));
+  expect(await projects.findByText(new RegExp(t("file-audit.screen.last_batch", { time: ".*08:15" })))).toBeTruthy();
+  expect(projects.queryByText(t("file-audit.screen.no_batch"))).toBeNull();
 });
 
 it("requests a check for the selected manageable resource and shows the fresh result", async () => {

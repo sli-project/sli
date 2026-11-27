@@ -31,7 +31,8 @@ public sealed class AgentClientControlService(IAgentControlAudit audit,TimeProvi
         var result=AgentClientPolicy.CheckIn(agent,fileHook);
         // The management command runs while the server verifies coverage. Until then the agent cannot capture events.
         if(agent["file_audit"] is JsonObject fileAudit
-            && fileAudit["permissions_scope"]?.ToString() is { } scope
+            && (fileAudit["permissions_scope"] is not null || fileAudit["permissions_scopes"] is not null
+                || fileAudit["permissions_restore_scopes"] is not null)
             && AgentPolicyAssignments.FindCurrent(result["assigned_modules"]!.AsArray(),"sli.file-audit") is { } fileAssignment)
         {
             bool verified = await AgentPolicyAssignments.FilePermissionsAvailableAsync(db,tx,ct)
@@ -39,8 +40,11 @@ public sealed class AgentClientControlService(IAgentControlAudit audit,TimeProvi
             if (!verified)
             {
                 fileAssignment["enabled"]=false;
-                var receipt = fileAudit["scopes"]?[scope];
-                if (receipt?["state"]?.ToString() == "partial" && receipt["reason_code"]?.ToString() == "coverage_incomplete"
+                var applyScopes = fileAudit["permissions_scopes"] as JsonArray
+                    ?? new JsonArray(fileAudit["permissions_scope"]?.DeepClone());
+                if (applyScopes.Any(scope => scope is JsonValue value && value.TryGetValue<string>(out var id)
+                    && fileAudit["scopes"]?[id] is JsonObject receipt
+                    && receipt["state"]?.ToString() == "partial" && receipt["reason_code"]?.ToString() == "coverage_incomplete")
                     && await AgentPolicyAssignments.FileActivityAvailableAsync(db,tx,ct))
                     result["file_audit_retry_paged_apply"]=true;
             }

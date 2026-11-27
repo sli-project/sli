@@ -1,12 +1,57 @@
 using System.Text.Json.Nodes;
 using Npgsql;
+using Sli.Server.Access;
 using Sli.Server.Agents.Control;
+using Sli.Server.Auth;
 
 namespace Sli.Server.Agents.FileAudit;
 
 // Source sli.ad/file_audit_enrichment.py; reads retained observations only.
 internal sealed class FileAuditAdEnrichment(FileAuditHookAdmission admission)
 {
+    internal static async Task<System.Text.Json.JsonElement> SearchAccounts(NpgsqlConnection db, NpgsqlTransaction tx,
+        JsonObject? body, Principal principal, CapabilityDecisionSet access, CancellationToken ct)
+    {
+        if (principal.Role != "admin" && !access.IsOwner) throw new AgentControlException("file_audit_request_denied", 403);
+        if (body is null || !Sli.Agent.Protocol.JsonRead.HasExactly(body, "q", "sids")
+            || S(body["q"]) is not string search || search.Length > 128 || body["sids"] is not JsonArray { Count: <= 100 } selected
+            || selected.Any(item => S(item) is not string sid || sid.Length > 184
+                || !System.Text.RegularExpressions.Regex.IsMatch(sid, @"\AS-1-5-21-[0-9]+-[0-9]+-[0-9]+-[0-9]+\z")))
+            throw new AgentControlException("file_audit_request_invalid");
+        using var read = new NpgsqlCommand("""
+            with accounts as (
+                select alias.normalized_value as sid,d.id as domain_id,alias.entity_id,
+                    coalesce(nullif(d.netbios_name,''),d.fqdn)||chr(92)||
+                    coalesce(nullif(v.attributes_json#>>'{attributes,sam_account_name}',''),
+                        nullif(v.attributes_json#>>'{attributes,display_name}','')) as name
+                from public.ad_context_entity_aliases alias
+                join public.domains d on d.id=alias.domain_id and not d.is_archived
+                join public.ad_context_entity_versions v on v.entity_id=alias.entity_id and v.valid_to_utc is null
+                join public.ad_context_runs run on run.run_id=v.source_run_id and run.status='completed'
+                where alias.alias_type='object_sid'
+                    and alias.normalized_value ~ '^s-1-5-21-[0-9]+-[0-9]+-[0-9]+-[0-9]+$'
+                    and (v.source_section='directory_accounts' and v.attributes_json#>>'{identity,kind}'='ad_user'
+                        or v.source_section='directory_group_graph' and v.attributes_json#>>'{identity,kind}'='ad_group')
+            )
+            select distinct sid,domain_id,entity_id,left(name,256) as name
+            from accounts where name is not null and (sid=any(@sids) or
+                (char_length(@search)>=2 and strpos(lower(name),lower(@search))>0))
+            order by name,sid limit 200
+            """, db, tx);
+        read.Parameters.AddWithValue("sids", selected.Select(sid => S(sid)!.ToLowerInvariant()).ToArray());
+        read.Parameters.AddWithValue("search", search.Trim());
+        var items = new List<object>();
+        await using var rows = await read.ExecuteReaderAsync(ct);
+        while (await rows.ReadAsync(ct))
+        {
+            IReadOnlyList<IReadOnlyList<AccessResource>> group = [[new("entity", rows.GetInt64(2)) { DomainId = rows.GetInt64(1) }]];
+            if (access.DecideForResourceGroups("field.identity_basic", group).Allowed
+                && access.DecideForResourceGroups("field.technical", group).Allowed)
+                items.Add(new { sid = rows.GetString(0).ToUpperInvariant(), name = rows.GetString(3) });
+        }
+        return System.Text.Json.JsonSerializer.SerializeToElement(new { items });
+    }
+
     internal static bool PythonTruthy(JsonNode? node)
     {
         if(node is null) return false;

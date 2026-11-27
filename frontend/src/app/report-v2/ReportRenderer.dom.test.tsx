@@ -62,7 +62,10 @@ afterEach(() => { cleanup(); PAGE_ACTIONS["vpn.print-sheet"] = originalPrintShee
 
 function renderReport(reportKey = "demo.events") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={client}><ReportRenderer reportKey={reportKey}/></QueryClientProvider>);
+  const report = <ReportRenderer reportKey={reportKey}/>;
+  return render(<QueryClientProvider client={client}>
+    {reportKey.startsWith("file-audit.") ? <OverlayProvider>{report}</OverlayProvider> : report}
+  </QueryClientProvider>);
 }
 
 it.each(["list", "drawer"] as const)("resolves a problem from the legacy %s in two actions", async (surface) => {
@@ -1879,6 +1882,22 @@ it("shows only the four non-overlapping Computers activity choices and sends the
     .toEqual(["До 30 дней", "31–90 дней", "Более 90 дней", "Никогда"]);
   await userEvent.click(screen.getByRole("option", { name: "Более 90 дней" }));
   await waitFor(() => expect(requested.some((url) => url.includes("activity=over_90_days"))).toBe(true));
+});
+
+it.each([
+  ["en", "There were no computer changes in the selected period."],
+  ["ru", "За выбранный период изменений компьютеров нет."],
+] as const)("shows one empty state for computer changes (%s)", async (locale, message) => {
+  setLocale(locale);
+  const raw = { ...adDefinitions["ad.computers.v6"].declaration, filter_options: {} };
+  const body = page({ report_key: raw.key, state: "empty", items: [], filtered_count: 0 });
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) =>
+    Response.json(String(input).includes("/data?") ? body : raw)));
+  window.history.replaceState(null, "", `/app/report/${raw.key}?tab=changes`);
+  renderReport(raw.key);
+  const empty = await screen.findByText(message);
+  expect(empty.closest('[data-state="empty"][role="status"]')?.textContent).toBe(message);
+  expect(screen.queryByRole("table")).toBeNull();
 });
 
 it.each(["ru", "en"] as const)("keeps user and computer inventories free of source warnings and view notes (%s)", async (locale) => {

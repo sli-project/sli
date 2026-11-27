@@ -90,11 +90,12 @@ beforeEach(() => {
     } : { ...details, versions: [{ ...snapshot, observed_at: older }] };
     const data = { contract_id: "sli.report-result.v2", report_key: "ad.gpo.v2", state: "partial",
       items: id ? policies.filter((row) => row.id === id || row.guid === id) : inventoryPolicies,
-      collections: !id ? {} : history ? { changes } :
+      collections: !id ? {} : history ? { changes: id === "unobserved" ? [] : changes } :
         snapshotList ? { snapshots: id === "linked" ? snapshots : snapshots.slice(0, 1) } :
           before ? { snapshot_comparison: before === "snapshot-2" ? [] : comparison } : selected,
       has_more: false, next_cursor: null, series: {}, window: {}, metrics: [], filter_options: {},
-      coverage: { snapshot_id: exact ?? latestSnapshot, domain_id: 7, observed_at_utc: observedAt, policy_history_state: history ? "ok" : undefined },
+      coverage: { snapshot_id: exact ?? latestSnapshot, domain_id: 7, observed_at_utc: observedAt,
+        policy_history_state: history ? id === "unobserved" ? "empty" : "ok" : undefined },
       limitations: [{ code: "fixture", text: "Removed collection explanation" }],
     };
     return new Response(JSON.stringify(url.pathname.endsWith("/data") ? data : { ...gpoDeclaration.declaration, filter_options: {} }),
@@ -233,14 +234,14 @@ it("finds settings by path and value, expands history inline, and renders host v
 it("compares either of two selected dates in the policy card and distinguishes an equal pair", async () => {
   openDetails("linked", "versions");
   const card = within(await screen.findByRole("tabpanel"));
-  const before = await card.findByLabelText("Before", { selector: "button" });
-  const after = card.getByLabelText("After", { selector: "button" });
+  const before = await card.findByLabelText("Earlier version", { selector: "button" });
+  const after = card.getByLabelText("Later version", { selector: "button" });
   expect(before.textContent).not.toMatch(/snapshot-/);
-  const run = card.getByRole("button", { name: "Compare snapshots" });
+  const run = card.getByRole("button", { name: "Compare versions" });
   await chooseOption(before, "snapshot-1");
   await chooseOption(after, "snapshot-3");
   fireEvent.click(run);
-  const result = within(await card.findByRole("table", { name: "Snapshot comparison" }));
+  const result = within(await card.findByRole("table", { name: "Version comparison" }));
   expect(result.getByRole("row", { name: /Timeout.*Changed.*900 seconds.*600 seconds/ })).toBeTruthy();
   expect(result.getByRole("row", { name: /Theme.*Added.*Enabled/ })).toBeTruthy();
   expect(result.getByRole("row", { name: /Wallpaper.*Removed.*<img src=x>/ })).toBeTruthy();
@@ -248,7 +249,7 @@ it("compares either of two selected dates in the policy card and distinguishes a
   const request = requests.find((url) => url.searchParams.has("before_snapshot"))!;
   expect(Object.fromEntries(request.searchParams)).toMatchObject({ policy_id: "linked", domain: "7", before_snapshot: "snapshot-1", after_snapshot: "snapshot-3" });
   await chooseOption(before, "snapshot-2");
-  expect(card.queryByRole("table", { name: "Snapshot comparison" })).toBeNull();
+  expect(card.queryByRole("table", { name: "Version comparison" })).toBeNull();
   fireEvent.click(run);
   expect(await card.findByText("No differences in visible settings")).toBeTruthy();
 });
@@ -256,9 +257,20 @@ it("compares either of two selected dates in the policy card and distinguishes a
 it("keeps versions visible when a policy has fewer than two comparable snapshots", async () => {
   openDetails("updated", "versions");
   const card = within(await screen.findByRole("tabpanel"));
-  expect(await card.findByText("Two snapshots are required for comparison")).toBeTruthy();
+  expect(await card.findByText("Two versions are required for comparison")).toBeTruthy();
   expect(card.getByRole("table", { name: "Version history" })).toBeTruthy();
-  expect(card.queryByRole("button", { name: "Compare snapshots" })).toBeNull();
+  expect(card.queryByRole("button", { name: "Compare versions" })).toBeNull();
+});
+
+it.each([
+  ["en", "There are no Group Policy changes in the selected period."],
+  ["ru", "За выбранный период изменений групповых политик нет."],
+] as const)("shows an empty policy history without a placeholder table in %s", async (locale, message) => {
+  setLocale(locale);
+  openDetails("unobserved", "changes");
+  const card = within(await screen.findByRole("tabpanel"));
+  expect(await card.findByText(message)).toBeTruthy();
+  expect(card.queryByRole("table")).toBeNull();
 });
 
 it("reports an expired snapshot without loading the current policy or its history", async () => {

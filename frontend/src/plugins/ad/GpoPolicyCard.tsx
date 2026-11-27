@@ -304,6 +304,7 @@ function PolicyChanges({ changes, settings }: { changes: Change[]; settings: Set
     return { ...change, name, before_value: typeof before === "string" ? before : undefined,
       after_value: typeof after === "string" ? after : undefined };
   });
+  if (displayed.length === 0) return <p role="status">{t("reports.gpo.changes_empty")}</p>;
   return <CardTable caption={t("reports.gpo.changes")} rows={displayed} columns={[
     { key: "observed_at", label: t("reports.gpo.time"), kind: "datetime", width: "13rem" },
     { key: "name", label: t("reports.gpo.parameter"), render: (row) => {

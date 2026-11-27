@@ -1,15 +1,45 @@
 import { Checkbox } from "../../design-system/Checkbox";
 import { Select } from "../../design-system/Select";
-import { useId, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useId, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiResponseError } from "../../api/client";
 import type { PluginSettings, SettingsSchema } from "../../api/plugin-settings-types";
 import { Button } from "../../design-system";
+import { SearchMultiSelect } from "../../design-system/SearchMultiSelect";
 import { t, type MessageKey } from "../../i18n";
 import { initialSetting, schemaTypes, validSetting } from "./plugin-settings-model";
 
 const text = (key: string | undefined, fallback: string) => key ? t(key as MessageKey) : fallback;
 const serialized = (value: unknown) => JSON.stringify(value);
+
+function FileAuditAccounts({ values, onChange, disabled }: {
+  values: string[]; onChange: (value: string[]) => void; disabled: boolean;
+}) {
+  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
+  const [labels, setLabels] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const timer = window.setTimeout(() => setQuery(search.trim().slice(0, 128)), 250);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+  const accounts = useQuery({
+    queryKey: ["file-audit", "accounts", query, values], enabled: query.length >= 2 || values.length > 0,
+    queryFn: () => api.fileAuditAccounts(query, values), staleTime: 60_000, retry: false,
+  });
+  const options = new Map(values.map(value => [value, labels[value] ?? t("file-audit.settings.unknownAccount")]));
+  for (const account of accounts.data?.items ?? []) options.set(account.sid, account.name);
+  return <>
+    <SearchMultiSelect label={t("plugins.sli.file-audit.settings.excluded_accounts.label")} disabled={disabled}
+      values={values} options={[...options].map(([value, label]) => ({ value, label }))}
+      onSearchChange={setSearch} onChange={next => {
+        if (next.length > 100) return;
+        setLabels(Object.fromEntries(next.flatMap(sid => options.has(sid) ? [[sid, options.get(sid)!]] : [])));
+        onChange(next);
+      }}/>
+    <p className="sli-ds-muted">{t("plugins.sli.file-audit.settings.excluded_accounts.help")}</p>
+    {accounts.isError ? <p role="alert">{t("file-audit.settings.accountsFailed")} <Button onClick={() => void accounts.refetch()}>{t("state.retry")}</Button></p> : null}
+  </>;
+}
 
 /** Forms for nested schema values, without making users edit JSON. */
 function ValueEditor({ node, value, onChange, label, id, describedBy }: {
@@ -77,6 +107,8 @@ export function PluginSettingsForm({ data, canEdit }: { data: PluginSettings; ca
   const fields = (advanced: boolean) => properties.filter(([, node]) => (node["x-group"] === "advanced") === advanced).map(([key, node], index) => {
     const label = text(node["x-label"], key);
     const id = `${prefix}-${advanced}-${index}`;
+    if (key === "file_audit.excluded_accounts") return <FileAuditAccounts key={key} values={Array.isArray(values[key]) ? values[key] as string[] : []}
+      disabled={!canEdit || busy} onChange={value => edit(key, value)}/>;
     return <div className="sli-ds-field" key={key}>
       <ValueEditor node={node} id={id} label={label} describedBy={`${id}-help`} value={values[key]} onChange={(value) => edit(key, value)}/>
       <p id={`${id}-help`} className="sli-ds-muted">{text(node["x-help"], "")}</p>

@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import type { ReportResultDto } from "../../api/report-v2-types";
 import { formatDateTime } from "../../design-system/format";
+import { formatDateTime as formatZonedDateTime } from "../../shared/date-time";
 import { t } from "../../i18n";
 import { DataTable } from "../../design-system";
 import type { ReportColumnDto } from "../../api/report-v2-types";
@@ -35,6 +36,25 @@ it("shows observed computer facts and uses dashes for missing inventory cells", 
   const empty = within(screen.getByRole("row", { name: /PC-EMPTY/ }));
   expect(empty.getAllByRole("cell").slice(1).map((cell) => cell.textContent)).toEqual(["—", "—", "—"]);
 });
+it("shows the agent version and last contact in the inventory", () => {
+  const stamp = "2026-01-12T10:49:00Z";
+  const time = formatZonedDateTime(stamp, "UTC", { withYear: false });
+  const columns: ReportColumnDto[] = [{ key: "sli_agent", path: "sli_agent", label: "SLI agent", kind: "text" }];
+  render(<DataTable caption="Computers" columns={computerInventoryColumns(columns, "UTC", vi.fn())}
+    rows={[
+      { entity_id: 1, sli_agent: { state: "installed", version: "1.2.3", last_seen_utc: stamp } },
+      { entity_id: 2, sli_agent: { state: "silent", version: "2.3.4", last_seen_utc: stamp } },
+      { entity_id: 3, sli_agent: { state: "absent" } },
+      { entity_id: 4, sli_agent: { state: "unknown" } },
+    ]} rowKey={(row) => String(row.entity_id)}/>);
+  expect(screen.getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
+    `1.2.3 · ${t("reports.computers.agent_connected", { time })}`,
+    `2.3.4 · ${t("reports.computers.agent_silent", { time })}`,
+    "—",
+    t("reports.computers.agent_unknown"),
+  ]);
+});
+
 const observation = (rowId: string, minute: string, event: number | null = 81) => ({
   row_id: rowId, observed_at_utc: `2026-01-12T10:${minute}:00Z`, user_name: "EXAMPLE\\test", source_event_id: event,
 });
@@ -57,6 +77,15 @@ it("uses the available last logon in the computer card when the replicated times
   expect(screen.getByText(t("reports.computers.last_logon"))).toBeTruthy();
   expect(screen.getByText(`${formatDateTime(lastLogon, true, "UTC")} · ${t("reports.computers.last_logon_source.domain_controllers")}`)).toBeTruthy();
   expect(container.textContent).not.toContain("lastLogonTimestamp");
+});
+
+it("labels the computer card shortcut by the tab it opens", () => {
+  render(<QueryClientProvider client={new QueryClient()}>
+    <ComputerPanel row={{ ...workstation, object_guid: "test-computer-guid" }} logons={false}
+      logonParams="" changes={[]} canCompare onClose={() => {}} timeZone="UTC"/>
+  </QueryClientProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "Посмотреть изменения" }));
+  expect(screen.getByRole("tab", { name: t("reports.computers.changes"), selected: true })).toBeTruthy();
 });
 
 it("keeps individual observations selected by row ID through paging and resets on a new result", async () => {

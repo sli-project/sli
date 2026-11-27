@@ -129,6 +129,16 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
         var selected = new JsonArray(config.Roots.Where(r => cmd["collection_scope_ids"]!.AsArray().Any(id => JsonNode.DeepEquals(id,r!["collection_scope_id"]))).Select(r => r!.DeepClone()).ToArray());
         var selectedConfig = FileAuditPolicy.Parse((JsonObject)config.Value.DeepClone()); selectedConfig.Value["roots"]=selected.DeepClone();
         var required = selectedConfig.RequiredMasks();
+        var selectedPaths = selected.OfType<JsonObject>().Select(root => Text(root,"path")).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var activeRoots = state["active"] as JsonArray ?? [];
+        bool selectiveRestore = action == "restore" && !config.Workstation && selected.Count != config.Roots.Count;
+        var retained = new JsonArray(activeRoots.Where(root => !selectedPaths.Contains(Text(root!,"path")))
+            .Select(root => root!.DeepClone()).ToArray());
+        // A selective restore acknowledges only the requested folders. Other
+        // folders and the Windows audit masks they still need remain owned.
+        bool OwnedBySelection(JsonNode value) => !selectiveRestore || selectedPaths.Contains(Text(value,"root"));
+        bool SelectedOwnershipRemains() => state["objects"]!.AsObject().Any(item => OwnedBySelection(item.Value!))
+            || (!selectiveRestore || retained.Count == 0) && state["masks"]!.AsObject().Count > 0;
         var writable = false; var reason = "ok";
         bool describeReads = readDiagnostics && action == "check" && !config.Workstation && selected.Count == 1;
         FileAuditReadError? readError = null;
@@ -179,18 +189,33 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
                     if (Text(obj.Describe(),"object_type") != "directory") throw new AgentException("file_audit_root_invalid");
                 }
             stage = "inventory";
-            if (action == "apply" && state["active"] is not null && !JsonNode.DeepEquals(state["active"],selected)) { writable=false; reason="restore_required"; }
+            if (action == "apply" && state["active"] is not null && !JsonNode.DeepEquals(state["active"],selected)
+                && (config.Workstation || activeRoots.Any(root => !selected.Any(next => JsonNode.DeepEquals(root,next)))
+                    || selectedPaths.Count != selected.Count
+                    || selectedPaths.Any(path => selectedPaths.Any(other => path != other && FileAuditPolicy.InRoot(path,other)))))
+            { writable=false; reason="restore_required"; }
             if (writable && action == "apply") { state["active"]=selected.DeepClone(); state["masks"]=Masks(required); Save(state); }
             if (writable && action == "restore")
             {
-                if (state["active"] is JsonArray active && !active.Select(r => Text(r!,"collection_scope_id")).Order().SequenceEqual(cmd["collection_scope_ids"]!.AsArray().Select(id => id!.ToString()).Order()))
+                if (state["active"] is JsonArray active && (selectiveRestore
+                    ? active.Any(root => !config.Roots.Any(candidate => JsonNode.DeepEquals(root,candidate)))
+                        || retained.Any(root => selectedPaths.Any(path => FileAuditPolicy.InRoot(path, Text(root!,"path"))
+                            || FileAuditPolicy.InRoot(Text(root!,"path"), path)))
+                    : !active.Select(r => Text(r!,"collection_scope_id")).Order().SequenceEqual(cmd["collection_scope_ids"]!.AsArray().Select(id => id!.ToString()).Order())))
                 { writable=false; reason="restore_scope_mismatch"; }
                 else
                 {
-                    reason = RestoreGuard(state,config);
+                    reason = RestoreGuard(state,config,selectiveRestore ? selectedPaths : null);
                     if (reason != "ok") writable=false;
-                    else Restore(state,config);
-                    if (writable && state["objects"]!.AsObject().Count == 0) { state["masks"]=new JsonObject(); state["active"]=null; Save(state); }
+                    else Restore(state,config,selectiveRestore ? selectedPaths : null);
+                    if (writable && !state["objects"]!.AsObject().Any(item => OwnedBySelection(item.Value!)))
+                    {
+                        state["active"] = retained.Count == 0 ? null : retained;
+                        var retainedConfig = (JsonObject)config.Value.DeepClone();
+                        retainedConfig["roots"] = retained.DeepClone();
+                        state["masks"] = retained.Count == 0 ? new JsonObject() : Masks(FileAuditPolicy.Parse(retainedConfig).RequiredMasks());
+                        Save(state);
+                    }
                 }
             }
         }
@@ -246,7 +271,7 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
                     scope["state"]="blocked"; scope["reason_code"]=reason == "ok" ? "management_disabled" : reason;
                     if (action != "check") ResetWalk(state,root);
                 }
-                else if (action == "restore" && state["objects"]!.AsObject().Count > 0) { scope["state"]="partial"; scope["reason_code"]="restore_incomplete"; ResetWalk(state,root); }
+                else if (action == "restore" && SelectedOwnershipRemains()) { scope["state"]="partial"; scope["reason_code"]="restore_incomplete"; ResetWalk(state,root); }
                 var rootConfig = (JsonObject)config.Value.DeepClone(); rootConfig["roots"]=new JsonArray(root.DeepClone());
                 var masks = FileAuditPolicy.Parse(rootConfig).RequiredMasks(); scope["required_masks"]=Masks(masks);
                 scope["actual_masks"]=new JsonObject(masks.Keys.Select(g => new KeyValuePair<string,JsonNode?>(g,actual.TryGetValue(g,out var n) ? JsonValue.Create(n) : null)));
@@ -262,7 +287,8 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
             if (describeReads)
                 report["scopes"]![0]!["read_error"] = (readError ?? FileAuditNativeReadException.Describe(stage, e)).ToJson();
         }
-        report["ownership_remaining"]=state["objects"]!.AsObject().Count > 0 || state["masks"]!.AsObject().Count > 0;
+        report["ownership_remaining"]=action == "restore" ? SelectedOwnershipRemains()
+            : state["objects"]!.AsObject().Count > 0 || state["masks"]!.AsObject().Count > 0;
         state["pending_report"]=report.DeepClone();
         var scopes = report["scopes"]!.AsArray();
         var scopeIds = cmd["collection_scope_ids"]!.AsArray();
@@ -405,13 +431,15 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
         var incomplete = metadataIncomplete || walk["gaps"]!.GetValue<int>() > 0 || stack.Count > 0 || Text(cmd,"action") != "restore" && walk["sacl_missing"] is null;
         return (new JsonObject { ["collection_scope_id"]=scopeId,["state"]=incomplete || missingAny ? "partial" : "verified",["reason_code"]=inventoryFailure ?? (incomplete ? "coverage_incomplete" : missingAny ? "sacl_missing" : "ok") },snapshot);
     }
-    private string RestoreGuard(JsonObject state,FileAuditPolicy config)
+    private string RestoreGuard(JsonObject state,FileAuditPolicy config,HashSet<string>? selectedPaths)
     {
         var timer=System.Diagnostics.Stopwatch.StartNew(); var start=clock?.Invoke() ?? timer.Elapsed; var seen=0;
         var objects=state["objects"]!.AsObject(); if (objects.Count == 0) return "ok";
         foreach (var root in (state["active"] as JsonArray ?? []).OfType<JsonObject>())
         {
-            var rootPath=Text(root,"path"); var stack=new Stack<(string Path,int Depth)>(); stack.Push((rootPath,0));
+            var rootPath=Text(root,"path");
+            if (selectedPaths is not null && !selectedPaths.Contains(rootPath)) continue;
+            var stack=new Stack<(string Path,int Depth)>(); stack.Push((rootPath,0));
             while (stack.TryPop(out var item))
             {
                 if (++seen > config.Number("inventory_objects") || (clock?.Invoke() ?? timer.Elapsed)-start >= TimeSpan.FromSeconds(config.Number("wall_seconds"))) return "restore_scan_incomplete";
@@ -438,11 +466,12 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
         }
         return "ok";
     }
-    private void Restore(JsonObject state,FileAuditPolicy config)
+    private void Restore(JsonObject state,FileAuditPolicy config,HashSet<string>? selectedPaths)
     {
         var timer=System.Diagnostics.Stopwatch.StartNew(); var start=clock?.Invoke() ?? timer.Elapsed; var seen=0; var objects=state["objects"]!.AsObject();
         foreach (var pair in objects.OrderByDescending(x => x.Key.Length).ToArray())
         {
+            if (selectedPaths is not null && !selectedPaths.Contains(Text(pair.Value!,"root"))) continue;
             if (++seen > config.Number("inventory_objects") || (clock?.Invoke() ?? timer.Elapsed)-start >= TimeSpan.FromSeconds(config.Number("wall_seconds"))) break;
             var saved=pair.Value!;
             try

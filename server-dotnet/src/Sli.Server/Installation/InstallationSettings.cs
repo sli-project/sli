@@ -46,6 +46,19 @@ public static class InstallationSettings
         if (key == "security.working_time") return WorkingTime(value);
         if (key == "workstations.logon_policy") return LogonPolicy(value);
         if (key == "ad.service_account_exceptions") return Json(Exceptions(value));
+        if (key == "file_audit.excluded_accounts")
+        {
+            try
+            {
+                if (JsonNode.Parse(value) is JsonArray { Count: <= 100 } accounts
+                    && accounts.All(item => item is JsonValue sid && sid.TryGetValue<string>(out var text)
+                        && text.Length <= 184 && InstallationPackages.Match(text, "S-1-5-21-[0-9]+-[0-9]+-[0-9]+-[0-9]+"))
+                    && accounts.Select(item => item!.ToString()).Distinct(StringComparer.Ordinal).Count() == accounts.Count)
+                    return Json(accounts);
+            }
+            catch (JsonException) { }
+            throw new InstallationException("invalid_plugin_setting_value");
+        }
         string text = PythonText.Strip(value);
         int min = key == "ad.snapshot_history_days" ? 7 : 1;
         int max = key.StartsWith("windows_auth.", StringComparison.Ordinal) ? 744 : 3650;

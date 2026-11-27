@@ -198,8 +198,12 @@ describe("AppShell", () => {
     await renderShell(path);
     const main = within(screen.getByRole("main"));
     expect(await main.findByRole("heading", { name: title })).toBeTruthy();
-    await userEvent.click(main.getByRole("tab", { name: "Подключение" }));
-    expect(main.getByRole("tab", { name: "Подключение", selected: true })).toBeTruthy();
+    if (id === "sli.file-audit") {
+      expect(main.queryByRole("tab", { name: "Подключение" })).toBeNull();
+    } else {
+      await userEvent.click(main.getByRole("tab", { name: "Подключение" }));
+      expect(main.getByRole("tab", { name: "Подключение", selected: true })).toBeTruthy();
+    }
     expect(main.queryByText("В разработке")).toBeNull();
   });
 

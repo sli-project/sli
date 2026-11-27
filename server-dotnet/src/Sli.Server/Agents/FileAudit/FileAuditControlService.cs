@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Npgsql;
 using Sli.Agent.Protocol;
+using Sli.Agent.Core;
 using Sli.Server.Access;
 using Sli.Server.Agents.Control;
 using Sli.Server.Agents.Ingress;
@@ -124,7 +125,128 @@ internal sealed class FileAuditControlService(IAgentControlAudit audit)
         },principal,access,ct);
     }
 
-    public async Task<JsonElement> Enqueue(NpgsqlConnection db,NpgsqlTransaction tx,JsonObject body,Principal principal,CapabilityDecisionSet access,CancellationToken ct)
+    private sealed record ResourceChange(JsonArray? Remaining, JsonObject RetainedReceipts);
+
+    public async Task<JsonElement> ChangeResources(NpgsqlConnection db, NpgsqlTransaction tx, JsonObject body,
+        Principal principal, CapabilityDecisionSet access, CancellationToken ct)
+    {
+        if (!JsonRead.HasExactly(body, "agent_id", "source_instance_id", "expected_revision", "action", "collection_scope_ids")
+            || !JsonRead.TryString(body["source_instance_id"], out var source)
+            || !JsonRead.TryString(body["action"], out var action) || action is not ("apply" or "restore")
+            || body["collection_scope_ids"] is not JsonArray { Count: > 0 and <= 100 } selected
+            || selected.Any(value => !JsonRead.TryString(value, out var scope) || scope.Length is < 1 or > 256)
+            || selected.Select(S).Distinct(StringComparer.Ordinal).Count() != selected.Count)
+            throw Invalid();
+        Guid agentId = AgentControlJson.Id(JsonSerializer.SerializeToElement(body["agent_id"]));
+        RequireScopes(access, principal, agentId, source, selected.Select(S));
+        var agent = await Lock(db, tx, agentId, ct);
+        long revision = Revision(agent, body["expected_revision"]);
+        if (source != Source(agent)) throw new AgentControlException("file_audit_resource_conflict", 409);
+        if (!Flag(agent["collection_policy"]?["manage_windows_audit"]))
+            throw new AgentControlException("file_audit_management_disabled", 409);
+        var state = agent["file_audit"];
+        var previous = state?["request"];
+        var requestConfig = previous?["config"] as JsonObject;
+        var assignment = AgentPolicyAssignments.FindCurrent(agent["assigned_modules"]!.AsArray(), FileAuditPolicy.ModuleId);
+        var active = assignment?["config"] as JsonObject;
+        if (requestConfig?["source_kind"]?.ToString() == "workstation" || active?["source_kind"]?.ToString() == "workstation"
+            || state?["retired_apply"] is not null
+            || Flag(state?["may_own_audit"]) && active is null && previous?["command"]?["action"]?.ToString() != "restore"
+            || previous?["command"]?["action"]?.ToString() == "restore" && state?["state"]?.ToString() != "verified"
+                && action != "restore")
+            throw new AgentControlException("file_audit_restore_required", 409);
+        var config = (active ?? requestConfig)?.DeepClone().AsObject() ?? new JsonObject { ["source_kind"] = "server" };
+        var priorRoots = active?["roots"] as JsonArray ?? [];
+        // An existing restore can be retried, including after the assignment has been removed.
+        if (action == "restore" && previous?["command"]?["action"]?.ToString() == "restore"
+            && state?["state"]?.ToString() != "verified" && requestConfig is not null)
+        {
+            if (!previous["command"]!["collection_scope_ids"]!.AsArray().Select(S).ToHashSet(StringComparer.Ordinal).SetEquals(selected.Select(S)))
+                throw new AgentControlException("file_audit_resource_conflict", 409);
+            config = requestConfig.DeepClone().AsObject();
+            priorRoots = config["roots"]!.AsArray();
+        }
+        RequireScopes(access, principal, agentId, source, priorRoots.OfType<JsonObject>().Select(root => S(root["collection_scope_id"])));
+
+        await using var catalog = new NpgsqlCommand("""
+            select cached_shares::text from public.sli_file_audit_smb_catalog
+            where agent_id=@agent and source_id=@source and supported_until>clock_timestamp() and cached_at is not null
+            """, db, tx);
+        catalog.Parameters.AddWithValue("agent", agentId);
+        catalog.Parameters.AddWithValue("source", source);
+        if (await catalog.ExecuteScalarAsync(ct) is not string shares)
+            throw new AgentControlException("file_audit_resource_conflict", 409);
+        var available = JsonNode.Parse(shares)!.AsArray().OfType<JsonObject>()
+            .Where(row => !FileAuditCatalog.IsAdministrativeShare(S(row["Name"]), S(row["Path"])))
+            .ToDictionary(row => FileAuditCatalog.ScopeId(source, S(row["Name"]), S(row["Path"])), StringComparer.Ordinal);
+        var known = (requestConfig?["roots"] as JsonArray ?? []).OfType<JsonObject>().Concat(priorRoots.OfType<JsonObject>());
+        foreach (var root in known)
+        {
+            string key = FileAuditCatalog.ScopeId(source, S(root["share_name"]), S(root["path"]));
+            if (available.TryGetValue(key, out var value)) available[S(root["collection_scope_id"])] = value;
+        }
+        if (selected.Any(value => !available.ContainsKey(S(value))))
+            throw new AgentControlException("file_audit_resource_conflict", 409);
+
+        var roots = action == "apply" ? MergeResourceRoots(priorRoots, selected, available, known)
+            : priorRoots.DeepClone().AsArray();
+        var remaining = action == "restore" ? new JsonArray(roots.Where(root => !selected.Any(id =>
+            JsonNode.DeepEquals(id, root!["collection_scope_id"]))).Select(root => root!.DeepClone()).ToArray()) : null;
+        if (remaining is not null && roots.Count - remaining.Count != selected.Count)
+            throw new AgentControlException("file_audit_resource_conflict", 409);
+        var retained = new JsonObject();
+        foreach (var root in (remaining ?? priorRoots).OfType<JsonObject>())
+        {
+            string scope = S(root["collection_scope_id"]);
+            var receipt = state?["scopes"]?[scope] ?? state?["permissions_retained"]?[scope];
+            if (receipt?["state"]?.ToString() == "verified" && state?["request"]?["command"]?["action"]?.ToString() != "check")
+                retained[scope] = new JsonObject { ["state"] = "verified",
+                    ["observed_at_utc"] = (receipt["observed_at_utc"] ?? state?["reported_at"])?.DeepClone() };
+            else if (remaining is not null)
+                throw new AgentControlException("file_audit_resource_conflict", 409);
+        }
+        config["roots"] = roots;
+        var commandScopes = new JsonArray(roots.Select(root => root!["collection_scope_id"]!)
+            .Where(scope => action == "apply" || selected.Any(id => JsonNode.DeepEquals(id, scope)))
+            .Select(scope => scope.DeepClone()).ToArray());
+        var request = new JsonObject {
+            ["agent_id"] = agentId.ToString("D"), ["expected_revision"] = revision - 1, ["config"] = config,
+            ["command"] = new JsonObject {
+                ["contract_id"] = "sli.file-audit.audit-command.v1", ["command_id"] = Guid.NewGuid().ToString("D"),
+                ["action"] = action, ["policy_revision"] = revision.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["collection_scope_ids"] = commandScopes,
+            },
+        };
+        if (action == "apply") { request["enabled"] = true; request["activate_collection"] = true; }
+        return await Enqueue(db, tx, request, principal, access, ct, new ResourceChange(remaining, retained));
+    }
+
+    internal static JsonArray MergeResourceRoots(JsonArray prior, JsonArray selected,
+        IReadOnlyDictionary<string, JsonObject> catalog, IEnumerable<JsonObject> known)
+    {
+        var roots = prior.DeepClone().AsArray();
+        foreach (string scope in selected.Select(S))
+        {
+            if (roots.Any(root => S(root!["collection_scope_id"]) == scope)) continue;
+            var share = catalog[scope];
+            string path = S(share["Path"]);
+            if (roots.Any(root => FileAuditPolicy.InRoot(path, S(root!["path"])) || FileAuditPolicy.InRoot(S(root!["path"]), path)))
+                throw new AgentControlException("file_audit_resource_overlap", 409);
+            var previous = known.FirstOrDefault(root => S(root["collection_scope_id"]) == scope);
+            roots.Add(previous?.DeepClone() ?? new JsonObject
+            {
+                ["collection_scope_id"] = scope, ["share_name"] = S(share["Name"]), ["path"] = path, ["important"] = false,
+                ["sacl"] = new JsonObject { ["trustee_sids"] = new JsonArray("S-1-5-11"), ["inherit_files"] = true, ["inherit_directories"] = true },
+            });
+        }
+        return roots;
+    }
+
+    public Task<JsonElement> Enqueue(NpgsqlConnection db,NpgsqlTransaction tx,JsonObject body,Principal principal,
+        CapabilityDecisionSet access,CancellationToken ct) => Enqueue(db,tx,body,principal,access,ct,null);
+
+    private async Task<JsonElement> Enqueue(NpgsqlConnection db,NpgsqlTransaction tx,JsonObject body,Principal principal,
+        CapabilityDecisionSet access,CancellationToken ct, ResourceChange? resource)
     {
         if(JsonRead.HasExactly(body,"agent_id","expected_revision","enabled") && IsBool(body["enabled"]) && !Flag(body["enabled"]))
             return await DisablePermissions(db,tx,body,principal,access,ct);
@@ -144,7 +266,7 @@ internal sealed class FileAuditControlService(IAgentControlAudit audit)
             if(!FileAuditCommand.Valid(cmd,config)) throw new ArgumentException();
             modules=(JsonArray)agent["assigned_modules"]!.DeepClone(); string kind=config["source_kind"]?.GetValue<string>() ?? "server";
             if(kind=="workstation" && S(cmd["action"])!="restore" && !modules.OfType<JsonObject>().Any(x=>x["module_id"]?.GetValue<string>()=="sli.workstations" && Flag(x["enabled"]))) throw new ArgumentException();
-            if(activate || removeAssignment || kind=="workstation" && body.ContainsKey("enabled"))
+            if(activate || removeAssignment || resource?.Remaining is not null || kind=="workstation" && body.ContainsKey("enabled"))
             {
                 if (removeAssignment)
                 {
@@ -162,7 +284,14 @@ internal sealed class FileAuditControlService(IAgentControlAudit audit)
                     config["policy_revision"]=cmd["policy_revision"]!.DeepClone();
                 }
                 var replaced=new JsonArray(); foreach(var item in modules) if(!(item is JsonValue v && v.TryGetValue<string>(out var s) && s=="sli.file-audit") && !(item is JsonObject o && o["module_id"]?.GetValue<string>()=="sli.file-audit")) replaced.Add(item?.DeepClone());
-                if (!removeAssignment) replaced.Add(new JsonObject { ["module_id"]="sli.file-audit",["enabled"]=enabled,["config"]=config.DeepClone() });
+                if (resource?.Remaining is JsonArray { Count: > 0 } remaining)
+                {
+                    var retained = config.DeepClone().AsObject();
+                    retained["roots"] = remaining.DeepClone();
+                    replaced.Add(new JsonObject { ["module_id"]=FileAuditPolicy.ModuleId,["enabled"]=true,["config"]=retained });
+                }
+                else if (!removeAssignment && resource?.Remaining is null)
+                    replaced.Add(new JsonObject { ["module_id"]="sli.file-audit",["enabled"]=enabled,["config"]=config.DeepClone() });
                 modules=replaced;
                 if(modules.Count>64) throw new ArgumentException();
                 try { AgentModuleAssignmentRules.ValidateChannelOwnership(modules); } catch(AgentControlException) { throw new ArgumentException(); }
@@ -170,9 +299,12 @@ internal sealed class FileAuditControlService(IAgentControlAudit audit)
             if(activate && kind=="server" && await AgentPolicyAssignments.FilePermissionsAvailableAsync(db,tx,ct))
             {
                 var roots=config["roots"]!.AsArray();
-                if(roots.Count!=1 || cmd["collection_scope_ids"] is not JsonArray activeScopes || activeScopes.Count!=1
-                    || S(activeScopes[0])!=S(roots[0]!["collection_scope_id"])) throw new ArgumentException();
-                permissionsScope=S(activeScopes[0]);
+                if (resource is null)
+                {
+                    if(roots.Count!=1 || cmd["collection_scope_ids"] is not JsonArray activeScopes || activeScopes.Count!=1
+                        || S(activeScopes[0])!=S(roots[0]!["collection_scope_id"])) throw new ArgumentException();
+                    permissionsScope=S(activeScopes[0]);
+                }
             }
             request=new JsonObject { ["config"]=config.DeepClone(),["command"]=cmd.DeepClone() };
             if(CanonicalJson.Length(request)>48*1024) throw new ArgumentException();
@@ -186,7 +318,7 @@ internal sealed class FileAuditControlService(IAgentControlAudit audit)
         string action=S(cmd["action"]); if(action!="check" && !Flag(agent["collection_policy"]?["manage_windows_audit"])) throw new AgentControlException("file_audit_management_disabled",409);
         var prior=agent["file_audit"] as JsonObject ?? new JsonObject(); bool owned=Flag(prior["may_own_audit"]);
         var priorRequest=prior["request"] ?? prior["retired_apply"];
-        if(owned && (!JsonNode.DeepEquals(config["roots"],priorRequest?["config"]?["roots"])
+        if(owned && resource is null && (!JsonNode.DeepEquals(config["roots"],priorRequest?["config"]?["roots"])
             || prior["retired_apply"] is not null && action!="restore"))
             throw new AgentControlException("file_audit_restore_required",409);
         await using(var insert=new NpgsqlCommand("select sli_plugin_file_audit.enqueue_audit(@agent,@source,@config::jsonb,@command::jsonb,@kind,@actor)",db,tx))
@@ -198,6 +330,14 @@ internal sealed class FileAuditControlService(IAgentControlAudit audit)
         {
             state["permissions_scope"] = permissionsScope;
             state["permissions_restore_origin"] = CommandReference(cmd);
+        }
+        if (resource is not null)
+        {
+            string key = action == "apply" ? "permissions_scopes" : "permissions_restore_scopes";
+            state[key] = cmd["collection_scope_ids"]!.DeepClone();
+            state["permissions_retained"] = resource.RetainedReceipts.DeepClone();
+            if (priorRequest?["command"] is JsonObject previous && previous["action"]?.ToString() is "apply" or "restore")
+                state["previous_resource_command"] = CommandReference(previous);
         }
         if (action is "check" or "restore" && (owned || removeAssignment)
             && JsonRead.TryString(prior["permissions_scope"] ?? prior["permissions_restore_scope"],out var previousScope)

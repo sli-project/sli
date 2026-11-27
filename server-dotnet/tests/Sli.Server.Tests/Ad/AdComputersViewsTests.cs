@@ -39,6 +39,67 @@ public sealed class AdComputersViewsTests(AdComputersViewsTests.Data data) : ICl
         => new(Key, "view", null, domains ?? [2], parameters ?? new(), tab, null, false, limit, cursor, "UTC");
 
     [Fact]
+    public async Task Inventory_uses_enrolled_computer_before_matching_registered_names_within_the_domain()
+    {
+        await data.Seed(2, Computer(), count: 4);
+        await PostCollectionPostgres.Sql(data.Db, """
+            insert into storage_v2_entity_type values(1,'ad_computer');
+            insert into entities_v2 values(1,2,1),(2,2,1),(3,2,1),(4,2,1),(5,3,1);
+            insert into ad_context_entity_aliases(domain_id,normalized_value,alias_type,entity_id) values
+                (2,'short-host$','sam_account_name',2),(3,'short-host$','sam_account_name',5),
+                (2,'ambiguous-host$','sam_account_name',4),(3,'ambiguous-host$','sam_account_name',5);
+            insert into ad_context_entity_versions values
+                (10,3,'directory_accounts',now(),null,now(),null,
+                 '{"attributes":{"dns_host_name":"dns-host.example.test"}}');
+            insert into sli_agents values
+                ('00000000-0000-4000-8000-000000000001',null,now(),now(),'active','short-host','{"agent_version":"1.2.3"}'),
+                ('00000000-0000-4000-8000-000000000002',null,now(),now()-interval '2 days','active','SHORT-HOST','{}'),
+                ('00000000-0000-4000-8000-000000000003',null,now(),now(),'active','DNS-HOST.EXAMPLE.TEST.','{}'),
+                ('00000000-0000-4000-8000-000000000004',null,now(),now(),'active','ambiguous-host','{"agent_version":"4.5.6"}');
+            insert into sli_agent_group_approval_links values('fixture',1);
+            insert into sli_agent_group_requests values(1,1);
+            insert into sli_agent_audit values
+                (1,'00000000-0000-4000-8000-000000000001','enrollment:fixture','issue',now(),'{}'),
+                (2,'00000000-0000-4000-8000-000000000002','enrollment:fixture-2','issue',now(),'{"agent_version":"2.3.4"}');
+            insert into sli_agent_snapshot_bindings values('00000000-0000-4000-8000-000000000002','sli.ad-snapshot','S-1-5-21-100000001-200000002-300000003');
+            insert into sli_agent_update_results values('00000000-0000-4000-8000-000000000003','3.4.5',now(),'fixture','updated');
+            """, Ct);
+        try
+        {
+            var result = await data.Read(Request("computers"));
+            var rows = result["items"]!.AsArray().ToDictionary(row => row!["entity_id"]!.GetValue<long>());
+            Assert.Equal("1.2.3", rows[1]!["sli_agent"]?["version"]?.ToString());
+            Assert.Equal("installed", rows[1]!["sli_agent"]!["state"]!.ToString());
+            Assert.Equal("2.3.4", rows[2]!["sli_agent"]?["version"]?.ToString());
+            Assert.Equal("silent", rows[2]!["sli_agent"]!["state"]!.ToString());
+            Assert.NotNull(rows[2]!["sli_agent"]!["last_seen_utc"]);
+            Assert.Equal("3.4.5", rows[3]!["sli_agent"]?["version"]?.ToString());
+            Assert.Null(rows[4]!["sli_agent"]!["version"]);
+
+            await PostCollectionPostgres.Sql(data.Db, """
+                insert into domains(id,fqdn,domain_sid) values(5,'duplicate.example.test','S-1-5-21-100000001-200000002-300000003');
+                """, Ct);
+            result = await data.Read(Request("computers"));
+            rows = result["items"]!.AsArray().ToDictionary(row => row!["entity_id"]!.GetValue<long>());
+            Assert.Equal(4, rows.Count);
+            Assert.Equal("installed", rows[1]!["sli_agent"]!["state"]!.ToString());
+            Assert.Equal("unknown", rows[2]!["sli_agent"]!["state"]!.ToString());
+            Assert.Null(rows[2]!["sli_agent"]!["version"]);
+            Assert.Equal("3.4.5", rows[3]!["sli_agent"]?["version"]?.ToString());
+        }
+        finally
+        {
+            await PostCollectionPostgres.Sql(data.Db, """
+                truncate sli_agent_update_results,sli_agent_snapshot_bindings,sli_agent_audit,sli_agent_group_requests,
+                    sli_agent_group_approval_links,sli_agents,entities_v2,storage_v2_entity_type;
+                delete from ad_context_entity_versions where id=10;
+                delete from ad_context_entity_aliases where alias_type='sam_account_name';
+                delete from domains where id=5;
+                """, Ct);
+        }
+    }
+
+    [Fact]
     public void Declaration_has_exact_tabs_overlay_name_and_hidden_all_default()
     {
         var declaration = AdV2Endpoints.Definitions[Key]!["declaration"]!;
@@ -226,12 +287,14 @@ public sealed class AdComputersViewsTests(AdComputersViewsTests.Data data) : ICl
                 await pg.StartAsync(Ct); db = await pg.OpenAsync(Ct);
                 await PostCollectionPostgres.Sql(db, """
                     create role adlog_user;
-                    create table domains(id bigint primary key,fqdn text);
-                    insert into domains values(2,'example.test'),(3,'later.example.test');
+                    create table domains(id bigint primary key,fqdn text,domain_sid text,is_archived boolean not null default false);
+                    insert into domains(id,fqdn,domain_sid) values
+                        (2,'example.test','S-1-5-21-100000001-200000002-300000003'),(3,'later.example.test',null);
                     create table ad_snapshot_manifests(manifest_id uuid primary key,domain_id bigint,slot_start_utc timestamptz,assembled_at_utc timestamptz,coverage_state text);
                     create table ad_snapshot_manifest_sources(manifest_id uuid,family text,source_id text,payload_sha256 bytea,source_state text,observed_at_utc timestamptz);
                     create table computers_v6_source_snapshots(snapshot_uuid uuid primary key,domain_id bigint,payload_json jsonb,payload_sha256 bytea,source_options_json jsonb);
                     create table ad_context_entity_aliases(domain_id bigint,normalized_value text,alias_type text,entity_id bigint);
+                    alter table ad_context_entity_aliases add alias_value text generated always as (normalized_value) stored;
                     create table ad_context_runs(run_id uuid,domain_id bigint,bundle_sha256 bytea,observed_at_utc timestamptz,status text);
                     create table ad_context_entity_versions(id bigint,entity_id bigint,source_section text,valid_from_utc timestamptz,
                         valid_to_utc timestamptz,last_observed_at_utc timestamptz,source_run_id uuid,attributes_json jsonb);
@@ -241,6 +304,17 @@ public sealed class AdComputersViewsTests(AdComputersViewsTests.Data data) : ICl
                     create table finding_entities(finding_id bigint,entity_id bigint);
                     create table entities_v2_active(id bigint,display_name text,entity_type_id bigint);
                     create table storage_v2_entity_type(id bigint,value text);
+                    create table entities_v2(id bigint,domain_id bigint,entity_type_id bigint);
+                    create table servers(id bigint,domain_id bigint);
+                    create table sli_agents(id uuid,host_id uuid,created_at timestamptz,last_seen timestamptz,status text,registration_host_name text,rights_probe jsonb);
+                    create table sli_agent_audit(id bigint,target text,actor text,action text,occurred_at timestamptz,details jsonb);
+                    create table sli_agent_group_approval_links(enrollment_token_id text,request_id bigint);
+                    create table sli_agent_group_requests(id bigint,computer_entity_id bigint);
+                    create table sli_agent_removals(agent_id uuid,state text,reported_at timestamptz);
+                    create table sli_agent_update_results(agent_id uuid,version text,observed_at timestamptz,package_sha256 text,status text);
+                    create table sli_agent_snapshot_bindings(agent_id uuid,module_id text,domain_sid text);
+                    create table core_entity_scope_resources(natural_key text,plugin_id text,source_instance_id text,entity_type text,resolution text,entity_id bigint,observed_at_utc timestamptz);
+                    create table core_entity_associations(source_entity_id bigint,target_entity_id bigint,created_at_utc timestamptz,relation text);
                     create function is_semantic_finding_published_v1(bigint) returns boolean language sql as 'select false';
                     """, Ct);
                 await PostCollectionPostgres.InstallSnapshotChangeStorageAsync(db, Ct);
@@ -290,7 +364,7 @@ public sealed class AdComputersViewsTests(AdComputersViewsTests.Data data) : ICl
                 if (slot == 1) for (int i = 0; i < count; i++)
                 {
                     var item = (JsonObject)obj.DeepClone(); item["objectGuid"] = "synthetic-guid-" + i; snapshot["objects"]!.AsArray().Add(item);
-                    await using var alias = new NpgsqlCommand("insert into ad_context_entity_aliases values($1,$2,'object_guid',$3)", db);
+                    await using var alias = new NpgsqlCommand("insert into ad_context_entity_aliases(domain_id,normalized_value,alias_type,entity_id) values($1,$2,'object_guid',$3)", db);
                     alias.Parameters.AddWithValue(domain); alias.Parameters.AddWithValue("synthetic-guid-" + i); alias.Parameters.AddWithValue((long)i + 1); await alias.ExecuteNonQueryAsync(Ct);
                 }
                 var id = Guid.NewGuid(); var snapshotId = Guid.NewGuid(); var observed = stamp.AddDays(slot - 1);

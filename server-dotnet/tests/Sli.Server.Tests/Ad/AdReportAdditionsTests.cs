@@ -216,7 +216,8 @@ public sealed class AdReportAdditionsTests
         await using var pg = await Database();
         await using (var seed = await pg.OpenAsync(Ct))
             await PostCollectionPostgres.Sql(seed, """
-                insert into sli_agents select '00000000-0000-4000-8000-000000000099',host_id,null,null,created_at,last_seen,status,assigned_modules from sli_agents;
+                insert into sli_agents(id,host_id,source_agent_id,source_host_id,created_at,last_seen,status,assigned_modules)
+                select '00000000-0000-4000-8000-000000000099',host_id,null,null,created_at,last_seen,status,assigned_modules from sli_agents;
                 """, Ct);
         foreach (var (native, split, expected) in new[] { (false, false, "synthetic-ad"), (true, true, "synthetic-ad"), (true, false, "synthetic-ad") })
         {
@@ -271,7 +272,7 @@ public sealed class AdReportAdditionsTests
         {
             await pg.StartAsync(Ct); await using var db = await pg.OpenAsync(Ct);
             await PostCollectionPostgres.Sql(db, """
-                create table domains(id bigint,fqdn text,is_archived boolean default false);
+                create table domains(id bigint,fqdn text,is_archived boolean default false,domain_sid text);
                 insert into domains(id,fqdn) values(2,'example.test');
                 create table platform_settings(key text,value text); insert into platform_settings values('reports.domain_fqdn','example.test');
                 create table ad_context_runs(domain_id bigint,status text,observed_at_utc timestamptz);
@@ -287,9 +288,12 @@ public sealed class AdReportAdditionsTests
                 create table ad_context_entity_aliases(entity_id bigint,domain_id bigint,alias_type text,alias_value text,normalized_value text);
                 insert into ad_context_entity_aliases values(1,2,'object_guid','00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001');
                 create table ad_context_entity_versions(entity_id bigint,source_section text,valid_to_utc timestamptz,attributes_json jsonb);
-                create table sli_agents(id uuid,host_id uuid,source_agent_id uuid,source_host_id uuid,created_at timestamptz,last_seen timestamptz,status text,assigned_modules jsonb);
-                insert into sli_agents values('00000000-0000-4000-8000-000000000007','00000000-0000-4000-8000-000000000008',null,null,now()-interval '10 days',now()-interval '3 minutes','active','[{"module_id":"sli.workstations"}]');
-                create table sli_agent_audit(target text,actor text,occurred_at timestamptz,action text);
+                create table sli_agents(id uuid,host_id uuid,source_agent_id uuid,source_host_id uuid,created_at timestamptz,last_seen timestamptz,status text,assigned_modules jsonb,
+                    registration_host_name text,rights_probe jsonb not null default '{}');
+                insert into sli_agents(id,host_id,created_at,last_seen,status,assigned_modules)
+                values('00000000-0000-4000-8000-000000000007','00000000-0000-4000-8000-000000000008',now()-interval '10 days',now()-interval '3 minutes','active','[{"module_id":"sli.workstations"}]');
+                create table sli_agent_audit(id bigint,target text,actor text,occurred_at timestamptz,action text,details jsonb);
+                create table sli_agent_snapshot_bindings(agent_id uuid,module_id text,domain_sid text,primary key(agent_id,module_id));
                 create table sli_agent_group_approval_links(enrollment_token_id uuid,request_id bigint);
                 create table sli_agent_group_requests(id bigint,computer_entity_id bigint);
                 create table sli_agent_removals(agent_id uuid,state text,reported_at timestamptz);
