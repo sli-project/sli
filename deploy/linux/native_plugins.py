@@ -75,7 +75,7 @@ def bootstrap(connection) -> None:
     optimistic revision check and append-only audit in the same transaction.
     Already registered databases retain their owner's activation settings.
     """
-    from server.sli.sources.plugin_lifecycle import initial_remote_access_state, plan_plugin_lifecycle
+    from deploy.linux.sli_core.plugin_lifecycle import initial_remote_access_state, plan_plugin_lifecycle
 
     with connection.transaction():
         row = connection.execute(

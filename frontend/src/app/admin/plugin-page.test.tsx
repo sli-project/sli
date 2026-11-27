@@ -19,6 +19,7 @@ let settings: PluginSettings;
 let requests: Array<{ path: string; method: string; body?: { key: string; value: unknown } }>;
 let rejectKey = "";
 let denySettings = false;
+let sigmaEnabled = true;
 let radiusSources: Array<{ source_instance_id: string; source_state: string }>;
 let client: QueryClient;
 const plugin = (plugin_id: string) => ({ plugin_id, installed: true, configured: true, enabled: true,
@@ -26,7 +27,7 @@ const plugin = (plugin_id: string) => ({ plugin_id, installed: true, configured:
   status: { state: plugin_id === "sli.remote-access" ? "disabled" : "waiting", last_data_at: null, error_at: null, error_object: null } });
 
 beforeEach(() => {
-  settings = original(); requests = []; rejectKey = ""; denySettings = false; radiusSources = [];
+  settings = original(); requests = []; rejectKey = ""; denySettings = false; radiusSources = []; sigmaEnabled = true;
   access.subject.coarse_role = "admin"; access.platform_owner = true;
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
   vi.stubGlobal("fetch", vi.fn(async (path: string, options?: RequestInit) => {
@@ -53,7 +54,12 @@ beforeEach(() => {
       { key: "ad.infrastructure", title: "Состояние домена", description: "Каталог", section: "active-directory", section_title: "AD", owner_id: "sli.ad" },
       { key: "ad.gpo.v2", title: "Политики", description: "GPO", section: "active-directory", section_title: "AD", owner_id: "sli.gpo" },
     ] });
-    if (path === "/api/v1/semantic/sigma-rules") return json({ state: "available", rules: [] });
+    if (path === "/api/v1/semantic/sigma-live-rules") {
+      if (method === "POST") sigmaEnabled = body.enabled;
+      return json({ rules: [{ rule_id: "7b449a5e-1db5-4dd0-a2dc-4e3a67282538",
+        title: "Hidden Local User Creation", level: "high", author: "SigmaHQ", license: "DRL-1.1",
+        source_uri: "https://example.test/rule", enabled: sigmaEnabled, matches_24h: 4 }] });
+    }
     throw new Error(`Unexpected request ${method} ${path}`);
   }));
 });
@@ -67,6 +73,19 @@ async function openSettings() {
   return screen.findByRole("spinbutton", { name: t("plugins.sli.ad.settings.ad.inactivity_days.label") });
 }
 const writes = () => requests.filter((request) => request.method === "PUT");
+
+it("opens Sigma on the rules table and applies the authoritative switch response", async () => {
+  mount("sli.sigma");
+  const row = await screen.findByRole("row", { name: /Hidden Local User Creation/ });
+  expect(within(row).getByText("4")).toBeTruthy();
+  const toggle = within(row).getByRole("switch", { name: "Hidden Local User Creation", checked: true });
+  fireEvent.click(toggle);
+  await waitFor(() => expect(within(row).getByRole("switch", { checked: false })).toHaveProperty("disabled", false));
+  expect(requests.filter((request) => request.method === "POST")).toEqual([{
+    path: "/api/v1/semantic/sigma-live-rules", method: "POST",
+    body: { rule_id: "7b449a5e-1db5-4dd0-a2dc-4e3a67282538", enabled: false },
+  }]);
+});
 
 it.each(["sli.ad", "sli.gpo", "sli.workstations", "sli.file-audit", "sli.remote-access", "sli.sigma"])("renders five working tabs for %s", async (id) => {
   mount(id);

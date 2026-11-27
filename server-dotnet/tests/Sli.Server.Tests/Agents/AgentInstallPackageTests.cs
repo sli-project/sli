@@ -5,6 +5,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Configuration;
+using Npgsql;
 using Sli.Server.Agents.Certificates;
 using Sli.Server.Agents.Control;
 using Sli.Server.Agents.Registry;
@@ -50,9 +51,7 @@ public sealed class AgentInstallPackageTests
         RequireMsiTools();
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new SqlPostgresFixture();
-        await fixture.StartAsync(ct, throughVersion: 442);
-        await fixture.Pg.ApplyFileAsync(Path.Combine(SqlPostgresFixture.Repository(),
-            "config/postgres_migrations/443_agent_install_package.sql"), null, ct);
+        await fixture.StartAsync(ct);
 
         string release = Path.Combine(fixture.Pg.Root, "release.msi");
         string updated = Path.Combine(fixture.Pg.Root, "updated.msi");
@@ -145,19 +144,45 @@ public sealed class AgentInstallPackageTests
         }
     }
 
+    [Fact]
+    public async Task Installer_migration_applies_after_the_predecessor_and_rolls_back()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var migrations = MigrationDirectory.Read();
+        var installer = Assert.Single(migrations, m => m.Version == 446);
+        int predecessor = migrations.Where(m => m.Version < installer.Version).Max(m => m.Version);
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct, throughVersion: predecessor);
+        await fixture.Pg.ApplyFileAsync(installer.Path, null, ct);
+        await fixture.Pg.ApplyFileAsync(Path.ChangeExtension(installer.Path, ".rollback.sql"), null, ct);
+        await fixture.Pg.ApplyFileAsync(installer.Path, null, ct);
+        await using var app = new NpgsqlConnection(fixture.Dsn("adlog_user"));
+        await app.OpenAsync(ct);
+        await using var check = new NpgsqlCommand("""
+            select has_column_privilege(current_user, 'sli_agent_console_tokens', 'installer', 'UPDATE')
+                and has_column_privilege(current_user, 'sli_agents', 'machine_role', 'UPDATE')
+            """, app);
+        Assert.True(Assert.IsType<bool>(await check.ExecuteScalarAsync(ct)));
+        await fixture.AssertNoSqlErrorsAsync(ct);
+    }
+
     private static void RequireMsiTools() => Assert.SkipUnless(
         OperatingSystem.IsLinux() && File.Exists("/usr/bin/msibuild") && File.Exists("/usr/bin/msiinfo"), "Requires Debian msitools");
 
-    private static async Task StageSourceAsync(string path, string version, CancellationToken ct)
+    internal static async Task StageSourceAsync(string path, string version, CancellationToken ct)
     {
-        using var process = Process.Start(new ProcessStartInfo("/usr/bin/msibuild") {
-            ArgumentList = { path, "-s", "Test Agent", "SLI", "x64;1033", Guid.NewGuid().ToString("B"),
-                "-q", "CREATE TABLE `Property` (`Property` CHAR(72) NOT NULL, `Value` CHAR(0) NOT NULL LOCALIZABLE PRIMARY KEY `Property`)",
-                "-q", $"INSERT INTO `Property` (`Property`, `Value`) VALUES ('ProductName', 'Test Agent')",
-                "-q", $"INSERT INTO `Property` (`Property`, `Value`) VALUES ('ProductVersion', '{version}')" },
-        })!;
-        await process.WaitForExitAsync(ct);
-        Assert.Equal(0, process.ExitCode);
+        string table = Path.Combine(Path.GetDirectoryName(path)!, "Property.idt");
+        await File.WriteAllTextAsync(table, "Property\tValue\r\ns72\tl0\r\nProperty\tProperty\r\n"
+            + $"ProductName\tTest Agent\r\nProductVersion\t{version}\r\n", ct);
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo("/usr/bin/msibuild") {
+                ArgumentList = { path, "-i", table },
+            })!;
+            await process.WaitForExitAsync(ct);
+            Assert.Equal(0, process.ExitCode);
+        }
+        finally { File.Delete(table); }
         string digest = await AgentInstallPackage.DigestAsync(path, ct);
         await File.WriteAllTextAsync(path + ".json", JsonSerializer.Serialize(new { product_version = version, sha256 = digest }), ct);
     }

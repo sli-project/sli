@@ -74,7 +74,10 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
             DateTimeOffset.UtcNow.AddDays(1), RandomNumberGenerator.GetBytes(16));
         await File.WriteAllTextAsync(serverCertificatePath, serverCertificate.ExportCertificatePem(), ct);
         string installer = Path.Combine(fixture.Pg.Root, "synthetic-agent.msi");
-        await File.WriteAllTextAsync(installer, "synthetic package bytes", ct);
+        if (OperatingSystem.IsLinux())
+            await AgentInstallPackageTests.StageSourceAsync(installer, "1.2.3", ct);
+        else
+            await File.WriteAllTextAsync(installer, "synthetic package bytes", ct);
         using var transportTrust = new Sli.Server.Hosting.AgentTlsTrust(trust);
         var package = AgentPackageTests.Fixture()["cases"]!.AsArray().First(c => c!["error"] is null)!;
         string updateTrust = Path.Combine(fixture.Pg.Root, "synthetic-package-trust.json");
@@ -212,6 +215,11 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
         await Check(investigation + "/events", new { event_db_id = eventId }, 503, error: "module_disabled");
         await Check(investigation + "/events/remove", new { event_db_id = eventId }, 503, error: "module_disabled");
         await Check("/api/v1/platform-settings/semantic-control", new { action = "create_suppression", semantic_type = "sql.fixture", domain_id = 1, scope_kind = "bucket", scope_value = "unknown", reason = "Synthetic SQL suppression", expires_at = DateTimeOffset.UtcNow.AddDays(1) });
+        const string sigmaRule = "7b449a5e-1db5-4dd0-a2dc-4e3a67282538";
+        var sigma = await Check("/api/v1/semantic/sigma-live-rules", new { rule_id = sigmaRule, enabled = false });
+        var toggled = (sigma?["rules"] as JsonArray)?.SingleOrDefault(rule => rule?["rule_id"]?.GetValue<string>() == sigmaRule);
+        if (toggled?["enabled"]?.GetValue<bool>() is not false)
+            failures.Add("Sigma rule toggle did not return the starter rule as disabled.");
         await Check("/api/v1/semantic/scenarios/00000000-0000-4000-8000-000000000001/review", new { verdict = "confirmed_security", review_confidence = "high", rationale = "Synthetic SQL review", review_request_id = "00000000-0000-4000-8000-000000000002" }, 201);
         var search = await Check("/api/v1/event-search/query", new { contract_version = "evsearch.v1" });
         string execution = search?["execution_id"]?.ToString() ?? "missing";
@@ -373,6 +381,31 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
         long fileRevision;
         await using (var version = new NpgsqlCommand("select policy_revision from sli_agents where id='00000000-0000-4000-8000-000000000001'", admin)) fileRevision = Convert.ToInt64(await version.ExecuteScalarAsync(ct));
         await Check("/api/v1/admin/agents/file-audit", new { agent_id = agent, expected_revision = fileRevision, config = fileConfig, command = new { contract_id = "sli.file-audit.audit-command.v1", command_id = "sql-file-command", action = "check", policy_revision = (fileRevision+1).ToString(), collection_scope_ids = new[] { "sql-scope" } } });
+        const string installerRoute = "/api/v1/admin/agent-install-package";
+        var installerSettings = new { server_url = $"https://{consoleHost}", host_limit = 2 };
+        if (OperatingSystem.IsLinux())
+        {
+            var createdInstaller = await Check(installerRoute, installerSettings);
+            var updatedInstaller = await Check(installerRoute, installerSettings with { host_limit = 3 });
+            if (updatedInstaller?["host_limit"]?.GetValue<int>() != 3)
+                failures.Add("Installer host limit was not updated.");
+            await using var activeInstaller = new NpgsqlCommand(
+                "select id from sli_agent_console_tokens where installer is not null and revoked_at is null", admin);
+            var installerId = await activeInstaller.ExecuteScalarAsync(ct);
+            var replacementInstaller = await Check(installerRoute + "/revoke", new { id = installerId ?? Guid.Empty });
+            if (createdInstaller?["package_url"] is null || updatedInstaller?["package_url"] is null ||
+                replacementInstaller?["package_url"] is null ||
+                replacementInstaller["package_url"]!.ToString() == updatedInstaller["package_url"]!.ToString())
+                failures.Add("Installer revocation did not publish a replacement package.");
+        }
+        else
+        {
+            await Check(installerRoute, installerSettings, 503, error: "agent_console_package_unavailable");
+            await Check(installerRoute + "/revoke", new { id = agent }, 404, error: "enrollment_token_not_found");
+        }
+        var machineRole = await Check("/api/v1/admin/agents/role", new { agent_id = agent, machine_role = "file_server" });
+        if (machineRole?["machine_role"]?.GetValue<string>() != "file_server")
+            failures.Add("Agent role was not updated.");
         await Check("/api/v1/admin/agents/revoke", new { agent_id = agent, serial = "a" });
         await Check("/api/v1/admin/agents/disable", new { agent_id = agent });
         await Check("/api/v1/admin/agents/remove", new { operation_id = agent, agent_ids = new[] { agent } });

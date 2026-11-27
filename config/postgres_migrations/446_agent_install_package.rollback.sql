@@ -1,10 +1,10 @@
 begin;
-select pg_advisory_xact_lock(hashtext('sli_agent_install_package443'));
+select pg_advisory_xact_lock(hashtext('sli_agent_install_package446'));
 do $$ begin
     if not pg_has_role(session_user,'adlog_storage_owner','MEMBER')
-       or not exists(select 1 from public.schema_migrations where version=443 and name='agent_install_package')
-       or exists(select 1 from public.schema_migrations where version>443) then
-        raise exception 'agent_install_package443_rollback_preflight' using errcode='55000';
+       or not exists(select 1 from public.schema_migrations where version=446 and name='agent_install_package')
+       or exists(select 1 from public.schema_migrations where version>446) then
+        raise exception 'agent_install_package446_rollback_preflight' using errcode='55000';
     end if;
 end $$;
 set local role adlog_storage_owner;
@@ -26,5 +26,5 @@ alter table public.sli_agent_console_tokens
     add constraint sli_agent_console_tokens_check
         check (expires_at > created_at and expires_at <= created_at + interval '1 hour');
 
-delete from public.schema_migrations where version=443 and name='agent_install_package';
+delete from public.schema_migrations where version=446 and name='agent_install_package';
 commit;

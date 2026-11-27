@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 
-from server.sli.sources.plugin_lifecycle import (
+from deploy.linux.sli_core.plugin_lifecycle import (
     PluginLifecycleError,
     execute_plugin_lifecycle,
     initial_remote_access_state,

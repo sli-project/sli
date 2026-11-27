@@ -293,17 +293,16 @@ def owner_recovery(username):
     """Issue only to the root terminal using the verified installed runtime."""
     require(sys.stdout.isatty(), 'native_owner_recovery_terminal_required')
     current = install.CURRENT.resolve(strict=True)
-    root, manifest, _ = install.inventory(current.name)
+    root, _, _ = install.inventory(current.name)
     require(root == current, 'native_setup_configuration_conflict')
-    script = root / 'scripts/auth/manage_auth.py'
-    install.trusted(script)
+    executable = Path('/opt/sli/dotnet') / root.name / 'Sli.Server'
+    install.trusted_path(executable)
     # Pass only the runtime credential path, never an administrative password.
     env = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C.UTF-8',
            'SLI_DEPLOYMENT_MODE': 'native', 'ADLOG_DB_BACKEND': 'postgres',
            'ADLOG_PG_DSN': 'host=127.0.0.1 port=5432 dbname=sli user=adlog_user',
            'ADLOG_PG_PASSWORD_FILE': str(install.SECRETS / 'runtime_password')}
-    result = subprocess.run([manifest['python'], '-I', '-B', str(script),
-                             'owner-recovery', '--username', username],
+    result = subprocess.run([str(executable), 'owner-recovery', '--username', username],
                             cwd=root, env=env, stderr=subprocess.PIPE, timeout=30, check=False)
     require(result.returncode == 0, 'native_owner_recovery_failed')
 

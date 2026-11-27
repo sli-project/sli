@@ -64,14 +64,13 @@ describe("registry compatibility redirects", () => {
   });
 
   it.each(["/report/file-audit.overview", "/report/file-audit.permission-changes", "/report/file-audit.actions", "/admin/plugins/sli.file-audit",
-    "/report/workstations.overview", "/admin/plugins/sli.workstations"])
+    "/report/workstations.overview", "/admin/plugins/sli.workstations", "/admin/plugins/sli.sigma"])
   ("opens product module routes without preview: %s", (path) => {
     expect(navigationRedirect(path, {})).toBeNull();
     expect(previewModulePath(path)).toBe(false);
   });
 
-  it.each(["/admin/plugins/sli.remote-access", "/admin/plugins/sli.sigma",
-    "/extensions/sli.sigma/rules",
+  it.each(["/admin/plugins/sli.remote-access",
     "/report/vpn.connections", "/reports/vpn.audit",
   ])("retains %s so the shell can show the server-controlled availability state", (path) => {
     expect(navigationRedirect(path, {})).toBeNull();

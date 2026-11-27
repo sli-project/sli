@@ -1,10 +1,11 @@
 begin;
-select pg_advisory_xact_lock(hashtext('sli_agent_install_package443'));
+select pg_advisory_xact_lock(hashtext('sli_agent_install_package446'));
 do $$ begin
     if not pg_has_role(session_user,'adlog_storage_owner','MEMBER')
        or not exists(select 1 from public.schema_migrations where version=442 and name='agent_unicode_host_names')
-       or exists(select 1 from public.schema_migrations where version>=443) then
-        raise exception 'agent_install_package443_preflight' using errcode='55000';
+       or not exists(select 1 from public.schema_migrations where version=444 and name='detection_campaigns')
+       or exists(select 1 from public.schema_migrations where version>=446) then
+        raise exception 'agent_install_package446_preflight' using errcode='55000';
     end if;
 end $$;
 set local role adlog_storage_owner;
@@ -33,5 +34,5 @@ grant update (machine_role) on public.sli_agents to adlog_user;
 create index sli_agent_audit_enrollment_rejections on public.sli_agent_audit (occurred_at desc, id desc)
     where action='issue' and actor='enrollment' and details->>'outcome'='rejected';
 
-insert into public.schema_migrations(version,name) values(443,'agent_install_package');
+insert into public.schema_migrations(version,name) values(446,'agent_install_package');
 commit;

@@ -18,7 +18,7 @@ internal sealed record SigmaRule(string Id, string Sha, string LogSource, SigmaE
     private static readonly Dictionary<string, HashSet<string>> Allowed = new()
     {
         ["security"] = ["EventID", "Provider_Name", "AuditPolicyChanges", "SubcategoryGuid", "AuthenticationPackageName", "IpAddress", "IpPort", "KeyLength", "LogonProcessName", "LogonType", "NewTargetUserName", "PreAuthType", "SamAccountName", "ServiceFileName", "ServiceName", "ServiceStartType", "ServiceType", "Status", "SubStatus", "SubjectUserName", "SubjectUserSid", "TargetSid", "TargetUserName", "TargetUserSid", "TaskContent", "TaskContentNew", "TicketEncryptionType", "TicketOptions"],
-        ["system"] = ["EventID", "Provider_Name", "ServiceName", "ImagePath"], ["process_creation"] = ["Image", "ParentImage", "CommandLine"]
+        ["system"] = ["EventID", "Provider_Name", "ServiceName", "ImagePath"], ["process_creation"] = ["Image", "ParentImage", "CommandLine"], ["ps_script"] = ["ScriptBlockText"]
     };
     internal static SigmaRule Compile(string yaml, string? license = null, string sourceUri = "", string upstreamCommit = "")
     {
@@ -27,7 +27,7 @@ internal sealed record SigmaRule(string Id, string Sha, string LogSource, SigmaE
         if ((doc.Text("taxonomy") ?? "sigma") != "sigma") throw new InvalidDataException("taxonomy_unsupported");
         if (!Guid.TryParse(doc.Text("id"), out var id) || string.IsNullOrWhiteSpace(doc.Text("author"))) throw new InvalidDataException("metadata_missing");
         if (license is not null && doc.Text("license") is { } declared && declared != license) throw new InvalidDataException("license_mismatch");
-        var source = doc["logsource"]!.AsObject(); string logsource = source.Text("category") == "process_creation" && !source.ContainsKey("service") ? "process_creation" : !source.ContainsKey("category") ? source.Text("service") ?? "" : "";
+        var source = doc["logsource"]!.AsObject(); string logsource = (source.Text("category") is "process_creation" or "ps_script") && !source.ContainsKey("service") ? source.Text("category")! : !source.ContainsKey("category") ? source.Text("service") ?? "" : "";
         if (source.Text("product") != "windows" || source.Any(x => x.Key is not ("product" or "service" or "category" or "definition")) || !Allowed.ContainsKey(logsource)) throw new InvalidDataException("logsource_unsupported");
         var detection = doc["detection"]!.AsObject(); var named = new Dictionary<string, SigmaExpression>(StringComparer.Ordinal); int nodes = 0, expandedValues = 0, expandedBytes = 0;
         // Match compiler.py's aggregate input budget before allocating any
@@ -95,7 +95,12 @@ internal sealed record SigmaRule(string Id, string Sha, string LogSource, SigmaE
                         if (modifiers.Contains("re")) compares.Add(new("compare", [], field, "regex", JsonValue.Create(s)));
                         else
                         {
-                            if (modifiers.Contains("startswith") || modifiers.Contains("contains")) s += "*";
+                            if (modifiers.Contains("startswith") || modifiers.Contains("contains"))
+                            {
+                                // Preserve a literal trailing backslash when appending the wildcard.
+                                if ((s.Length - s.AsSpan().TrimEnd('\\').Length) % 2 != 0) s += "\\";
+                                s += "*";
+                            }
                             if (modifiers.Contains("endswith") || modifiers.Contains("contains")) s = "*" + s;
                             var expanded = new List<string> { s };
                             if (modifiers.Contains("windash"))

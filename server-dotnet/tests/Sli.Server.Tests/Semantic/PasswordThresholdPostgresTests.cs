@@ -252,6 +252,159 @@ public sealed class PasswordThresholdPostgresTests(ITestOutputHelper output)
         Assert.Equal(1L, await notifications.ExecuteScalarAsync(ct));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Flood_opens_five_problems_and_upgrade_preserves_history(bool upgrade)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct, throughVersion: upgrade ? 442 : null);
+        await using var owner = await fixture.Pg.OpenAsync(ct);
+        var start = DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.AddHours(-7).ToUnixTimeSeconds());
+        await ShortEventAdmissionPostgresTests.WriteAsync(fixture,
+            await ShortEventAdmissionPostgresTests.SeedAsync(owner, ct, occurredAt: start.AddSeconds(-5),
+                eventKinds: [4625], nativeAddresses: ["192.0.2.250"]), ct);
+        await PostCollectionPostgres.Sql(owner, """
+            update sli_agent_module_bindings set password_detection_domain_id=1 where module_id='sli.windows.ad-dc';
+            insert into notification_subscriptions(id,owner_user_id,recipient_user_id,channel,enabled)
+                select '00000000-0000-4000-8000-000000004401',id,id,'telegram',true
+                from auth_users where username='platform-owner';
+            """, ct);
+        var agent = ShortEventAdmissionPostgresTests.Agent;
+        await using var runtime = Runtime(fixture);
+        await using var worker = await runtime.OpenAsync(ct);
+        var scope = await Scope(worker, ct);
+        foreach (string rule in PasswordAttacks.Rules)
+            await Pass(runtime, worker, scope, rule, start, ct);
+
+        var spray = Enumerable.Range(1, 40).SelectMany(address => Enumerable.Range(1, 18)
+            .Select(user => (Account: $"spray-user-{user}", Address: $"192.0.2.{address}",
+                At: start.AddMinutes(9 * (address - 1)).AddSeconds(user - 1))));
+        var brute = Enumerable.Range(1, 3).SelectMany(account => Enumerable.Range(1, 20)
+            .Select(address => (Account: $"brute-user-{account}", Address: $"198.51.100.{address}",
+                At: start.AddMinutes(350).AddSeconds(address))));
+        var attacks = spray.Concat(brute).OrderBy(item => item.At).ToArray();
+        var last = attacks[^1].At;
+        async Task AttackInput((string Account, string Address, DateTimeOffset At)[] rows, int sequence, int record)
+        {
+            var input = await ShortEventAdmissionPostgresTests.SeedAsync(owner, ct,
+                eventKinds: rows.Select(_ => 4625).ToArray(), registered: (agent, agent, 900001, 1),
+                packetId: Guid.NewGuid(), sequence: sequence, firstRecordId: record,
+                nativeAccounts: rows.Select(row => row.Account).ToArray(),
+                nativeAddresses: rows.Select(row => row.Address).ToArray(),
+                nativeTimestamps: rows.Select(row => PasswordJson.Stamp(row.At)).ToArray());
+            await ShortEventAdmissionPostgresTests.WriteAsync(fixture, input, ct);
+        }
+        await AttackInput(attacks, 2, 101);
+        foreach (string rule in PasswordAttacks.Rules)
+            await Pass(runtime, worker, scope, rule, last.AddMinutes(1), ct);
+
+        var auditAt = start.AddMinutes(352);
+        var audit = await ShortEventAdmissionPostgresTests.SeedAsync(owner, ct,
+            eventKinds: Enumerable.Repeat(4719, 16).ToArray(), registered: (agent, agent, 900001, 1),
+            packetId: Guid.NewGuid(), sequence: 3, firstRecordId: 1001,
+            nativeTimestamps: Enumerable.Range(0, 16).Select(i => PasswordJson.Stamp(auditAt.AddSeconds(i))).ToArray(),
+            nativeFields: new Dictionary<string, string> {
+                ["SubjectUserName"] = "audit-operator", ["SubjectDomainName"] = "example.test",
+                ["SubjectUserSid"] = "S-1-5-21-100000001-200000002-300000003-1105",
+                ["CategoryId"] = "%%8273", ["SubcategoryId"] = "%%12544",
+                ["SubcategoryGuid"] = "{0cce9215-69ae-11d9-bed3-505054503030}", ["AuditPolicyChanges"] = "%%8448"
+            });
+        await ShortEventAdmissionPostgresTests.WriteAsync(fixture, audit, ct);
+        var detection = await new DetectionProducer(new(), new()).RunOnceAsync(worker, ct, refreshImport: false);
+        Assert.Equal(0, detection.Failed);
+        Assert.Equal(16, detection.Jobs);
+        await Publish(runtime, worker, detection.Jobs, ct);
+
+        async Task<long> Count(string query)
+        {
+            await using var command = new NpgsqlCommand(query, owner);
+            return (long)(await command.ExecuteScalarAsync(ct))!;
+        }
+        const string open = "select count(*) from findings where status='new'";
+        const string notifications = "select count(*) from notification_outbox where object_kind='semantic_finding' and state='pending'";
+        const string history = "select count(*) from finding_status_history";
+        var later = last.AddMinutes(21);
+        Task LaterBurst() => AttackInput(Enumerable.Range(1, 18)
+            .Select(i => ($"spray-user-{i}", "192.0.2.1", later.AddSeconds(i))).ToArray(), 4, 2001);
+        if (upgrade)
+        {
+            Assert.Equal(59L, await Count(open));
+            await PostCollectionPostgres.Sql(owner, """
+                update findings set password_threshold_facts418=password_threshold_facts418-'account_members'-'address_members'
+                where password_threshold_facts418 is not null;
+                """, ct);
+            await PostCollectionPostgres.Sql(owner, """
+                with retired as (
+                    insert into findings(fingerprint,rule_code,title,severity,confidence,status,first_seen_utc,last_seen_utc,
+                        evidence_count,status_reason,repeat_count,closed_at)
+                    values('synthetic-closed-440','semantic.qw.password-spray','Reviewed campaign','high',1,'closed',
+                        to_jsonb(clock_timestamp()-interval '2 days')#>>'{}',to_jsonb(clock_timestamp()-interval '2 days')#>>'{}',
+                        0,'Reviewed before upgrade',0,clock_timestamp()-interval '1 day') returning id
+                )
+                insert into finding_status_history(finding_id,old_status,new_status,changed_by,note)
+                select id,'new','closed','fixture-operator','Reviewed before upgrade' from retired
+                """, ct);
+            Assert.Equal(442L, await Count("select max(version)::bigint from schema_migrations"));
+            await PostCollectionPostgres.Sql(owner, "revoke temporary on database postgres from public", ct);
+            long before = await Count(history);
+            string path = Path.Combine(PostCollectionPostgres.Repository(), "config/postgres_migrations/444_detection_campaigns.sql");
+            await fixture.Pg.ApplyFileAsync(path, null, ct);
+            Assert.Equal(5L, await Count(open));
+            Assert.Equal(54L, await Count("select count(*) from findings where status='closed' and status_reason like 'problem_campaign_merged444:%'"));
+            Assert.Equal(before + 54, await Count(history));
+            Assert.Equal(1L, await Count("""
+                select count(*) from finding_status_history h join findings f on f.id=h.finding_id
+                where f.fingerprint='synthetic-closed-440' and f.status='closed'
+                  and h.changed_by='fixture-operator' and h.note=f.status_reason and h.note='Reviewed before upgrade'
+                """));
+            await fixture.Pg.ApplyFileAsync(Path.ChangeExtension(path, ".rollback.sql"), null, ct);
+            Assert.Equal(59L, await Count(open));
+            Assert.Equal(before, await Count(history));
+            await fixture.Pg.ApplyFileAsync(path, null, ct);
+        }
+        else Assert.Equal(5L, await Count(notifications));
+        Assert.Equal(5L, await Count(open));
+        Assert.Equal(5L, await Count("select count(*) from public.home_published_findings424(array(select id from findings where status='new'))"));
+        Assert.Equal(1L, await Count("select count(*) from findings where status='new' and rule_code='semantic.qw.audit-disabled'"));
+        await using (var command = new NpgsqlCommand("""
+            select last_seen_utc::timestamptz from findings where status='new' and rule_code='semantic.qw.audit-disabled'
+            """, owner))
+            Assert.Equal(auditAt.AddSeconds(15).UtcDateTime, await command.ExecuteScalarAsync(ct));
+        Assert.Equal(3L, await Count("""
+            select count(*) from findings where status='new' and rule_code='semantic.qw.password-brute-force'
+            and password_threshold_facts418->>'attempts'='20' and password_threshold_facts418->>'address_count'='20'
+            """));
+        await using (var command = new NpgsqlCommand("""
+            select password_threshold_facts418::text from findings where status='new' and rule_code='semantic.qw.password-spray'
+            """, owner))
+        {
+            var facts = JsonNode.Parse((string)(await command.ExecuteScalarAsync(ct))!)!.AsObject();
+            Assert.Equal(40, facts.Number("address_count"));
+            Assert.Equal(18, facts.Number("account_count"));
+            Assert.Equal(720, facts.Number("attempts"));
+            Assert.Equal(start, D.Time(facts["first"]));
+            Assert.Equal(last, D.Time(facts["last"]));
+            Assert.Contains("40 addresses", Title(facts, PasswordAttacks.Spray, "en"));
+            Assert.Contains("40 адресов", Title(facts, PasswordAttacks.Spray, "ru"));
+            Assert.Contains("5 h 51 min", Title(facts, PasswordAttacks.Spray, "en", queue: true));
+        }
+
+        if (!upgrade)
+        {
+            await LaterBurst();
+            await Pass(runtime, worker, scope, PasswordAttacks.Spray, later.AddMinutes(1), ct);
+            Assert.Equal(6L, await Count(notifications));
+            Assert.Equal(5L, await Count(open));
+            Assert.Equal(1L, await Count("select count(*) from finding_status_history where note='password_campaign_quiet444'"));
+            await using var expire = new NpgsqlCommand("select public.expire_password_campaigns444()", worker);
+            Assert.Equal(1, await expire.ExecuteScalarAsync(ct));
+            Assert.Equal(4L, await Count(open));
+        }
+        await fixture.AssertNoSqlErrorsAsync(ct);
+    }
+
     [Fact]
     public async Task Brute_force_correlates_success_and_4776_without_crossing_subthreshold_counts()
     {
@@ -295,8 +448,8 @@ public sealed class PasswordThresholdPostgresTests(ITestOutputHelper output)
         output.WriteLine("Brute force: 25 failures across 4 addresses plus success => critical. NTLM-only 20 => high. 19 with same-second NTLM duplicates and 9 spray accounts => no findings.");
     }
 
-    private static string Title(JsonObject facts, string rule, string locale) => ProblemJson.Text(ProblemPresentation.RuleMessage(
-        new() { ["rule_code"] = "semantic." + rule, ["presentation_facts"] = facts.DeepClone() }, "title", locale)["text"]);
+    private static string Title(JsonObject facts, string rule, string locale, bool queue = false) => ProblemJson.Text(ProblemPresentation.RuleMessage(
+        new() { ["rule_code"] = "semantic." + rule, ["presentation_facts"] = facts.DeepClone() }, "title", locale, queueTitle: queue)["text"]);
 
     private static PasswordProducerRuntime Runtime(SqlPostgresFixture fixture) => PasswordProducerRuntime.Create(
         name => name == "ADLOG_SEMANTIC_WORKER_DSN" ? fixture.Dsn("sli_semantic_login") : null,
@@ -321,13 +474,19 @@ public sealed class PasswordThresholdPostgresTests(ITestOutputHelper output)
     private static async Task Publish(PasswordProducerRuntime runtime, NpgsqlConnection worker, int jobs, CancellationToken ct)
     {
         var production = new SemanticProduction(runtime, new(true, true, false, true, false, false), SemanticRuntimeSettings.FindingsMode, 16);
-        var result = await production.ProcessRisk(worker, ct);
-        if (result.Number("failed") != 0)
+        int completed = 0;
+        do
         {
-            await using var error = new NpgsqlCommand("select last_error_detail from semantic_risk_evaluation_jobs where evaluation_status='failed' order by updated_at desc limit 1", worker);
-            Assert.Fail($"Threshold risk publication failed: {await error.ExecuteScalarAsync(ct)}");
-        }
-        Assert.Equal(jobs, result.Number("completed"));
+            var result = await production.ProcessRisk(worker, ct);
+            if (result.Number("failed") != 0)
+            {
+                await using var error = new NpgsqlCommand("select last_error_detail from semantic_risk_evaluation_jobs where evaluation_status='failed' order by updated_at desc limit 1", worker);
+                Assert.Fail($"Threshold risk publication failed: {await error.ExecuteScalarAsync(ct)}");
+            }
+            completed += (int)result.Number("completed");
+            if (result.Number("completed") == 0) break;
+        } while (completed < jobs);
+        Assert.Equal(jobs, completed);
     }
 
     private static async Task<List<(long Id, string Severity, int Evidence, JsonObject Facts)>> Findings(NpgsqlConnection db, string rule, CancellationToken ct)

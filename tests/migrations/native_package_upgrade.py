@@ -67,6 +67,20 @@ def verify_ledger(connection, release):
     )
 
 
+def verify_workstation_inventory(connection):
+    with connection.transaction():
+        enabled = connection.execute("""
+            update public.plugin_installations_v1
+            set desired_activation='enabled_manual',component_runtime='running'
+            where plugin_id='sli.workstations' and package_lifecycle='registered'
+        """)
+        assert enabled.rowcount == 1
+        assert connection.execute("select public.workstation_runtime_enabled_v376()").fetchone() == (True,)
+        connection.execute("set local role adlog_context_worker")
+        # Even with no published snapshot, the worker must be able to query the AD sources.
+        assert connection.execute("select public.advance_workstation_ad_inventory436()").fetchone() == (None,)
+
+
 def exercise(previous, work):
     # Match the installer and package runner's endpoints inside the private namespaces.
     subprocess.run(["ip", "link", "set", "lo", "up"], check=True)
@@ -150,6 +164,7 @@ os.execve(sys.executable, [sys.executable, '-B', '-m', 'deploy.linux.entrypoint'
             verify_ledger(connection, ROOT)
             verify_acl(connection)
             verify_backfill(connection)
+            verify_workstation_inventory(connection)
     finally:
         subprocess.run([*control, "-m", "fast", "-w", "stop"], env=env, check=True)
         subprocess.run(["umount", "/run/postgresql"], check=True)

@@ -15,7 +15,6 @@ import "./workstations.css";
 export const periodField = (): FilterField => ({ key: "period", label: t("workstations.workspace.event_period"), kind: "period",
   presets: ["24h", "7d", "30d", "custom"], precision: "datetime-local", step: "any" });
 
-/** Native registered sources and their canonical journal; retained projections are not a current-state source. */
 export function WorkstationsReport({ definition, initialSearch: providedSearch }: { definition: ReportDefinitionDto; initialSearch?: string }) {
   const [periodTarget, setPeriodTarget] = useState<HTMLDivElement | null>(null);
   const access = useEffectiveAccess();
@@ -102,18 +101,16 @@ export function WorkstationsReport({ definition, initialSearch: providedSearch }
     update({ station: row.station_id, selected_station: row.station_id, station_tab: "events", station_return: back, ...resetEvents });
   };
   const columns: TableColumn<Station>[] = [
-    { key: "station", label: t("workstations.overview.station"), width: "32%", minWidth: "20rem", render: row => <span className="sli-workstations__station-cell"><CollectionIndicator station={row}/><a className="sli-ds-table__link" title={row.host_name ?? row.display_name ?? undefined}
+    { key: "station", label: t("workstations.overview.station"), width: "32%", minWidth: "20rem", render: row => <span className="sli-workstations__station-cell">{row.agent_key && <CollectionIndicator station={row}/>}<a className="sli-ds-table__link" title={row.host_name ?? row.display_name ?? undefined}
       href={localHref(patchedSearch(activeSearch, { station: row.station_id, selected_station: row.station_id, station_tab: "events",
         station_return: localHref(patchedSearch(activeSearch, { ...closeStation, selected_station: row.station_id })), ...resetEvents }))}
       onClick={event => { event.stopPropagation(); if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return; event.preventDefault(); open(row); }}><StationName station={row}/></a></span> },
-    { key: "domain", label: t("workstations.overview.domain"), value: row => row.domain_name ?? "—", hiddenByDefault: false },
     { key: "os", label: t("workstations.overview.os"), render: row => <span className="sli-workstations__cell"><span>{row.operating_system ?? "—"}</span>
       {row.operating_system_version ? <small>{row.operating_system_version}</small> : null}</span>, hiddenByDefault: false },
-    { key: "last_seen", label: t("workstations.workspace.last_contact"), kind: "datetime", value: row => row.last_seen, hiddenByDefault: false },
-    { key: "policy", label: t("workstations.workspace.policy_versions"), render: row => <span className="sli-workstations__cell"><span>{row.policy_revision ?? "—"} / {row.applied_policy_revision ?? "—"}</span></span>, hiddenByDefault: false },
-    { key: "metadata_observed_at", label: t("workstations.workspace.metadata_at"), kind: "datetime", value: row => row.metadata_observed_at, hiddenByDefault: true },
-    { key: "agent_key", label: t("workstations.workspace.agent_id"), value: row => row.agent_key, hiddenByDefault: true },
-    { key: "source_instance_id", label: t("workstations.workspace.source_id"), value: row => row.source_instance_id, hiddenByDefault: true },
+    { key: "last_logon_utc", label: t("reports.v2.ad.computers.v6.columns.last_logon_utc.label"), kind: "datetime",
+      render: row => row.last_logon_utc ? formatDateTime(row.last_logon_utc) : t(row.station_id.startsWith("ws:ad:")
+        ? "workstations.overview.last_logon_missing" : "reports.v2.ad.computers.v6.quality.not_collected") },
+    { key: "agent_version", label: t("workstations.overview.agent"), render: row => <span>{row.agent_version ?? "—"}</span> },
   ];
   const page = paging(result?.collections?.paging);
   const refresh = () => {

@@ -47,6 +47,8 @@ scripts/dev/ui_audit/*.sh text eol=lf
 config/sigma/*.json text eol=lf
 config/sigma/requirements.lock.txt text eol=lf
 config/sigma/licenses/* -text
+config/sigma/starter/*.yml -text
+config/postgres_migrations/433_sigma_live.sql text eol=lf
 
 # Source vectors use their Git LF bytes on every platform.
 agent-dotnet/tests/vectors/file-audit-scenarios.json text eol=lf
