@@ -9,7 +9,7 @@ import { FileAuditReport } from "./FileAuditReport";
 import { t } from "../../i18n";
 import reportDefinitions from "../../../../server-dotnet/src/Sli.Server/Reporting/V2/report-definitions.json";
 
-const mocks = vi.hoisted(() => ({ definition: vi.fn(), data: vi.fn(), detail: vi.fn(), agents: vi.fn(), access: {
+const mocks = vi.hoisted(() => ({ definition: vi.fn(), data: vi.fn(), detail: vi.fn(), agents: vi.fn(), agentAction: vi.fn(), access: {
   platform_owner: false, preview: false,
   subject: { type: "user", id: 1, coarse_role: "viewer" }, evaluated_at_utc: "synthetic-evaluation", capabilities: ["file-audit.view", "file-audit.export"],
   reports: ["overview", "actions", "mass-operations", "permission-changes", "access-denials", "out-of-hours", "permissions", "audit-state"].map((key) => ({
@@ -17,7 +17,8 @@ const mocks = vi.hoisted(() => ({ definition: vi.fn(), data: vi.fn(), detail: vi
   })),
 } }));
 vi.mock("../../api/client", async (importOriginal) => ({ ...await importOriginal<typeof import("../../api/client")>(),
-  api: { reportV2Definition: mocks.definition, reportV2Data: mocks.data, reportV2Detail: mocks.detail, agents: mocks.agents } }));
+  api: { reportV2Definition: mocks.definition, reportV2Data: mocks.data, reportV2Detail: mocks.detail, agents: mocks.agents,
+    agentAction: mocks.agentAction } }));
 vi.mock("../../app/App", () => ({ useEffectiveAccess: () => mocks.access, useTimeZone: () => ({ timeZone: "UTC" }) }));
 vi.mock("../../app/report-v2/ReportDenied", () => ({ ReportDenied: () => <div role="alert">Denied</div> }));
 
@@ -46,6 +47,7 @@ beforeEach(() => {
   mocks.access.subject.coarse_role = "viewer";
   mocks.access.reports.forEach(report => { report.scopes = []; });
   mocks.agents.mockReset().mockResolvedValue({ items: [] });
+  mocks.agentAction.mockReset().mockResolvedValue({ command_id: "new-check", policy_revision: 4, state: "pending" });
 });
 afterEach(() => { cleanup(); client?.clear(); vi.useRealTimers(); });
 
@@ -88,6 +90,25 @@ it("shows the server's agent upgrade requirement on Resources", async () => {
   const row = await screen.findByRole("row", { name: /Fixture share/ });
   expect(row.textContent).toContain(t("file-audit.screen.update_agent", { version: "26.0.136", minimum: "26.0.154" }));
   expect(row.textContent).not.toContain(t("file-audit.screen.audit_unreadable"));
+});
+
+it("requests a check for the selected manageable resource and shows the fresh result", async () => {
+  const target = { agent_id: "11111111-1111-4111-8111-111111111111", source_instance_id: "synthetic-source",
+    collection_scope_id: "scope:files" };
+  const observedAt = "2026-11-26T08:03:00Z";
+  mocks.data.mockImplementation(async (key, params) => ({ ...result(key, params), items: [{
+    id: "fixture-resource", share_name: "Fixture share", ...target, check_revision: 3,
+    audit_receipt: { command_id: "old-check", state: "failed", reason_code: "native_unavailable", observed_at: "2026-11-26T08:00:00Z" },
+    check_receipt: mocks.agentAction.mock.calls.length ? { state: "verified", observed_at: observedAt } : undefined,
+  }, { id: "other-resource", share_name: "Other share", ...target, collection_scope_id: "scope:other" }] }));
+  mount(declaration("file-audit.overview"));
+  const row = within(await screen.findByRole("row", { name: /Fixture share/ }));
+  expect(row.getByText(new RegExp(t("file-audit.screen.audit_unreadable")))).toBeTruthy();
+  expect(within(screen.getByRole("row", { name: /Other share/ })).queryByRole("button")).toBeNull();
+  await userEvent.click(row.getByRole("button", { name: t("file-audit.screen.check") }));
+  await waitFor(() => expect(mocks.agentAction).toHaveBeenCalledExactlyOnceWith("file-audit", { ...target, expected_revision: 3 }));
+  expect(await row.findByText(new RegExp(t("file-audit.screen.check_verified") + " · .*:03"))).toBeTruthy();
+  expect(row.queryByText(new RegExp(t("file-audit.screen.audit_unreadable")))).toBeNull();
 });
 
 it.each([

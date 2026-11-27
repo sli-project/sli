@@ -29,9 +29,14 @@ public sealed class FileServersReportPostgresTests
             "source_kind=server&share=" + Uri.EscapeDataString(sample["share_key"]!.ToString())
             + "&period=custom&from=" + Uri.EscapeDataString(from ?? sample["from_utc"]!.ToString())
             + "&to=" + Uri.EscapeDataString(to ?? sample["to_utc"]!.ToString());
-        async Task<JsonObject> Read(string tab, string query, string? scope = null)
+        async Task<JsonObject> Read(string tab, string query, string? scope = null, bool manageAudit = false)
         {
-            await using var host = await ReportFixture.Start(FileAuditReportTests.Facts(tab, scope: scope ?? """{"kind":"all"}"""),
+            var facts = FileAuditReportTests.Facts(tab, scope: scope ?? """{"kind":"all"}""");
+            if (manageAudit)
+                facts = facts with { Role = "admin", DirectCapabilities = [.. facts.DirectCapabilities,
+                    ReportFixture.J("""{"capability_key":"access.manage","effect":"allow","scope_json":{"kind":"all"}}"""),
+                    ReportFixture.J("""{"capability_key":"file-audit.audit.manage","effect":"allow","scope_json":{"kind":"all"}}""")] };
+            await using var host = await ReportFixture.Start(facts,
                 new ReportDefinitionRegistry().Get("file-audit." + tab), nativeReader: reader);
             using var response = await host.Client.GetAsync("/api/v2/reports/file-audit." + tab + "/data?" + query, ct);
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -67,6 +72,32 @@ public sealed class FileServersReportPostgresTests
         var requirement = resource["audit_receipt"]!["check_agent_requirement"]!;
         Assert.Equal("26.0.136", requirement["agent_version"]!.GetValue<string>());
         Assert.Equal("26.0.154", requirement["minimum_version"]!.GetValue<string>());
+        Assert.Null(resource["check_revision"]);
+        var newObservation = DateTimeOffset.Parse(sample["to_utc"]!.ToString(), CultureInfo.InvariantCulture).AddMinutes(1);
+        await using (var check = new NpgsqlCommand("""
+            update public.sli_agents a
+            set rights_probe='{"agent_version":"26.0.227"}',
+                file_audit=jsonb_build_object(
+                    'request',jsonb_build_object('command',jsonb_build_object('command_id','check-fixture',
+                        'action','check','collection_scope_ids',jsonb_build_array(@scope)), 'config',p.policy),
+                    'state','partial','scopes',jsonb_build_object(@scope,jsonb_build_object(
+                        'state','partial','reason_code','policy_missing','observed_at_utc',@observed)))
+            from sli_plugin_file_audit.policy_revisions p
+            where a.id=@agent and p.agent_id=a.id and p.revision=2
+            """, owner))
+        {
+            check.Parameters.AddWithValue("agent", FileServersReportFixture.Agent);
+            check.Parameters.AddWithValue("scope", FileServersReportFixture.Scope);
+            check.Parameters.AddWithValue("observed", newObservation.ToString("O", CultureInfo.InvariantCulture));
+            await check.ExecuteNonQueryAsync(ct);
+        }
+        var refreshed = Assert.Single((await Read("overview", Filter()))["items"]!.AsArray())!;
+        Assert.Equal("failed", refreshed["audit_receipt"]!["state"]!.ToString());
+        Assert.Equal("partial", refreshed["check_receipt"]!["state"]!.ToString());
+        Assert.Equal(newObservation, DateTimeOffset.Parse(refreshed["check_receipt"]!["observed_at"]!.ToString(), CultureInfo.InvariantCulture));
+        Assert.Null(refreshed["check_revision"]);
+        var manageable = Assert.Single((await Read("overview", Filter(), manageAudit: true))["items"]!.AsArray())!;
+        Assert.NotNull(manageable["check_revision"]);
         foreach (string tab in new[] { "permission-changes", "actions" })
         {
             var page = await Read(tab, Filter());

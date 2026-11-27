@@ -32,18 +32,23 @@ public static class FileAuditResult
         audit["state"]?.ToString() == "failed" && audit["scopes"] is JsonObject { Count: > 0 } scopes
         && scopes.All(scope => NativeUnavailable(scope.Value));
 
-    internal static bool OfferCheck(JsonObject agent, JsonObject audit)
-    {
-        if (audit["state"]?.ToString() == "verified")
-            return false;
-        if (!NativeCheckFailed(audit))
-            return true;
+    internal static bool OfferCheck(JsonObject agent, JsonObject audit) =>
+        audit["state"]?.ToString() != "verified"
+        && (!NativeCheckFailed(audit) || RetryVersion(agent, audit) is not null);
 
-        // Older receipts have no recorded agent version. A supported policy report
-        // permits one new attempt for those commands as well.
+    internal static Version? RetryVersion(JsonObject agent, JsonObject audit)
+    {
+        if (!NativeCheckFailed(audit))
+            return null;
         var current = ReportedAgentVersion(agent["rights_probe"]);
-        return current >= MinimumNativeCheckVersion &&
-            audit["scopes"]!.AsObject().Any(scope => ReportedAgentVersion(scope.Value) != current);
+        if (!(current >= MinimumNativeCheckVersion))
+            return null;
+        // Unknown versions come from legacy receipts. A known attempt must
+        // precede the running version in at least one scope, with no downgrade.
+        var previous = audit["scopes"]!.AsObject().Select(scope => ReportedAgentVersion(scope.Value)).ToArray();
+        return previous.All(version => version is null || version <= current)
+            && previous.Any(version => version is null || version < current)
+            ? current : null;
     }
 
     private static readonly HashSet<string> Reasons=["ok","coverage_incomplete","sacl_missing","policy_missing","restore_incomplete","native_unavailable","policy_blocked","management_disabled","restore_required","restore_scope_mismatch","system_required","managed_by_gpo","unknown","global_sacl_unknown","global_sacl_present","restore_scan_incomplete","inheritance_untracked","restore_conflict"];
