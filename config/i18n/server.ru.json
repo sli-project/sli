@@ -1471,7 +1471,7 @@
   "plugins.sli.sigma.name": "Правила Sigma",
   "plugins.sli.workstations.name": "Рабочие станции",
   "plugins.sli.workstations.settings.workstations.evidence_retention_days.label": "Хранение процессов и USB, дней",
-  "plugins.sli.workstations.settings.workstations.evidence_retention_days.help": "Хранить доказательства до подтверждённого переноса в историю.",
+  "plugins.sli.workstations.settings.workstations.evidence_retention_days.help": "Через сколько дней события процессов и USB можно перенести в архив.",
   "plugins.sli.workstations.settings.workstations.logon_policy.label": "Время входа на станции",
   "plugins.sli.workstations.settings.workstations.logon_policy.help": "Задайте разрешённые часы входа для станции или подразделения.",
   "plugins.sli.workstations.rules.C07.name": "Вход вне разрешённого времени",

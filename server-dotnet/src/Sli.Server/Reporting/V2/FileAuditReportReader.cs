@@ -114,7 +114,7 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
                 foreach (var row in Array(data["items"]).OfType<JsonObject>())
                 {
                     var root = readRoots.FirstOrDefault(root => ShareKey(root!) == ShareKey(row));
-                    if (root is null) continue;
+                    if (root?["catalog_configured"] is null) continue;
                     foreach (string field in new[] { "audit_state", "audit_checked_at", "audit_reason", "audit_policy_revision", "audit_can_restore" })
                         row[field] = root[field]?.DeepClone();
                     if (!root["catalog_configured"]!.GetValue<bool>() && row["permission_change_groups"]?.ToString() == "0")

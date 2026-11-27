@@ -26,6 +26,7 @@ public sealed partial class FileAuditReportReader
             order by a.id limit 1001
             """, ct);
         var byAgent = configured.OfType<JsonObject>().ToLookup(row => (Text(row, "agent_id"), Text(row, "source_instance_id")));
+        var matched = new HashSet<JsonObject>();
         var roots = new JsonArray();
         foreach (var server in agents.OfType<JsonObject>())
         {
@@ -37,6 +38,7 @@ public sealed partial class FileAuditReportReader
                 var previous = byAgent[(agent, source)].FirstOrDefault(root =>
                     string.Equals(Text(root, "share_name"), name, StringComparison.OrdinalIgnoreCase)
                     && string.Equals(Text(root, "path"), path, StringComparison.OrdinalIgnoreCase));
+                if (previous is not null) matched.Add(previous);
                 var root = previous?.Copy() ?? new JsonObject
                 {
                     ["agent_id"] = agent, ["source_instance_id"] = source, ["source_kind"] = "server",
@@ -74,6 +76,12 @@ public sealed partial class FileAuditReportReader
                 roots.Add(root);
                 if (roots.Count == 1001) return roots;
             }
+        }
+        foreach (var root in configured.OfType<JsonObject>())
+        {
+            if (matched.Contains(root)) continue;
+            roots.Add(root.DeepClone());
+            if (roots.Count == 1001) break;
         }
         return roots;
     }

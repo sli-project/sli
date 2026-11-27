@@ -100,7 +100,10 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
             select '00000000-0000-4000-8000-000000000001','sli.ad','1',id,'full',now(),sha256('synthetic-bundle'::bytea),'completed',now() from domains where fqdn='example.test';
             insert into ad_context_sections(run_id,section_name,status,record_count) values('00000000-0000-4000-8000-000000000001','directory_accounts','complete',2);
             insert into ad_context_entity_versions(entity_id,source_section,valid_from_utc,last_observed_at_utc,content_sha256,attributes_json,source_run_id)
-            values(1,'directory_accounts',now(),now(),sha256('synthetic-user'::bytea),'{"identity":{"kind":"ad_user","object_sid":"S-1-5-21-100000001-200000002-300000003-1001","object_guid":"00000000-0000-4000-8000-000000000001"},"attributes":{"enabled":true}}','00000000-0000-4000-8000-000000000001');
+            values(1,'directory_accounts',now(),now(),sha256('synthetic-user'::bytea),'{"identity":{"kind":"ad_user","object_sid":"S-1-5-21-100000001-200000002-300000003-1001","object_guid":"00000000-0000-4000-8000-000000000001"},"attributes":{"enabled":true,"sam_account_name":"synthetic-sql-user"}}','00000000-0000-4000-8000-000000000001');
+            insert into ad_context_entity_aliases(entity_id,domain_id,alias_type,alias_value,normalized_value,first_seen_utc,last_seen_utc,source_run_id)
+            select 1,id,'object_sid','S-1-5-21-100000001-200000002-300000003-1001','s-1-5-21-100000001-200000002-300000003-1001',
+                now(),now(),'00000000-0000-4000-8000-000000000001' from domains where fqdn='example.test';
             insert into semantic_security_scenarios(scenario_id,scenario_kind,result_class,identity_key,scenario_key,partition_key,strict_keys_json,merge_window_seconds,title,explanation,first_seen_utc,last_seen_utc,risk_class)
             values('00000000-0000-4000-8000-000000000001','synthetic-sql','control_gap',sha256('identity'::bytea),sha256('scenario'::bytea),'synthetic','{}',300,'Synthetic scenario','Synthetic SQL review',now(),now(),'low');
             insert into findings(id,fingerprint,rule_code,title,severity,source) values(1,'semantic:'||repeat('a',64),'synthetic-sql','Synthetic SQL finding','low','semantic-production');
@@ -181,6 +184,11 @@ public sealed class WriteSqlPostgresTests(ITestOutputHelper output)
         await Check("/api/v1/access/report-requests/1/decision", new { decision = "reject", decision_reason = "Synthetic SQL contract" }, 400, error: "access_request_not_pending");
         await Check("/api/v1/setup/domains", new { fqdn = "new.example.test", netbios_name = "NEW" }, 201);
         await Check("/api/v1/setup/domains/example.test", new { netbios_name = "EXAMPLE" });
+        var accounts = await Check("/api/v1/admin/agents/file-audit/accounts",
+            new { q = "synthetic-sql-user", sids = Array.Empty<string>() });
+        var account = Assert.Single(accounts!["items"]!.AsArray());
+        Assert.Equal("S-1-5-21-100000001-200000002-300000003-1001", account!["sid"]!.GetValue<string>());
+        Assert.Equal(@"EXAMPLE\synthetic-sql-user", account["name"]!.GetValue<string>());
         await Check("/api/v1/setup/domain-controllers", new { hostname = "dc.example.test", domain = "example.test" }, 201);
         await Check("/api/v1/setup/domain-controllers/dc.example.test", new { enabled = false });
         await Check("/api/v1/platform-settings/ad.inactivity_days", new { value = "30" });

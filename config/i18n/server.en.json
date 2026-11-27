@@ -1471,7 +1471,7 @@
   "plugins.sli.sigma.name": "Sigma rules",
   "plugins.sli.workstations.name": "Workstations",
   "plugins.sli.workstations.settings.workstations.evidence_retention_days.label": "Process and USB retention, days",
-  "plugins.sli.workstations.settings.workstations.evidence_retention_days.help": "Keep evidence until its transfer to history is confirmed.",
+  "plugins.sli.workstations.settings.workstations.evidence_retention_days.help": "Process and USB events can be archived after this many days.",
   "plugins.sli.workstations.settings.workstations.logon_policy.label": "Workstation sign-in hours",
   "plugins.sli.workstations.settings.workstations.logon_policy.help": "Set allowed sign-in hours for a workstation or organizational unit.",
   "plugins.sli.workstations.rules.C07.name": "Sign-in outside allowed hours",

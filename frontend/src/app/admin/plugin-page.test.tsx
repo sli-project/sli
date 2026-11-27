@@ -10,6 +10,7 @@ import gpo from "../../../../config/plugin_settings_schema/sli.gpo.settings.json
 import remoteAccess from "../../../../config/plugin_settings_schema/sli.remote-access.settings.json";
 import sigma from "../../../../config/plugin_settings_schema/sli.sigma.settings.json";
 import workstations from "../../../../config/plugin_settings_schema/sli.workstations.settings.json";
+import workspaceDeclarations from "../../../../server-dotnet/src/Sli.Server/Workspace/declarations.json";
 import type { PluginState } from "../../api/client";
 import type { PluginSettings, SettingsSchema } from "../../api/plugin-settings-types";
 import { localeRuntime, setLocale, t } from "../../i18n";
@@ -77,6 +78,7 @@ beforeEach(() => {
     if (path === "/api/v2/reports") return json({ contract_id: "sli.report-catalog.v2", items: [
       { key: "ad.infrastructure", title: "Состояние домена", description: "Каталог", section: "active-directory", section_title: "AD", owner_id: "sli.ad" },
       { key: "ad.gpo.v2", title: "Политики", description: "GPO", section: "active-directory", section_title: "AD", owner_id: "sli.gpo" },
+      ...workspaceDeclarations.reports.filter(({ key }) => ["workstations.logons", "workstations.processes", "workstations.usb"].includes(key)),
       { key: "workstations.protection", title: "Защита", description: "Последний снимок Defender независимо от периода и события изменений за период.", section: "workstations", section_title: "Workstations", owner_id: "sli.workstations" },
     ] });
     if (path === "/api/v1/semantic/sigma-live-rules") {
@@ -191,6 +193,18 @@ it("keeps the workstation protection report link without a description paragraph
   expect(panel.textContent).not.toMatch(/Время снимка|неизвестные флаги/);
 });
 
+it.each(["ru", "en"] as const)("lists the workstation reports without methodology copy in %s", async (locale) => {
+  setLocale(locale);
+  mount("sli.workstations");
+  fireEvent.click(await screen.findByRole("tab", { name: t("pluginPage.tab.reports") }));
+  const panel = screen.getByRole("tabpanel");
+  for (const key of ["workstations.logons", "workstations.processes", "workstations.usb"]) {
+    const link = panel.querySelector(`a[href="/app/report/${key}"]`);
+    expect(link).not.toBeNull();
+    expect(link?.closest("li")?.querySelector("p")).toBeNull();
+  }
+});
+
 it("keeps the file audit working-hours link without an empty-settings message", async () => {
   mount("sli.file-audit");
   fireEvent.click(await screen.findByRole("tab", { name: t("pluginPage.tab.settings") }));
@@ -276,6 +290,9 @@ it("renders nested workstation policy controls without a JSON editor", async () 
   settings = { plugin_id: "sli.workstations", schema: workstations.settings as unknown as SettingsSchema,
     rules: workstations.rules, sources: {}, values: { "workstations.evidence_retention_days": 90, "workstations.logon_policy": null } };
   mount("sli.workstations"); fireEvent.click(await screen.findByRole("tab", { name: "Настройки" }));
+  const retention = await screen.findByRole("spinbutton", { name: "Хранение процессов и USB, дней" });
+  expect((retention as HTMLInputElement).value).toBe("90");
+  expect(screen.queryByText(/Хранить доказательства/)).toBeNull();
   fireEvent.click(await screen.findByRole("button", { name: "Настроить" }));
   fireEvent.click(screen.getByRole("button", { name: "Добавить запись" }));
   expect(screen.getByRole("textbox", { name: "Идентификатор станции" })).toBeTruthy();

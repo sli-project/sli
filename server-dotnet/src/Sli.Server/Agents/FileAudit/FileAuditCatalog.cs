@@ -135,17 +135,13 @@ internal static class FileAuditCatalog
         long? nativeStatus;
         JsonObject audit;
         JsonArray modules;
-        bool cache = await CacheAvailable(db, tx, ct);
-        string hasCache = cache ? "c.cached_at is not null" : "false";
-        string cachedShares = cache ? "case when c.cached_at is not null then c.cached_shares else c.shares end" : "c.shares";
         await using (var read = new NpgsqlCommand($"""
             select case
                 when c.supported_until is null or c.supported_until<=clock_timestamp() then 'unsupported'
-                when {hasCache} then 'ready'
                 when c.request_id is null then 'idle'
                 when c.expires_at<=clock_timestamp() then 'expired'
                 else coalesce(c.result_status,'pending') end,
-                {cachedShares},
+                c.shares,
                 a.file_audit, a.assigned_modules, c.native_status
             from public.sli_agents a left join {Table} c on c.agent_id=a.id and c.source_id={Source}
             where a.status='active' and a.id=@agent and {Source}=@source
