@@ -17,7 +17,8 @@ describe("AI draft authority label", () => {
     localStorage.setItem("sli.lang", "en");
     vi.spyOn(document, "readyState", "get").mockReturnValue("loading");
     const source = readFileSync(resolve(import.meta.dirname, "../../../server-dotnet/src/Sli.Server/Legacy/report-template.html"), "utf8");
-    const bootstrap = source.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+    const head = new DOMParser().parseFromString(source, "text/html").head;
+    const bootstrap = head.querySelector("script")?.textContent;
     expect(bootstrap).toBeDefined();
     window.eval(bootstrap!);
     const label = document.createElement("span");

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
-import { existsSync, readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import serverEn from "../../../config/i18n/server.en.json";
+import serverRu from "../../../config/i18n/server.ru.json";
 import { api, ApiResponseError } from "../api/client";
 import { StateView } from "../design-system/StateView";
 import { ReportLayout } from "../design-system/ReportLayout";
@@ -10,7 +11,7 @@ import { resolveMessage, resolvePresentation } from "./messages";
 import { ru } from "./ru";
 import { en } from "./en";
 
-const catalogRoot = existsSync("config/i18n") ? "config/i18n" : "../config/i18n";
+const serverCatalogs: Record<"ru" | "en", Record<string, string>> = { ru: serverRu, en: serverEn };
 const legacyServerMessages = new Set([
   "setup.agentCollection.error",
   "security.problems.presentation.watch_limitation",
@@ -43,7 +44,7 @@ describe("API message resolution", () => {
   });
   it.each(["ru", "en"] as const)("localizes shared API messages and accepts legacy server messages in %s", (locale) => {
     setLocale(locale);
-    const server: Record<string, string> = JSON.parse(readFileSync(`${catalogRoot}/server.${locale}.json`, "utf8"));
+    const server = serverCatalogs[locale];
     for (const [code, text] of Object.entries(server)) {
       // Home period facts arrive as formatted text, just like notification text.
       if (code.startsWith("notifications.message.") || code.startsWith("notifications.bot.") || code.startsWith("home.period.problem.")) {
@@ -63,9 +64,9 @@ describe("API message resolution", () => {
 
   it.each(["ru", "en"] as const)("localizes event search errors and legacy notices in %s regardless of server language", (locale) => {
     setLocale(locale);
-    const server: Record<string, string> = JSON.parse(readFileSync(`${catalogRoot}/server.${locale}.json`, "utf8"));
+    const server = serverCatalogs[locale];
     const otherLocale = locale === "ru" ? "en" : "ru";
-    const otherServer: Record<string, string> = JSON.parse(readFileSync(`${catalogRoot}/server.${otherLocale}.json`, "utf8"));
+    const otherServer = serverCatalogs[otherLocale];
     const messages = Object.entries(server).filter(([code]) => code.startsWith("evsearch."));
     expect(messages.length).toBeGreaterThan(0);
     for (const [code, text] of messages) {
