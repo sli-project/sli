@@ -3,6 +3,7 @@ using Npgsql;
 using Sli.Server.Compatibility;
 using Sli.Agent.Core;
 using Sli.Agent.Protocol;
+using Sli.Server.Agents.Ingress;
 
 namespace Sli.Server.InstallationSetup;
 
@@ -31,7 +32,7 @@ public static class SetupCollectionHealth
                 ["to_utc"] = m.Value!["data_gap"]!["to_utc"]?.DeepClone(),
             };
             if (m.Key == FileAuditPolicy.ModuleId && JsonRead.TryString(m.Value["last_rejection_reason"],out var reason)
-                && Receipt.IsFileAuditRejectionReason(reason) && N(m.Value["rejected_count"]) is > 0 and var count)
+                && AgentFileAuditValidator.IsRejectionReason(reason) && N(m.Value["rejected_count"]) is > 0 and var count)
             {
                 gap["last_rejection_reason"] = reason;
                 gap["rejected_count"] = count;

@@ -63,6 +63,14 @@ public sealed class AgentIngressDiagnosticsTests
         receipt["error_reason"]="untrusted-data";
         Assert.True(diagnostics.RejectionAfterCommit(identity,Envelope("sli.file-audit"),receipt));
         Assert.DoesNotContain("untrusted-data",log.Messages[1]);
+        receipt["error_reason"]=Receipt.FileAuditInvalidPayload;
+        receipt["error_detail"]="invalid_observation_time";
+        Assert.True(diagnostics.RejectionAfterCommit(identity,Envelope("sli.file-audit"),receipt));
+        Assert.Contains("error_reason=invalid_observation_time",log.Messages[2]);
+        receipt["error_detail"]="untrusted-data";
+        Assert.True(diagnostics.RejectionAfterCommit(identity,Envelope("sli.file-audit"),receipt));
+        Assert.Contains("error_reason=invalid_payload",log.Messages[3]);
+        Assert.DoesNotContain("untrusted-data",log.Messages[3]);
     }
 
     [Fact]

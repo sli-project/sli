@@ -321,8 +321,10 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
                             for (var step=0; step<budget && deadline.Elapsed < TimeSpan.FromSeconds(filePolicy.Number("wall_seconds")); step++)
                             {
                                 cancellationToken.ThrowIfCancellationRequested();
-                                var position=Position(FileAuditModule.ModuleId); var sample=_fileModule.Collect(position,clock.GetUtcNow());
-                                _queue.Capture(_identity.Signer,_identity.AgentId,sample,clock.GetUtcNow()); captured++;
+                                var position=Position(FileAuditModule.ModuleId);
+                                var observed=clock.GetUtcNow();
+                                var sample=_fileModule.Collect(position,observed);
+                                _queue.Capture(_identity.Signer,_identity.AgentId,sample,observed); captured++;
                                 if (sample.CursorAfter == sample.CursorBefore || position is not null && sample.Generation != position.Generation || sample.Payload["context"]?["read_error"] is not null
                                     || sample.Payload["records"]!.AsArray().Count == 0 && sample.FilteredCount == 0 && !(sample.LostCount > 0))
                                 {

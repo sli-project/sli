@@ -12,6 +12,99 @@ namespace Sli.Server.Tests.Agents;
 public sealed class AgentFileAuditValidatorTests
 {
     internal static readonly Guid ActionHost=Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+
+    [Theory]
+    [InlineData(19, 31, true)]
+    [InlineData(0, 13, true)]
+    [InlineData(19, -31, false)]
+    [InlineData(0, -13, false)]
+    public void Scoped_file_packets_require_proven_transport_gap_and_valid_observation_time(
+        int count, int signingDelayMs, bool accepted)
+    {
+        const string channel = "Security";
+        const int start = 10;
+        int last = start + count;
+        string host = ActionHost.ToString("D");
+        string generation = $"{host}:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+        var (_, _, policy) = ActionPacket();
+        var observed = new DateTimeOffset(2026, 10, 1, 1, 3, 0, TimeSpan.Zero);
+        var records = new List<PacketRecord>();
+        for (int id = start + 1; id <= last; id++)
+        {
+            int eventId = id % 2 == 1 ? 4656 : 4663;
+            var xml = $"""
+                <Event xmlns="{EventXml.Namespace}">
+                  <System>
+                    <Provider Name="{FileAuditPolicy.Provider}"/>
+                    <EventID>{eventId}</EventID>
+                    <EventRecordID>{id}</EventRecordID>
+                    <TimeCreated SystemTime="2026-10-01T01:02:03Z"/>
+                    <Channel>{channel}</Channel>
+                    <Computer>files.example.test</Computer>
+                  </System>
+                  <EventData>
+                    <Data Name="ObjectType">File</Data>
+                    <Data Name="ObjectName">C:\Files\item.txt</Data>
+                    <Data Name="HandleId">0x44</Data>
+                    <Data Name="AccessMask">0x2</Data>
+                  </EventData>
+                </Event>
+                """;
+            records.Add(new PacketRecord("event_xml", id, EventXml.Parse(xml, "files.example.test", "localhost", channel)));
+        }
+
+        Cursor Bookmark(int id) => new("bookmark", new JsonObject
+        {
+            ["record_id"] = id,
+            ["bookmark"] = $"synthetic-{id}",
+            ["generation"] = generation
+        }.ToJsonString());
+        var payload = CollectionPacket.Make("files.example.test", channel, generation,
+            new JsonObject { ["after_record_id"] = start, ["last_record_id"] = last }, records, "not_proven",
+            new JsonObject
+            {
+                ["policy_revision"] = policy.Revision,
+                ["filtered_count"] = 0,
+                ["lost_count"] = 0,
+                ["read_error"] = null
+            }, observed);
+        var sample = new Sample(FileAuditPolicy.ModuleId, host, channel, generation, Bookmark(start), Bookmark(last),
+            payload, PolicyRevision: policy.Revision, ContinuityState: "gap", LostCount: 0);
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var packet = Packets.Make(new EcdsaPacketSigner(key), host, 2, sample, observed.AddMilliseconds(signingDelayMs),
+            () => Guid.Parse("00000000-0000-4000-8000-000000000001"));
+        var envelope = PacketVerifier.Verify(packet.ToJson(), key);
+
+        JsonArray Validate(bool transportGap) => AgentFileAuditValidator.Validate(envelope, packet.Payload, policy,
+            ActionHost, serverFileEventsOnly: count > 0, transportGap: transportGap);
+        if (accepted)
+        {
+            Assert.Equal(count, Validate(transportGap: true).Count);
+            Assert.Equal("invalid_continuity", Assert.Throws<ProtocolException>(() => Validate(transportGap: false)).Reason);
+        }
+        else
+        {
+            Assert.Equal("invalid_observation_time", Assert.Throws<ProtocolException>(() => Validate(transportGap: true)).Reason);
+        }
+    }
+
+    [Theory]
+    [InlineData(-1, false)]
+    [InlineData(0, true)]
+    [InlineData(30_000, true)]
+    [InlineData(30_001, false)]
+    public void Collection_time_must_precede_signing_within_the_capture_budget(int signingDelayMs, bool accepted)
+    {
+        var (envelope, packet, policy) = ActionPacket();
+        var signedAt = Iso8601.ParseUtc(envelope.ObservedAtUtc).AddMilliseconds(signingDelayMs);
+        envelope = envelope with { ObservedAtUtc = Iso8601.Format(signedAt) };
+        if (accepted)
+            Assert.Single(AgentFileAuditValidator.Validate(envelope, packet, policy, ActionHost));
+        else
+            Assert.Equal("invalid_observation_time", Assert.Throws<ProtocolException>(() =>
+                AgentFileAuditValidator.Validate(envelope, packet, policy, ActionHost)).Reason);
+    }
+
     internal static (Envelope Envelope,JsonObject Packet,FileAuditPolicy Policy) ActionPacket(string operation="write",int eventId=4663)
     {
         var policy=FileAuditPolicy.Parse(new JsonObject {
@@ -192,5 +285,35 @@ public sealed class AgentFileAuditValidatorTests
                 Assert.Throws<ProtocolException>(()=>AgentFileAuditValidator.Validate(e,altered,policy,host));
             }
         }
+    }
+}
+
+// Source-vector CI selects the validator class. Server shards select non-explicit tests.
+public sealed class AgentFileAuditLabReplayTests
+{
+    [Theory(Explicit = true)]
+    [InlineData("0000000000000000161-c811bb2c-e37d-4195-9b56-07ed20cf1c10.rejected", 19)]
+    [InlineData("0000000000000000165-ae478289-1060-4c51-aa9e-8737bbe624cc.rejected", 0)]
+    public void Replays_captured_file_audit_packet(string fileName, int count)
+    {
+        string? directory = Environment.GetEnvironmentVariable("SLI_FILE_AUDIT_REPLAY_DIR");
+        Assert.SkipWhen(string.IsNullOrEmpty(directory), "Set SLI_FILE_AUDIT_REPLAY_DIR to the lab sample directory.");
+        var captured = SignedPacket.FromJson(JsonNode.Parse(File.ReadAllBytes(Path.Combine(directory!, fileName))));
+        var envelope = captured.Envelope;
+        Assert.Equal(envelope.PayloadSha256, Packets.Digest(captured.Payload));
+        Assert.Equal(envelope.PayloadBytes, CanonicalJson.Length(captured.Payload));
+        var (_, _, config) = AgentFileAuditValidatorTests.ActionPacket();
+        config.Value.Remove("source_name");
+        config.Value["policy_revision"] = "7";
+        config.Roots[0]!["path"] = @"C:\SLI-Lab-Files\Обмен";
+        config.Roots[0]!["share_name"] = "LAB-Exchange";
+        var policy = FileAuditPolicy.Parse(config.Value);
+
+        var host = Guid.Parse(envelope.SourceInstanceId);
+        Assert.Equal(count, AgentFileAuditValidator.Validate(envelope, captured.Payload, policy, host,
+            serverFileEventsOnly: count > 0, transportGap: true).Count);
+        var unprovenGap = Assert.Throws<ProtocolException>(() =>
+            AgentFileAuditValidator.Validate(envelope, captured.Payload, policy, host, serverFileEventsOnly: count > 0));
+        Assert.Equal("invalid_continuity", unprovenGap.Reason);
     }
 }

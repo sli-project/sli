@@ -445,15 +445,39 @@ public sealed class PolicyCycleTests : IDisposable
         Assert.Contains(_requests, r => r.Path.EndsWith("/policy-report", StringComparison.Ordinal) && r.Body!["collection_state"]!.ToString() == "paused");
     }
 
-    private sealed class FileSource : IFileAuditEventSource
+    private sealed class FileSource(Action? onRead = null) : IFileAuditEventSource
     {
         public int Reads { get; private set; }
         public SourceBatch Read(JsonObject progress,int limit)
         {
             Reads++;
+            onRead?.Invoke();
             if (progress["record_id"] is not null) return new([]);
             var rows=Vectors.Load("file-audit-scenarios.json")[0]!["steps"]![0]!["rows"]!.AsArray();
             return new(rows.Select(x => new EventRow(x!["xml"]!.ToString(),x["bookmark"]!.ToString())).Take(limit).ToArray());
+        }
+    }
+
+    [Fact]
+    public async Task FileAuditSignsTheCollectionTimeEvenWhenTheReadTakesTime()
+    {
+        _fileSource = new FileSource(() => _clock.Now = _clock.Now.AddMilliseconds(30));
+        _assignment["assigned_modules"] = new JsonArray(new JsonObject
+        {
+            ["module_id"] = FileAuditModule.ModuleId, ["enabled"] = true, ["config"] = FileAuditManagerTests.Config()
+        });
+        _assignment["collection_policy"]!["rate_limit_per_minute"] = 10;
+        Assert.Null((await Runtime().RunCycleAsync(CancellationToken.None)).ErrorCode);
+        Assert.Null((await Runtime().RunCycleAsync(CancellationToken.None)).ErrorCode);
+        var sent = _requests.Where(r => r.Path == AgentHttpClient.PacketsPath).Select(r => r.Body!).ToArray();
+        Assert.NotEmpty(sent);
+        using var identity = AgentRuntime.CreateIdentityStore(_options).Load()!;
+        using var key = identity.Certificate.GetECDsaPublicKey()!;
+        foreach (var packet in sent)
+        {
+            var envelope = PacketVerifier.Verify(packet, key);
+            Assert.Equal(FileAuditModule.ModuleId, envelope.ModuleId);
+            Assert.Equal(packet["payload"]!["header"]!["observed_at_utc"]!.GetValue<string>(), envelope.ObservedAtUtc);
         }
     }
 

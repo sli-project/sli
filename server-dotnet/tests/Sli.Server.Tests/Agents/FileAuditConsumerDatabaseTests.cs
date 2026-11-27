@@ -464,7 +464,7 @@ public class FileAuditConsumerDatabaseTests
     [Fact]
     public async Task Paged_unicode_apply_enables_file_activity_and_publishes_mass_write()
     {
-        const string root = @"C:\Files\Обмен";
+        const string root = @"C:\SLI-Lab-Files\Обмен";
         const string commandId = "paged-unicode-apply";
         const string source = "files.example.test";
         const string sid = "S-1-5-21-100000001-200000002-300000003-1001";
@@ -477,10 +477,12 @@ public class FileAuditConsumerDatabaseTests
         var (_, _, policy) = AgentFileAuditValidatorTests.ActionPacket();
         policy.Roots[0]!["path"] = root;
         var now = Iso8601.Truncate(DateTimeOffset.UtcNow);
+        var observed = now.AddMilliseconds(-31);
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         using var cert = new CertificateRequest("CN=example.test",key,HashAlgorithmName.SHA256).CreateSelfSigned(now.AddDays(-1),now.AddDays(1));
         var signer = new EcdsaPacketSigner(key);
         var host = AgentFileAuditValidatorTests.ActionHost;
+        var generation = $"{host:D}:11111111-1111-4111-8111-111111111111";
         var identity = new AgentIdentity(Agent, host, new string('a',64), "active");
         var client = new AgentClientControlService(new AgentControlAudit(), new Clock(now));
         var service = new AgentPacketService(new Clock(now),new AgentInboxLimits(4096,268435456,32768,2147483648,65536,4294967296,17179869184),
@@ -551,7 +553,7 @@ public class FileAuditConsumerDatabaseTests
             string xml = $$"""
                 <Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event"><System>
                 <Provider Name="{{FileAuditPolicy.Provider}}"/><EventID>{{eventId}}</EventID><Keywords>{{(failure ? "0x8010000000000000" : "0x8020000000000000")}}</Keywords>
-                <EventRecordID>{{record}}</EventRecordID><TimeCreated SystemTime="{{now.UtcDateTime:O}}"/><Channel>Security</Channel></System>
+                <EventRecordID>{{record}}</EventRecordID><TimeCreated SystemTime="{{observed.UtcDateTime:O}}"/><Channel>Security</Channel></System>
                 <EventData><Data Name="SubjectUserSid">{{sid}}</Data><Data Name="SubjectLogonId">0x12</Data>
                 <Data Name="ProcessId">0x10</Data><Data Name="HandleId">0x{{(eventId == 4660 ? record - 1 : record):x}}</Data>{{fields}}</EventData></Event>
                 """;
@@ -563,14 +565,14 @@ public class FileAuditConsumerDatabaseTests
         rows.Add(Row(141,5145,$"<Data Name=\"ShareLocalPath\">{root}</Data><Data Name=\"RelativeTargetName\">item-0.txt</Data>", failure:true));
         rows.Add(Row(142,4670,$"<Data Name=\"ObjectName\">{PathOf(0)}</Data><Data Name=\"ObjectType\">File</Data>"));
         Cursor Bookmark(long last) => new("bookmark",CanonicalJson.Serialize(new JsonObject
-            { ["record_id"] = last, ["bookmark"] = $"fixture-{last}", ["generation"] = host.ToString() }));
+            { ["record_id"] = last, ["bookmark"] = $"fixture-{last}", ["generation"] = generation }));
         JsonObject Context() => new() { ["policy_revision"] = "2", ["filtered_count"] = 0, ["lost_count"] = 0, ["read_error"] = null };
         // The rejected queue head contained 29 native Security records, all failed logons.
-        var wrongEvents = CollectionPacket.Make(source,"Security",host.ToString(),
+        var wrongEvents = CollectionPacket.Make(source,"Security",generation,
             new JsonObject { ["after_record_id"] = null, ["last_record_id"] = 29 },
             Enumerable.Range(1,29).Select(record => Row(record,4625,"",failure:true)).ToArray(),"not_proven",Context(),now);
         var cursor = Bookmark(29);
-        var badSample = new Sample(FileAuditPolicy.ModuleId,host.ToString(),"Security",host.ToString(),Cursor.Start("bookmark"),cursor,wrongEvents,
+        var badSample = new Sample(FileAuditPolicy.ModuleId,host.ToString(),"Security",generation,Cursor.Start("bookmark"),cursor,wrongEvents,
             PolicyRevision:"2",ContinuityState:"not_proven",FilteredCount:0,LostCount:0);
         var badPacket = Packets.Make(signer,Agent.ToString(),1,badSample,now);
         JsonObject? originalRejection = null;
@@ -599,9 +601,9 @@ public class FileAuditConsumerDatabaseTests
             var kinds = new JsonObject(batch.Where(row => row.RecordId >= 100 && row.RecordId <= 139)
                 .Select(row => KeyValuePair.Create(row.RecordId!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture), (JsonNode?)JsonValue.Create("file"))));
             if (kinds.Count != 0) context["object_kinds"] = kinds;
-            var payload = CollectionPacket.Make(source,"Security",host.ToString(),new JsonObject { ["after_record_id"] = previous, ["last_record_id"] = last },
-                batch,"not_proven",context,now);
-            var sample = new Sample("sli.file-audit",host.ToString(),"Security",host.ToString(),cursor,next,payload,
+            var payload = CollectionPacket.Make(source,"Security",generation,new JsonObject { ["after_record_id"] = previous, ["last_record_id"] = last },
+                batch,"not_proven",context,observed);
+            var sample = new Sample("sli.file-audit",host.ToString(),"Security",generation,cursor,next,payload,
                 PolicyRevision:"2",ContinuityState:sequence == 1 ? "gap" : "not_proven",FilteredCount:0,LostCount:0);
             await using var tx = await app.BeginTransactionAsync(ct);
             var receipt = await service.ReceiveAsync(app,tx,identity,cert,Packets.Make(signer,Agent.ToString(),++sequence,sample,now).ToJson(),ct);
@@ -613,6 +615,38 @@ public class FileAuditConsumerDatabaseTests
             previous = last;
         }
         Assert.Equal(sequence - 1, await Number(owner,"select count(*) from sli_agent_packet_inbox where imported_at is not null and envelope->>'module_id'='sli.file-audit'",ct));
+
+        var heartbeat = CollectionPacket.Make(source,"Security",generation,
+            new JsonObject { ["after_record_id"] = previous, ["last_record_id"] = previous },
+            [],"not_proven",Context(),observed);
+        var heartbeatSample = new Sample(FileAuditPolicy.ModuleId,host.ToString(),"Security",generation,cursor,cursor,heartbeat,
+            PolicyRevision:"2",LostCount:0);
+
+        // A time outside the capture budget is rejected. A lost reply must
+        // return the same detail and still let older agents advance the queue.
+        var stale = heartbeat.DeepClone().AsObject();
+        stale["header"]!["observed_at_utc"] = Iso8601.Format(observed.AddMinutes(-3));
+        var invalid = Packets.Make(signer,Agent.ToString(),++sequence,heartbeatSample with { Payload = stale },now);
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            await using var tx = await app.BeginTransactionAsync(ct);
+            var rejection = await service.ReceiveAsync(app,tx,identity,cert,invalid.ToJson(),ct);
+            Assert.True(Receipt.IsFinalFileAuditRejection(invalid.Envelope,rejection));
+            Assert.Equal("invalid_observation_time",rejection["error_detail"]?.GetValue<string>());
+            await tx.CommitAsync(ct);
+        }
+
+        // A legacy idle read can close the transport gap without projecting an action.
+        await using (var tx = await app.BeginTransactionAsync(ct))
+        {
+            var signed = Packets.Make(signer,Agent.ToString(),++sequence,heartbeatSample with { ContinuityState = "gap" },now);
+            var receipt = await service.ReceiveAsync(app,tx,identity,cert,signed.ToJson(),ct);
+            Assert.True(Receipt.IsDeliveryProof(signed.Envelope,receipt),receipt["error_detail"]?.ToString());
+            Assert.True(receipt["transport_gap"]?.GetValue<bool>());
+            var imported = await AgentWorkstationInboxConsumer.ProcessNextAsync(app,tx,null,ct);
+            Assert.True(imported.Imported,imported.PendingReason);
+            await tx.CommitAsync(ct);
+        }
         Assert.Equal(4, await Number(owner,"select count(distinct event_id) from sli_plugin_file_audit.observations where event_id in (4663,4660,5145,4670)",ct));
         Assert.Equal(110, await Number(owner,"select count(*) from sli_plugin_file_audit.actions where operation='write'",ct));
         Assert.Equal(3, await Number(owner,"select count(*) from sli_plugin_file_audit.actions where operation in ('delete','permissions') or outcome='failure'",ct));
