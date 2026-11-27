@@ -97,6 +97,8 @@ internal sealed class HomePeriodSummary(HomeSummaryReaders reads, IGpoReadStore?
             return new {
                 id, name, fact,
                 severity = row.Text("severity") ?? "unknown",
+                first_at = openQueue && Problems.ProblemPresentation.IsPasswordFinding(row.Text("rule_code") ?? "")
+                    ? row["password_totals"].Stamp("first_at") ?? row["password"].Stamp("first_at") : null,
                 at = row.Stamp(openQueue ? "last_seen" : "first_seen"),
                 source = openQueue && queueTechnical
                     ? DisplayName(row.Text("source")) ?? observations.FirstOrDefault()?.source

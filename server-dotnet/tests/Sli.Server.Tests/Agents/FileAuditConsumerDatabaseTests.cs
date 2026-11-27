@@ -134,18 +134,37 @@ public class FileAuditConsumerDatabaseTests
 
         await ReportVersion("26.0.153");
         Assert.Null(await Offered());
-        await ReportVersion("26.0.154");
+        await ReportVersion("26.0.227");
         Assert.Equal(commandId, await Offered());
+        var assignment = await client.CheckInAsync(app, tx, identity, ct);
+        Assert.Equal("26.0.227", assignment["file_audit_retry_version"]?.ToString());
         var retry = await control.Status(app, tx, Agent.ToString(), principal, access, ct);
         Assert.Equal("pending", retry.GetProperty("state").GetString());
         // A new attempt can fail with the same reason. It is retained separately.
         failed["observed_at_utc"] = Iso8601.Format(now.AddHours(2));
         await Accept(failed);
         Assert.Null(await Offered());
+        Assert.Null((await client.CheckInAsync(app, tx, identity, ct))["file_audit_retry_version"]);
         await Accept(failed);
         Assert.Null(await Offered());
-        await Enqueue("new-file-check", 4);
-        Assert.Equal("new-file-check", await Offered());
+        await ReportVersion("26.0.226");
+        Assert.Null(await Offered());
+        await ReportVersion("26.0.227");
+        var selection = new JsonObject {
+            ["agent_id"] = Agent.ToString(), ["source_instance_id"] = AgentFileAuditValidatorTests.ActionHost.ToString(),
+            ["collection_scope_id"] = "scope:files", ["expected_revision"] = 4
+        };
+        var viewer = new Principal("session", 2, "viewer");
+        var denied = await Assert.ThrowsAsync<AgentControlException>(() => control.CheckResource(app, tx, selection, viewer,
+            new CapabilityDecisionSet(false, new HashSet<string>(), new HashSet<string>(), [],
+                new Dictionary<string, System.Text.Json.JsonElement>()), ct));
+        Assert.Equal("file_audit_request_denied", denied.Message);
+        var selected = await control.CheckResource(app, tx, selection, principal, access, ct);
+        var nextCommand = selected.GetProperty("command_id").GetString();
+        Assert.NotEqual(commandId, nextCommand);
+        Assert.Equal(nextCommand, await Offered());
+        var stale = await Assert.ThrowsAsync<AgentControlException>(() => control.CheckResource(app, tx, selection, principal, access, ct));
+        Assert.Equal("agent_policy_revision_conflict", stale.Message);
         await tx.CommitAsync(ct);
         Assert.Equal(2, await Number(owner, "select count(*) from sli_plugin_file_audit.audit_receipts where command_id='unsupported-check'", ct));
     }

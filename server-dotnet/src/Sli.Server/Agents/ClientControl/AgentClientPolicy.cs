@@ -21,7 +21,12 @@ internal static class AgentClientPolicy
         if (fileAuditHook && agent["file_audit"] is JsonObject audit && audit["request"] is JsonObject { Count: > 0 } request
             && (request["command"]?["action"]?.ToString() != "check" || request["config"]?["source_kind"]?.ToString() == "workstation"
                 || FileAuditResult.OfferCheck(agent, audit)))
+        {
             result["file_audit"] = request.DeepClone();
+            if (request["command"]?["action"]?.ToString() == "check" && request["config"]?["source_kind"]?.ToString() != "workstation"
+                && FileAuditResult.RetryVersion(agent, audit) is { } retryVersion)
+                result["file_audit_retry_version"] = retryVersion.ToString();
+        }
         return result;
     }
     internal static ClientPolicyReport Report(JsonObject agent, JsonNode? body, DateTimeOffset now)

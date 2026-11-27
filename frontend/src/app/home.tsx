@@ -6,7 +6,7 @@ import type { HomeChange, HomePeriod, HomeProblem, HomeQueueFilter, HomeQueuePag
 import { Button, DataTable, PageHeader, Panel, Select, SeverityBadge, StateView, Tabs, TabList, TabPanel, type TableColumn } from "../design-system";
 import { en } from "../i18n/en";
 import { getLocale, t, type MessageKey } from "../i18n";
-import { browserTimeZone, formatDateTime } from "../shared/date-time";
+import { browserTimeZone, formatDateTime, formatTableTime } from "../shared/date-time";
 import { EMPTY_VALUE, formatNumber } from "../shared/format";
 import { useAccessStatus, useEffectiveAccess, useTimeZone } from "./App";
 import { FirstAdSource, useFirstAdSource } from "./first-ad-source";
@@ -72,16 +72,16 @@ function Problems({ data, zone, queue, setQueue, pending, showAssignment }: {
       <SeverityBadge severity={severity} label={t(`home.severity.${severity}`)}/> },
     { key: "name", label: t("home.object"), width: "16%", wrap: true,
       render: (row) => row.name ? link(row.object_href ?? row.href, row.name) : EMPTY_VALUE },
-    { key: "fact", label: t("home.fact"), wrap: true, render: (row) => <>
-      {[row.fact, row.source].filter(Boolean).join(" · ") || EMPTY_VALUE}
-      {row.occurrence_count > 1 && <span className="sli-ds-home-inline-source"> {link(row.repeats_href, `×${formatNumber(row.occurrence_count)}`)}</span>}
-    </> },
+    { key: "fact", label: t("home.fact"), wrap: true, render: (row) => row.fact || EMPTY_VALUE },
     { key: "at", label: t("home.lastSeen"), width: "10rem",
-      render: ({ at }) => at ? <time dateTime={at} title={`${formatDateTime(at, zone, { seconds: true })} (${zone})`}>
-        {formatDateTime(at, zone, { withYear: false })}
-      </time> : EMPTY_VALUE },
+      render: ({ first_at: first, at }) => at ? <>
+        {first && Date.parse(first) < Date.parse(at) ? <><time dateTime={first}>{formatTableTime(first, zone)}</time>–</> : null}
+        <time dateTime={at} title={`${formatDateTime(at, zone, { seconds: true })} (${zone})`}>{formatTableTime(at, zone)}</time>
+      </> : EMPTY_VALUE },
     { key: "review", label: t("home.review"), width: "7rem", wrap: true,
-      render: (row) => link(row.href, t(`home.status.${row.status}`)) },
+      render: (row) => <>{link(row.href, t(`home.status.${row.status}`))}
+        {row.occurrence_count > 1 && <span className="sli-ds-home-inline-source"> {link(row.repeats_href, `×${formatNumber(row.occurrence_count)}`)}</span>}
+      </> },
   ];
   if (showAssignment && data.unassigned_count !== null) columns.push({
     key: "assignee", label: t("home.assignee"), width: "9rem", wrap: true,
@@ -257,7 +257,7 @@ export function HomePage() {
         if (!value) return;
         void navigate({ search: ((old: Record<string, unknown>) => ({ ...old, domain: Number(value), domain_id: undefined, scope: undefined })) as never });
       }}/> : null}
-    <Select label={t("home.period")} value={period}
+    <Select label={t("home.period")} value={period} showLabelWhenOpen
       options={[{ value: "24h", label: t("home.period.24h") }, { value: "7d", label: t("home.period.7d") }]}
       onChange={(value) => { if (value) { setPeriod(value); setPrevious(null); } }}/>
     <Button aria-pressed={previous !== null} disabled={!data && !previous} onClick={togglePrevious}>{t("home.period.previous")}</Button>

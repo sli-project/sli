@@ -20,7 +20,9 @@ public static class FileAuditControlEndpoints
             var body=Sli.Server.Compatibility.PythonJson.FromElement(payload) as JsonObject;
             using var guard=admission.Enter(body?.ContainsKey("agents")==true ? "enqueue_audit_batch" : "enqueue_audit");
             if(body is null) throw new AgentControlException("file_audit_request_invalid");
-            return body.ContainsKey("agents") ? await service.Batch(db,tx,body,principal,access,ct) : await service.Enqueue(db,tx,body,principal,access,ct);
+            if (body.ContainsKey("agents")) return await service.Batch(db,tx,body,principal,access,ct);
+            if (body.ContainsKey("collection_scope_id")) return await service.CheckResource(db,tx,body,principal,access,ct);
+            return await service.Enqueue(db,tx,body,principal,access,ct);
         }));
         endpoints.MapPost("/api/v1/agent/file-audit-report",FileAuditIngestEndpoint.Handle);
         endpoints.MapGet(FileAuditCatalog.AdminRoute, (HttpContext context) => FileAuditCatalog.Admin(context));
