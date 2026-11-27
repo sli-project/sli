@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import secrets
 import sys
@@ -8,29 +7,6 @@ import uuid
 from pathlib import Path
 
 import pytest
-
-
-@pytest.fixture(autouse=True)
-def hermetic_report_domain(monkeypatch: pytest.MonkeyPatch):
-    """Reports use a synthetic DB setting without connecting to a real DB."""
-    from server.sli.core import platform_settings
-
-    query_rows = platform_settings.database.query_rows
-
-    def stored_setting(sql, params=(), **kwargs):
-        if sql == "select is_archived from domains where lower(fqdn) = ?" and params == ("example.test",):
-            return [{"is_archived": False}]
-        if (
-            sql == "select value, updated_by, updated_at from platform_settings where key = ?"
-            and params == ("reports.domain_fqdn",)
-        ):
-            return [{"value": "example.test", "updated_by": None, "updated_at": None}]
-        return query_rows(sql, params, **kwargs)
-
-    monkeypatch.setattr(platform_settings.database, "query_rows", stored_setting)
-    platform_settings.clear_cache()
-    yield
-    platform_settings.clear_cache()
 
 
 def pytest_collection_modifyitems(items) -> None:
@@ -42,48 +18,6 @@ def pytest_collection_modifyitems(items) -> None:
         if item.get_closest_marker("windows_only") is not None:
             item.add_marker(skip)
 
-
-@pytest.fixture(autouse=True)
-def hermetic_domain_controller_targets(monkeypatch: pytest.MonkeyPatch):
-    """Keep unit tests off any real database: stored DC targets are unreadable.
-
-    Resolution then falls back to config/domain_controllers.json exactly as on
-    an installation where migration 147 is not applied. Tests of the database
-    path patch ``_query_target_rows`` themselves.
-    """
-    from server.sli.sources import dc_discovery
-
-    def unreadable() -> list[dict]:
-        raise RuntimeError("no database in unit tests")
-
-    monkeypatch.setattr(dc_discovery, "_query_target_rows", unreadable)
-    dc_discovery.clear_database_target_cache()
-    yield
-    dc_discovery.clear_database_target_cache()
-
-
-_LEGACY_RADIUS_TARGET = [{
-    "source_name": "radius01.example.invalid",
-    "connect_address": "radius01.example.invalid",
-    "owner_confirmed_ip": "192.0.2.15",
-}]
-
-
-@pytest.fixture
-def legacy_radius_target_inventory(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Supply retired target data only to hermetic legacy-plan contract tests."""
-
-    target_path = (
-        Path(__file__).resolve().parents[1] / "config/stage9_radius_targets.json"
-    ).resolve()
-    original_read_text = Path.read_text
-
-    def read_text(path: Path, *args, **kwargs) -> str:
-        if path.resolve() == target_path:
-            return json.dumps({"targets": _LEGACY_RADIUS_TARGET})
-        return original_read_text(path, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "read_text", read_text)
 
 
 @pytest.fixture(scope="session")

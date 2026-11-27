@@ -7,9 +7,7 @@ import re
 import pytest
 
 from scripts.maintenance.existing_postgres_bootstrap import forward_migration_inventory
-from server.sli.semantic import qw_input as qw, semantic_risk_runtime_repository as runtime
 from tests.postgres_integration_guard import assert_disposable_database
-from tests.unit.test_qw_semantic_input import policy, signal
 
 ROOT = Path(__file__).resolve().parents[2]
 PATH = ROOT / "config/postgres_migrations/228_qw_semantic_input.sql"
@@ -111,108 +109,3 @@ def pg():
         """)
         conn.execute(SQL)
     yield dsn
-
-
-def seed_policy(conn, item):
-    runtime.register_risk_policy(conn.cursor(), policy=policy(item))
-    conn.execute("update semantic_risk_policies set lifecycle_status=%s", (item.evaluation_mode,))
-    for ref in item.evidence_refs:
-        conn.execute("insert into fixture_native_evidence values(%s::jsonb,true) on conflict do nothing",
-                     (json.dumps(ref.params),))
-
-
-@pytest.mark.postgres_integration
-@pytest.mark.postgres_empty
-@pytest.mark.parametrize("mode", ["test", "shadow"])
-def test_postgres_migration_replay_lease_diagnostics_and_native_rls(pg, mode, monkeypatch):
-    import psycopg
-    from psycopg.rows import dict_row
-
-    item = signal(evaluation_mode=mode)
-    with psycopg.connect(pg, row_factory=dict_row) as conn:
-        seed_policy(conn, item)
-    with psycopg.connect(pg, row_factory=dict_row) as conn:
-        conn.execute("set role adlog_semantic_worker")
-        jobs = qw.enqueue_qw_signal_risk_jobs(conn.cursor(), signal=item)
-        assert len(jobs) == 1
-    with psycopg.connect(pg, row_factory=dict_row) as conn:
-        conn.execute("set role adlog_semantic_worker")
-        assert qw.enqueue_qw_signal_risk_jobs(conn.cursor(), signal=item) == jobs
-        job, = runtime.claim_risk_evaluation_jobs(conn.cursor())
-        # Completeness is already covered independently; this fixture contains
-        # native evidence and semantic jobs only, with no collection sources.
-        from tests.semantic.test_semantic_risk1 import _snapshot
-        monkeypatch.setattr(runtime, "_capture_completeness_snapshot", lambda *args, **kwargs: _snapshot(complete=False))
-        work = runtime.load_risk_evaluation_work_item(conn.cursor(), job_id=job["job_id"], lease_token=job["lease_token"])
-        result = runtime.execute_risk_evaluation(conn.cursor(), work=work, evaluation_ms=1, create_finding=True)
-        assert result.scenario_id is None and result.finding_id is None
-        assert conn.execute("select count(*) as n from semantic_qw_signals").fetchone()["n"] == 1
-        assert conn.execute("select evaluation_mode from semantic_risk_evaluation_results").fetchone()["evaluation_mode"] == mode
-    with psycopg.connect(pg) as conn:
-        conn.execute("update fixture_native_evidence set allowed=false")
-    with psycopg.connect(pg) as conn:
-        conn.execute("set role adlog_semantic_worker")
-        assert conn.execute("select count(*) from semantic_qw_signals").fetchone()[0] == 0
-        with pytest.raises(psycopg.errors.InsufficientPrivilege):
-            conn.execute("insert into semantic_qw_signals values(%s,%s,%s::jsonb,now())",
-                         ("f" * 64, mode, json.dumps(item.document)))
-    with psycopg.connect(pg) as conn:
-        conn.execute("set role adlog_storage_worker")
-        assert conn.execute("select count(*) from semantic_qw_signals").fetchone()[0] == 0
-    with psycopg.connect(pg) as conn:
-        conn.execute("set role adlog_user")
-        with pytest.raises(psycopg.errors.InsufficientPrivilege):
-            conn.execute("select * from semantic_qw_signals")
-
-
-@pytest.mark.postgres_integration
-@pytest.mark.postgres_empty
-def test_postgres_input_immutability_reference_constraints_and_rollback(pg):
-    import psycopg
-    from psycopg.rows import dict_row
-
-    item = signal()
-    with psycopg.connect(pg, row_factory=dict_row) as conn:
-        seed_policy(conn, item)
-    with pytest.raises(RuntimeError, match="fixture rollback"), psycopg.connect(pg, row_factory=dict_row) as conn:
-        conn.execute("set role adlog_semantic_worker")
-        assert qw.enqueue_qw_signal_risk_jobs(conn.cursor(), signal=item)
-        raise RuntimeError("fixture rollback")
-    with psycopg.connect(pg) as conn:
-        assert conn.execute("select count(*) from semantic_qw_signals").fetchone()[0] == 0
-        assert conn.execute("select count(*) from semantic_risk_evaluation_jobs").fetchone()[0] == 0
-        conn.execute("insert into semantic_qw_signals values(%s,%s,%s::jsonb,now())",
-                     (item.signal_id, item.evaluation_mode, json.dumps(item.document)))
-    for statement in ("update semantic_qw_signals set evaluation_mode='test'", "delete from semantic_qw_signals",
-                      "truncate semantic_qw_signals cascade"):
-        with psycopg.connect(pg) as conn, pytest.raises(psycopg.errors.RaiseException):
-            conn.execute(statement)
-    with psycopg.connect(pg, row_factory=dict_row) as conn:
-        conn.execute("set role adlog_semantic_worker")
-        jobs = qw.enqueue_qw_signal_risk_jobs(conn.cursor(), signal=item)
-    with psycopg.connect(pg) as conn, pytest.raises(psycopg.errors.CheckViolation):
-        conn.execute("update semantic_risk_evaluation_jobs set source_reference=%s", ("f" * 64,))
-    with psycopg.connect(pg) as conn, pytest.raises(psycopg.errors.ForeignKeyViolation):
-        conn.execute("update semantic_risk_evaluation_jobs set qw_signal_id=%s,source_reference=%s", ("f" * 64, "f" * 64))
-    assert len(jobs) == 1
-
-
-@pytest.mark.postgres_integration
-@pytest.mark.postgres_empty
-def test_postgres_backlog_checks_pin_revision_mode_and_enabled_admission(pg):
-    import psycopg
-    from psycopg.rows import dict_row
-
-    item = signal(evaluation_mode="enabled")
-    with psycopg.connect(pg, row_factory=dict_row) as conn:
-        seed_policy(conn, item)
-        conn.execute("set role adlog_semantic_worker")
-        assert qw.enqueue_qw_signal_risk_jobs(conn.cursor(), signal=item) == ()
-        assert runtime.enqueue_risk_backlog(conn.cursor()) == ()
-    with psycopg.connect(pg) as conn:
-        conn.execute("insert into semantic_policy_admission values('fixture-qw',1,true)")
-    with psycopg.connect(pg, row_factory=dict_row) as conn:
-        conn.execute("set role adlog_semantic_worker")
-        jobs = runtime.enqueue_risk_backlog(conn.cursor())
-        assert len(jobs) == 1 and runtime.enqueue_risk_backlog(conn.cursor()) == ()
-        assert len(runtime.claim_risk_evaluation_jobs(conn.cursor())) == 1

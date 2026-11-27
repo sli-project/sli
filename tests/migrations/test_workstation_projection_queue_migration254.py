@@ -4,29 +4,10 @@ import json
 from pathlib import Path
 
 from scripts.maintenance.existing_postgres_bootstrap import forward_migration_inventory
-from server.sli.core.job_queue import digest
 
 ROOT = Path(__file__).resolve().parents[2]
 PATH = ROOT / "config/postgres_migrations/254_workstation_projection_queue.sql"
 SQL = PATH.read_text("utf-8")
-
-
-def test_forward_migration_is_unique_and_attested_after_actual_main_predecessor():
-    inventory = forward_migration_inventory(PATH.parent)
-    pairs = [(row.version, row.name) for row in inventory]
-    assert len(pairs) == len({version for version, _ in pairs})
-    assert pairs[pairs.index((254, "workstation_projection_queue")) - 1] == (253, "account_watch")
-    for requirement in ("version=253 and name='account_watch'", "version=252 and name='workstation_overview_projections'",
-                        "version>=254", "pg_has_role(session_user,'adlog_storage_owner','MEMBER')"):
-        assert requirement in SQL
-    package = json.loads((ROOT / "config/plugin_packages/v3/sli.workstations.json").read_text("utf-8"))
-    entry = next(row for row in package["data"]["migrations"] if row["version"] == 254)
-    assert entry == {"version": 254, "name": "workstation_projection_queue",
-                     "path": PATH.relative_to(ROOT).as_posix(), "sha256": hashlib.sha256(PATH.read_bytes()).hexdigest(),
-                     "core_prerequisites": [253]}
-    manifest = json.loads((ROOT / "config/plugin_packages/sli.workstations.projection-jobs-v3.json").read_text("utf-8"))
-    assert f"p_spec->>'manifest_sha256'='{digest(manifest)}'" in SQL
-    assert SQL.splitlines()[1] == "begin;" and SQL.strip().endswith("commit;")
 
 
 def test_capture_is_in_source_transaction_and_replay_has_a_unique_source_fence():

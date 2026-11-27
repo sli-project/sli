@@ -34,8 +34,7 @@ def seed_native_acl(admin):
     """Retained synthetic native evidence, then the real issuer under worker identity."""
     from psycopg.types.json import Jsonb
 
-    from server.sli.plugins.file_audit.rules import permission_findings
-    from tests.migrations.test_file_audit_acl_bridge_migration264 import inventory
+    from tests.migrations.test_file_audit_acl_bridge_migration264 import broad_write_fixture, inventory
 
     agent, source = str(uuid4()), str(uuid4())
     item = inventory()
@@ -71,7 +70,7 @@ def seed_native_acl(admin):
       values(%s,%s,%s,%s,%s,1,%s,%s,%s,0)''',
                   (item['snapshot_id'], agent, source, scope, item['observed_at_utc'],
                    item['completeness'], item['snapshot_sha256'], Jsonb(item)))
-    row = permission_findings(item | {'agent_id': agent, 'source_instance_id': source}, config=policy)[0]
+    row = broad_write_fixture(item, agent, source)
     finding = admin.execute('''insert into public.findings(fingerprint,rule_code,title,severity)
       values(%s,%s,'Synthetic ACL restore fixture','medium') returning id''',
                             (row['result_id'], row['rule_code'])).fetchone()[0]

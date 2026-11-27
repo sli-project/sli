@@ -1,7 +1,6 @@
 import json
 from pathlib import Path
 
-from server.sli.core.job_queue import digest
 
 ROOT = Path(__file__).resolve().parents[2]
 SQL = (ROOT / "config/postgres_migrations/158_ad_gpo_core_jobs.sql").read_text("utf-8")
@@ -25,15 +24,6 @@ def test_enqueue_preserves_replay_quota_and_source_mutex():
     assert current == previous.replace(
         "or p_spec->>'rights_profile'<>'vpn-read'",
         "or not (p_spec->>'rights_profile'='vpn-read' or public.core_ad_job_binding_v1(p_spec))")
-
-
-def test_admission_pins_bundled_manifests_and_stored_source_hash_and_scope():
-    for plugin in ("sli.ad", "sli.gpo"):
-        manifest = json.loads((ROOT / f"config/plugin_packages/{plugin}.jobs-v3.json").read_text("utf-8"))
-        assert f"p_spec->>'manifest_sha256'='{digest(manifest)}'" in SQL
-    assert "encode(m.manifest_sha256,'hex')=p_spec->'pinned_input'->>'snapshot_sha256'" in SQL
-    assert "'ad-domain:'||m.domain_id::text=p_spec->>'source_instance_id'" in SQL
-    assert "p_spec->'access_scope'=jsonb_build_object" in SQL
 
 
 def test_publishers_have_separate_rights_and_cannot_write_without_current_fence():

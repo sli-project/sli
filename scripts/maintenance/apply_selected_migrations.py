@@ -10,9 +10,7 @@ admitted migrations), so "apply everything pending" is never offered.
            ``--confirm APPLY-MIGRATIONS-<v1>-<v2>...``
 
 Credentials come from the environment (``ADLOG_PG_DSN``,
-``ADLOG_PG_ADMIN_USER``, ``ADLOG_PG_ADMIN_PASSWORD``) or, with
-``--load-supervisor-environment``, from the current Windows user's
-DPAPI-protected worker-supervisor environment. They are never printed.
+``ADLOG_PG_ADMIN_USER``, ``ADLOG_PG_ADMIN_PASSWORD``).
 """
 
 from __future__ import annotations
@@ -32,7 +30,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.maintenance.existing_postgres_bootstrap import (
-    forward_migration_inventory,  # noqa: E402
+    forward_migration_inventory, validate_report_domain,  # noqa: E402
 )
 
 MIGRATIONS_DIR = ROOT / "config" / "postgres_migrations"
@@ -48,9 +46,7 @@ def migration_environment(source: Mapping[str, str]) -> dict[str, str]:
     environment = dict(source, PGCLIENTENCODING="UTF8")
     domain = source.get("ADLOG_REPORT_DOMAIN_FQDN", "").strip()
     if domain:
-        from server.sli.core.platform_settings import SETTINGS
-
-        domain = SETTINGS["reports.domain_fqdn"].validate(domain)
+        domain = validate_report_domain(domain)
         environment["PGOPTIONS"] = (
             environment.get("PGOPTIONS", "") + f" -c sli.report_domain_fqdn={domain}"
         ).strip()
@@ -60,9 +56,9 @@ def migration_environment(source: Mapping[str, str]) -> dict[str, str]:
 def _admin_parts() -> dict[str, str]:
     from psycopg.conninfo import conninfo_to_dict
 
-    from server.sli.core.app_config import load_config
+    from deploy.linux.sli_core.secret_files import secret_value
 
-    parts = conninfo_to_dict(os.getenv("ADLOG_PG_DSN") or load_config().postgres_dsn or "")
+    parts = conninfo_to_dict(secret_value("ADLOG_PG_DSN") or "")
     user = os.getenv("ADLOG_PG_ADMIN_USER", "").strip()
     password = os.getenv("ADLOG_PG_ADMIN_PASSWORD", "")
     if not (parts.get("dbname") or parts.get("service") or os.getenv("PGSERVICE")) or not user or not password:
@@ -242,7 +238,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--versions", required=True, help="comma-separated versions, e.g. 144,145")
     parser.add_argument("--confirm")
     parser.add_argument("--bin-dir", type=Path, default=DEFAULT_BIN_DIR)
-    parser.add_argument("--load-supervisor-environment", action="store_true")
     args = parser.parse_args(argv)
     versions = sorted({int(item) for item in args.versions.split(",") if item.strip()})
     inventory = {item.version: item for item in forward_migration_inventory(MIGRATIONS_DIR)}
@@ -251,10 +246,6 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(f"unknown migration versions: {unknown or 'none given'}")
     if args.action == "apply" and args.confirm != confirmation_token(versions):
         raise SystemExit(f"apply requires --confirm {confirmation_token(versions)}")
-    if args.load_supervisor_environment:
-        from server.sli.ops.worker_supervisor_secrets import load_supervisor_environment
-
-        load_supervisor_environment(override_existing=True)
     import psycopg
 
     try:

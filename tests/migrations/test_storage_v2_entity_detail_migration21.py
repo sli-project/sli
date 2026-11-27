@@ -1,22 +1,9 @@
 from pathlib import Path
 
-from server.sli.storage.storage_v2_archive import ARCHIVE_KINDS
 
 
 FORWARD = Path("config/postgres_migrations/021_storage_v2_entity_detail_kind.sql")
 ROLLBACK = Path("config/postgres_migrations/021_storage_v2_entity_detail_kind.rollback.sql")
-
-
-def test_runtime_and_postgres_contract_include_entity_detail() -> None:
-    forward = FORWARD.read_text(encoding="utf-8").lower()
-
-    assert "entity_detail" in ARCHIVE_KINDS
-    assert forward.count("'entity_detail'") == 2
-    assert "storage_v2_archive_sets_archive_kind_check" in forward
-    assert "storage_v2_archive_blocks_archive_kind_check" in forward
-    assert "pg_has_role(session_user, 'adlog_storage_owner', 'member')" in forward
-    assert "set local role adlog_storage_owner" in forward
-    assert "values (21, 'storage_v2_entity_detail_kind')" in forward
 
 
 def test_migration_validates_new_constraints_before_marking_complete() -> None:

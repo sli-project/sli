@@ -5,7 +5,6 @@ from pathlib import Path
 import re
 
 from scripts.maintenance.existing_postgres_bootstrap import forward_migration_inventory
-from server.sli.plugins.file_audit.contracts import CAPABILITIES, REPORT_KEYS
 
 ROOT = Path(__file__).resolve().parents[2]
 PATH = ROOT / "config/postgres_migrations/183_file_audit_contracts.sql"
@@ -73,15 +72,3 @@ def test_owner_defaults_cleanup_block_and_core_owned_findings():
         assert text in SQL
     assert "create table sli_plugin_file_audit.findings" not in SQL
     assert "delete from" not in SQL.lower()
-
-
-def test_report_passports_are_draft_and_no_access_or_agent_assignments_exist():
-    for key in REPORT_KEYS:
-        assert f"('{key}')" in SQL
-    for capability in CAPABILITIES.values():
-        assert f"'{capability}'" in SQL
-    assert "'restricted','draft'" in SQL and "'published'" not in SQL
-    for table in ("access_package_reports", "access_report_assignments", "access_capability_assignments",
-                  "access_package_capabilities", "sli_agents", "sli_agent_module_bindings"):
-        assert f"insert into public.{table}" not in SQL
-        assert f"update public.{table}" not in SQL

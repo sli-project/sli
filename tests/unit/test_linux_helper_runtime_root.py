@@ -92,7 +92,7 @@ def test_migrate_creates_private_helper_root_without_systemd(runtime_tree, monke
     monkeypatch.setattr(migrate, "render_baseline_schema", render)
     monkeypatch.setattr(native_plugins, "bootstrap", lambda *a: None)
     for name in ("attest_ledger", "apply_pending", "create_platform_owner", "run_sql", "configure_worker_logins",
-                 "configure_permanent_history", "configure_workstation_history"):
+                 "configure_permanent_history"):
         monkeypatch.setattr(migrate, name, lambda *a, **kw: None)
     # A fresh database must render the baseline inside the private helper root.
     monkeypatch.setattr(migrate, "load_baseline", lambda *a: SimpleNamespace(version=0, roles_path=root / "roles.sql"))

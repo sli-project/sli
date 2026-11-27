@@ -52,9 +52,6 @@ public sealed partial class OperationsStreamPostgresTests(ITestOutputHelper outp
     [Fact]
     public async Task Large_history_missing_channel_and_old_revision_keep_exact_fields_under_three_seconds()
     {
-        string python = File.ReadAllText(Path.Combine(PostCollectionPostgres.Repository(), "server/sli/agents/collection_health.py"))
-            .Replace("\r\n", "\n").Split("_STREAMS_SQL = \"\"\"", 2)[1].Split("\"\"\"", 2)[0].Replace("?::jsonb", "@requested::jsonb");
-        Assert.Equal(LegacyStreams.Trim(), python.Trim());
         // The disabled-module column arrived in 363. Its current reader has separate
         // coverage in FileAuditCollectionHealthPostgresTests on the latest schema.
         const string disabledIntakeFilter = " and i.module_disabled_at is null";
@@ -145,11 +142,6 @@ public sealed partial class OperationsStreamPostgresTests(ITestOutputHelper outp
         watch.Restart(); string actual = await Read(historicalStreams);
         output.WriteLine($"Optimized 40 streams: {watch.Elapsed.TotalMilliseconds:F1} ms");
         Assert.True(watch.Elapsed < TimeSpan.FromSeconds(3)); Assert.Equal(expected, actual);
-        // The frozen Python reader must still work on 313; its legacy plan needs
-        // the separate reference budget, never the production .NET timeout.
-        await PostCollectionPostgres.Sql(db, "set statement_timeout=0", ct);
-        Assert.Equal(expected, await Read(python));
-        await PostCollectionPostgres.Sql(db, "set statement_timeout='3s'", ct);
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
             { ["ConnectionStrings:Sli"] = fixture.Dsn("adlog_user") }).Build();
         var queries = new OperationsQueries(new PostgresConnectionFactory(config));

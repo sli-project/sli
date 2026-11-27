@@ -4,8 +4,3 @@ target-version = "py314"
 
 [lint]
 select = ["E9", "F63", "F7", "F82"]
-
-[lint.per-file-ignores]
-# Remaining F821 debt outside the retained RADIUS CLI dispatch fixes.
-"server/api/routes/health.py" = ["F821"]
-"server/sli/plugins/ad/windows_ad_dc/semantics.py" = ["F821"]

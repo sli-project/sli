@@ -7,7 +7,7 @@ from cryptography.hazmat.primitives.asymmetric import ec, ed25519, rsa
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 from deploy.linux.sli_core import ca
-from server.sli.agents import ca as legacy_ca, provision
+from deploy.linux.sli_secrets import _agent_bundle
 
 HOST = "00000000-0000-4000-8000-000000000001"
 AGENT = "00000000-0000-4000-8000-000000000002"
@@ -21,12 +21,18 @@ def csr_pem(key, host=HOST, *, extension=None):
     return builder.sign(key, algorithm).public_bytes(serialization.Encoding.PEM).decode("ascii")
 
 
+def create_authority():
+    bundle, _ = _agent_bundle()
+    return ca.IssuingCA(
+        x509.load_pem_x509_certificate(bundle["agent_root_certificate"]),
+        x509.load_pem_x509_certificate(bundle["agent_issuer_certificate"]),
+        serialization.load_pem_private_key(bundle["agent_issuer_key"], password=None),
+    )
+
+
 @pytest.fixture
 def authority():
-    root_key, root = provision.create_root()
-    issuer_key, request = provision.create_issuer_request()
-    issuer = provision.sign_issuer(root, root_key, request)
-    return ca.IssuingCA(root, issuer, issuer_key)
+    return create_authority()
 
 
 def test_offline_root_and_issuer_have_constrained_chain(authority):
@@ -139,10 +145,7 @@ def test_file_secrets_load_and_no_root_key_needed(authority, tmp_path, monkeypat
 def test_expired_and_foreign_certificates_rejected(authority, monkeypatch):
     key = ec.generate_private_key(ec.SECP256R1())
     cert = authority.issue(ca.parse_csr(csr_pem(key), HOST), AGENT, HOST)
-    foreign_key, foreign_root = provision.create_root()
-    foreign_issuer_key, request = provision.create_issuer_request()
-    foreign_issuer = provision.sign_issuer(foreign_root, foreign_key, request)
-    foreign = ca.IssuingCA(foreign_root, foreign_issuer, foreign_issuer_key)
+    foreign = create_authority()
     with pytest.raises(ca.AgentError, match="agent_certificate_rejected"):
         authority.verify_client(foreign.issue(ca.parse_csr(csr_pem(key), HOST), AGENT, HOST).public_bytes(serialization.Encoding.DER))
     monkeypatch.setattr(ca, "utcnow", lambda: cert.not_valid_after_utc + timedelta(seconds=1))
@@ -158,21 +161,3 @@ def test_issuer_expiry_caps_certificate_and_blocks_expired_ca(authority, monkeyp
     monkeypatch.setattr(ca, "utcnow", lambda: authority.issuer.not_valid_after_utc)
     with pytest.raises(ca.AgentError, match="agent_ca_unavailable"):
         authority.issue(ca.parse_csr(csr_pem(key), HOST), AGENT, HOST)
-
-
-@pytest.mark.legacy
-def test_provisioning_never_overwrites_private_files(tmp_path):
-    path = tmp_path / "key"
-    provision._write_new(str(path), b"synthetic", private=True)
-    with pytest.raises(FileExistsError):
-        provision._write_new(str(path), b"replacement", private=True)
-    assert path.read_bytes() == b"synthetic"
-
-
-@pytest.mark.legacy
-def test_offline_signing_rejects_unapproved_subject():
-    root_key, root = provision.create_root()
-    key = ec.generate_private_key(ec.SECP384R1())
-    csr = x509.load_pem_x509_csr(csr_pem(key).encode())
-    with pytest.raises(legacy_ca.AgentError, match="invalid_issuer_request"):
-        provision.sign_issuer(root, root_key, csr)

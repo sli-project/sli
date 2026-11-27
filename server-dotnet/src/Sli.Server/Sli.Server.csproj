@@ -28,7 +28,6 @@
     <PackageReference Include="System.CommandLine" />
     <PackageReference Include="System.IO.Hashing" />
     <EmbeddedResource Include="Access/frozen-report-rules.json" />
-    <EmbeddedResource Include="../../../server/sli/ops/version.py" LogicalName="Sli.Server.Hosting.release-version.py" />
     <EmbeddedResource Include="../../../VERSION" LogicalName="Sli.Server.Hosting.VERSION" />
     <EmbeddedResource Include="Installation/settings-catalog.json" LogicalName="Sli.Installation.settings-catalog.json" />
     <EmbeddedResource Include="Installation/*.sql" LogicalName="Sli.Installation.%(Filename)%(Extension)" />
@@ -40,7 +39,6 @@
     <EmbeddedResource Include="../../../config/plugin_settings_schema/*.json" LogicalName="Sli.Installation.plugin_settings_schema.%(Filename)%(Extension)" />
     <EmbeddedResource Include="../../../config/plugin_packages/v3/*.json" LogicalName="Sli.Installation.plugin_packages.v3.%(Filename)%(Extension)" />
     <EmbeddedResource Include="../../../config/stage9_radius_registration_v1.json;../../../config/stage10_plugin_postgresql_isolation_v1.json" LogicalName="Sli.Installation.%(Filename)%(Extension)" />
-    <EmbeddedResource Include="../../../scripts/maintenance/stage9_radius_manual_worker.py;../../../scripts/maintenance/stage9_radius_session_consumer_manual.py" LogicalName="Sli.Installation.%(Filename)%(Extension)" />
     <EmbeddedResource Include="../../../config/plugin_settings_schema_v1.json;../../../config/plugin_architecture_v3.json;../../../config/stage10_plugin_management_v1.json;../../../config/stage9_ad_dc_compatibility_registration_v1.json;../../../config/plugin_architecture_v2.json;../../../config/stage10_plugin_resource_profiles_v1.json" LogicalName="Sli.Installation.%(Filename)%(Extension)" />
     <EmbeddedResource Include="../../../config/source_packs/*.json" LogicalName="Sli.Server.Operations.Packs.%(Filename).json" />
     <EmbeddedResource Include="../../../config/stage10_plugin_resource_profiles_v1.json" LogicalName="Sli.Server.Operations.resource-profiles.json" />

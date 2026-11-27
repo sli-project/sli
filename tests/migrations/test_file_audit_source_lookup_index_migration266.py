@@ -9,6 +9,8 @@ from uuid import uuid4
 
 import pytest
 
+from tests.migrations.test_qw_finding_notifications_migration229 import publication_pg as publication_pg
+
 from tests.migrations.test_default_native_detections_migration262 import (
     defaults_pg as defaults_pg,  # noqa: PLC0414
 )
@@ -17,9 +19,6 @@ from tests.migrations.test_file_acl_semantic_migration265 import (
 )
 from tests.migrations.test_file_audit_acl_bridge_migration264 import (
     acl_pg as acl_pg,  # noqa: PLC0414
-)
-from tests.migrations.test_qw_finding_notifications_migration229 import (
-    publication_pg as publication_pg,  # noqa: PLC0414
 )
 from tests.migrations.test_qw_semantic_input_migration228 import (
     pg as pg,  # noqa: PLC0414
@@ -328,7 +327,3 @@ def test_exact_index_after_actual_265_migration(native_pg):
         assert index_state(conn)[:9] == ('btree', False, True, True, 3, 3, None, None, True)
         assert index_state(conn)[10] == 'adlog_file_audit_owner'
         assert conn.execute("select oid,proowner,proacl,proconfig,pg_get_functiondef(oid) from pg_proc where proname='file_acl_dacl_mask_v265' order by oid").fetchall() == before
-
-
-
-

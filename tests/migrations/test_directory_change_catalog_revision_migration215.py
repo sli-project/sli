@@ -2,22 +2,11 @@
 from pathlib import Path
 
 from scripts.maintenance.existing_postgres_bootstrap import forward_migration_inventory
-from server.sli.events.event_catalog import event_noise_classification
 
 
 ROOT = Path(__file__).resolve().parents[2]
 PATH = ROOT / "config/postgres_migrations/215_directory_change_catalog_revision.sql"
 SQL = PATH.read_text("utf-8")
-
-
-def test_exact_bundled_catalog_revision_is_registered_without_rewriting_history():
-    for event_id in (4624, 4625, 4728, 5136):
-        _, version = event_noise_classification(event_id, "Security", "Microsoft-Windows-Security-Auditing")
-        assert f"insert into public.event_catalog_revisions(version) values('{version}')" in SQL
-    assert "on conflict(version) do nothing" in SQL
-    assert "update public.event_catalog_revisions" not in SQL
-    assert "delete from" not in SQL and "drop trigger" not in SQL
-    assert "create or replace function" not in SQL
 
 
 def test_forward_migration_requires_exact_predecessor_and_storage_owner():

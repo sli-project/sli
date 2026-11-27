@@ -205,19 +205,4 @@ try { & $realHealth; throw 'service_failure_ignored' }
 catch { if ($_.Exception.Message -ne 'agent_upgrade_service_failed') { throw } }
 if ($script:refreshCount -ne 2 -or -not $script:disposed) { throw 'health_failure_not_bounded' }
 
-# Parse build source without running its toolchain/download/compile operations.
-$buildPath = Join-Path ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($SourcePath))) 'build-sli-agent-msi.ps1'
-$buildAst = [Management.Automation.Language.Parser]::ParseFile($buildPath, [ref]$tokens, [ref]$errors)
-if ($errors.Count) { throw 'builder_parse_failed' }
-$versionFunction = $buildAst.Find({ param($node)
-    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'ConvertTo-AgentMsiVersion'
-}, $true)
-Invoke-Expression $versionFunction.Extent.Text
-foreach ($case in @(@('2026.10.1', '26.10.1'), @('2026.10.2', '26.10.2'), @('1.2.3', '1.2.3'), @('255.255.65535', '255.255.65535'))) {
-    if ((ConvertTo-AgentMsiVersion $case[0]) -cne $case[1]) { throw 'derived_version_mismatch' }
-}
-foreach ($version in @('1.256.0', '256.1.0', '2026.1.65536', '01.2.3', '1.2.3.4')) {
-    try { $null = ConvertTo-AgentMsiVersion $version; throw 'invalid_version_accepted' }
-    catch { if ($_.Exception.Message -notin @('invalid_build_version', 'invalid_msi_version')) { throw } }
-}
 Write-Output 'PowerShell 5.1 upgrade checks passed'

@@ -12,8 +12,6 @@ import pytest
 
 from deploy.linux import healthcheck, native_backup, native_host
 from deploy.linux import native_runtime as native
-from server.sli.core import job_executor
-from server.sli.sources import plugin_runtime_heartbeat
 
 REAL_OBSERVE = native.observe
 REAL_RECEIPT = native_host.Host.receipt
@@ -202,99 +200,36 @@ def test_native_executor_heartbeat_requires_freshness_and_start(tmp_path, age, p
     now = datetime.now(timezone.utc)
     path = tmp_path / "status.json"
     path.write_text(json.dumps({"profile": "light", "pid": pid, "at_utc": (now - timedelta(seconds=age)).isoformat()}))
-    assert healthcheck.healthy("executor-light", process_pid=42, started_at=now - timedelta(seconds=10), status_path=path) is valid
+    assert healthcheck.native_healthy("executor-light", process_pid=42, started_at=now - timedelta(seconds=10), status_path=path) is valid
 
 
-def test_native_remote_heartbeat_cannot_bypass_main_pid_for_pilot(tmp_path, monkeypatch):
+def test_native_remote_heartbeat_cannot_bypass_main_pid(tmp_path):
     now = datetime.now(timezone.utc)
     path = tmp_path / "remote.json"
     row = {"plugin_id": "sli.remote-access", "component_id": "radius-session-observation", "process_pid": 42,
            "status": "idle", "heartbeat_at_utc": now.isoformat()}
     path.write_text(json.dumps(row))
-    monkeypatch.setattr(job_executor, "pilot_enabled", lambda: True)
-    assert healthcheck.healthy("radius-session-observation", process_pid=42, started_at=now - timedelta(seconds=1), status_path=path)
+    assert healthcheck.native_healthy("radius-session-observation", process_pid=42, started_at=now - timedelta(seconds=1), status_path=path)
     row["process_pid"] = 1
     path.write_text(json.dumps(row))
-    assert not healthcheck.healthy("radius-session-observation", process_pid=42, started_at=now - timedelta(seconds=1), status_path=path)
+    assert not healthcheck.native_healthy("radius-session-observation", process_pid=42, started_at=now - timedelta(seconds=1), status_path=path)
 
 
 def test_db_health_uses_native_pid_and_start_as_sql_parameters(monkeypatch):
     import psycopg
     captured = []
     conn = SimpleNamespace(execute=lambda sql, params: captured.append((sql, params)) or SimpleNamespace(fetchone=lambda: (True,)))
-    monkeypatch.setattr(healthcheck, "load_config", lambda: SimpleNamespace(postgres_dsn="synthetic"))
     monkeypatch.setenv("ADLOG_PG_DSN", "synthetic")
     monkeypatch.delenv("ADLOG_PG_DSN_FILE", raising=False)
     monkeypatch.delenv("ADLOG_PG_PASSWORD", raising=False)
     monkeypatch.delenv("ADLOG_PG_PASSWORD_FILE", raising=False)
     monkeypatch.setattr(psycopg, "connect", lambda *a, **kw: nullcontext(conn))
     start = datetime.now(timezone.utc)
-    assert healthcheck.healthy("semantic", process_pid=42, started_at=start)
     assert healthcheck.native_healthy("semantic", process_pid=42, started_at=start)
-    assert captured[0] == captured[1]
-    sql, params = captured[0]
+    (sql, params), = captured
     assert params == ("semantic", 120, 42, start, start)
     assert "process_pid = %s" in sql and "heartbeat_at >= %s" in sql
     assert "heartbeat_at <= now()" in sql and "connect" not in sql.lower()
-
-
-@pytest.mark.parametrize("state", ["empty", "existing", "occupied", "legacy", "unmigrated", "worker-active"])
-def test_event_storage_bootstrap_keeps_authorization_decision_and_digest(state):
-    from server.sli.storage.storage_v2_runtime_authorization import runtime_authorization_digest
-
-    inserts = []
-
-    class Connection:
-        def transaction(self):
-            return nullcontext()
-
-        def execute(self, sql, params=None):
-            query = sql.as_string() if not isinstance(sql, str) else sql
-            decision = None
-            if "schema_migrations" in query:
-                decision = (state != "unmigrated",)
-            elif "select exists(select 1 from public.storage_v2_runtime_authorizations)" in query:
-                decision = (state == "existing",)
-            elif "pg_try_advisory_xact_lock" in query:
-                decision = (state != "worker-active",)
-            elif "to_regclass" in query:
-                decision = (state == "legacy",)
-            elif query.startswith("select exists"):
-                decision = (state == "occupied" and '"event_hot"' in query,)
-            elif query.startswith("select current_database"):
-                decision = ("sli", "synthetic-é")
-            elif query.startswith("insert into public.storage_v2_runtime_authorizations"):
-                inserts.append(params)
-            return SimpleNamespace(fetchone=lambda: decision)
-
-    if state == "worker-active":
-        with pytest.raises(native.RuntimeErrorCode, match="native_event_storage_worker_active"):
-            native.bootstrap_event_storage(Connection())
-    else:
-        native.bootstrap_event_storage(Connection())
-
-    if state != "empty":
-        assert not inserts
-        return
-    [(authority, preflight, digest, archive, evidence_json, issuer, issued, expires)] = inserts
-    evidence = json.loads(evidence_json)
-    assert authority == "storage-v2-fresh-bootstrap/v1"
-    assert issued + timedelta(days=365) == expires
-    assert digest == runtime_authorization_digest(
-        route="v2", authority=authority, preflight_digest=preflight, archive_root=archive, evidence=evidence,
-        authorized_by=issuer, authorized_at=issued, expires_at=expires)
-
-
-def test_executor_and_plugin_writers_use_explicit_run_directory(tmp_path, monkeypatch):
-    monkeypatch.setenv("SLI_EXECUTOR_STATUS_DIR", str(tmp_path))
-    monkeypatch.setenv("SLI_PLUGIN_HEARTBEAT_DIR", str(tmp_path))
-    job_executor.write_heartbeat("light", enabled=True)
-    row = json.loads((tmp_path / "sli-executor-light.json").read_text())
-    assert row["pid"] == os.getpid() and row["profile"] == "light"
-    assert not list(tmp_path.glob("*.tmp"))
-    assert plugin_runtime_heartbeat.plugin_heartbeat_path("component") == tmp_path / "plugin-component.json"
-    monkeypatch.delenv("SLI_PLUGIN_HEARTBEAT_DIR")
-    assert plugin_runtime_heartbeat.plugin_heartbeat_path("component").parent == plugin_runtime_heartbeat.HEARTBEAT_DIR
 
 
 @pytest.fixture

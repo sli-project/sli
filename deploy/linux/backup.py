@@ -1582,7 +1582,7 @@ def serve(root: Path, *, interval: int, delay: int, retention: int) -> None:
         startup_light_check,
         startup_restore_cleanup,
     )
-    from deploy.linux.legacy_runtime import shutdown
+    from deploy.linux.sli_core import shutdown
 
     startup_restore_cleanup(root)
     status, last_success, last_result = "waiting", None, None
@@ -1676,7 +1676,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.component:
                 raise ValueError("linux_backup_components_require_once")
             step = "serve"
-            from deploy.linux.legacy_runtime import shutdown
+            from deploy.linux.sli_core import shutdown
 
             with shutdown.graceful_shutdown():
                 serve(root, interval=interval, delay=delay, retention=retention)
@@ -1688,4 +1688,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -13,21 +13,6 @@ PATH = ROOT / "config/postgres_migrations/198_file_audit_admin_actions.sql"
 SQL = PATH.read_text("utf-8")
 
 
-def test_migration_preserves_prior_actions_and_has_exact_predecessor():
-    pairs = [(m.version, m.name) for m in forward_migration_inventory(PATH.parent)]
-    index = pairs.index((198, "file_audit_admin_actions"))
-    assert pairs[index - 1] == (197, "workstation_file_audit")
-    assert len(pairs) == len({version for version, _ in pairs})
-    assert list(PATH.parent.glob("198_*.sql")) == [PATH]
-    assert "version=197 and name='workstation_file_audit'" in SQL
-    assert "version>=198" in SQL
-    assert "pg_has_role(session_user,'adlog_storage_owner','MEMBER')" in SQL
-    assert "pg_get_expr(conbin,conrelid) into strict previous" in SQL
-    assert "check ((%s) or action in" in SQL
-    assert not re.search(r"grant |revoke |delete from|truncate |update public\.", SQL, re.IGNORECASE)
-    for source in ("server/sli/plugins/file_audit/management.py", "server/sli/agents/file_audit_admin.py"):
-        action = re.search(r'registry.audit\(cur, "([a-z_]+)"', (ROOT / source).read_text("utf-8"))[1]
-        assert f"''{action}''" in SQL
 
 
 @pytest.mark.postgres_integration

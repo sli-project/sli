@@ -1,4 +1,5 @@
 """Actual PostgreSQL canonical snapshot provenance; synthetic disposable DB only."""
+from hashlib import sha256
 import json
 import os
 from copy import deepcopy
@@ -7,7 +8,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 import pytest
 
-from sli_agent.envelope import canonical, digest
+from deploy.linux.installed_state import canonical_json as canonical
 from tests.postgres_integration_guard import assert_disposable_database
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -17,6 +18,29 @@ INSTALLATION = "00000000-0000-4000-8000-000000000099"
 COMMAND = "synthetic-command"
 SOURCE = "synthetic-source"
 SCOPE = "synthetic-root"
+
+
+def digest(value):
+    return sha256(canonical(value)).hexdigest()
+
+
+def broad_write_fixture(item, agent, source):
+    code, subject = "file-audit.broad-write", "S-1-1-0"
+    scope = item["collection_scope_id"]
+    snapshots = [item["snapshot_id"]]
+    details = {
+        "path": item["objects"][0]["path"], "layer": "ntfs", "ntfs_mask": 0x120116,
+        "share_mask": None, "effective_smb_mask": None, "effective_smb_state": "requires_review",
+        "limitations": ["privileges_and_conditional_aces_not_evaluated"],
+        "coverage_state": item["completeness"], "membership_complete": False,
+        "snapshot_sha256": item["snapshot_sha256"], "principal": {},
+    }
+    return {
+        "result_id": digest([code, 1, [agent, source, scope], subject, [], snapshots, details]),
+        "rule_code": code, "rule_version": 1, "agent_id": agent, "source_instance_id": source,
+        "collection_scope_id": scope, "subject_sid": subject, "observed_at": item["observed_at_utc"],
+        "conclusion_state": "observed", "action_ids": [], "snapshot_ids": snapshots, "details": details,
+    }
 
 
 def inventory():
@@ -323,80 +347,6 @@ def test_dropped_and_recreated_login_cannot_reuse_old_oid_binding(acl_pg):
 
 @pytest.mark.postgres_integration
 @pytest.mark.postgres_empty
-@pytest.mark.parametrize("path,root", [
-    ("C:\\данные\\file", "C:\\ДАННЫЕ"),
-    ("C:\\ος\\file", "C:\\ΟΣ"),
-    ("C:\\i\u0307\\file", "C:\\İ"),
-    ("C:\\𐐨\\file", "C:\\𐐀"),
-    ("C:\\straße\\file", "C:\\STRASSE"),
-    ("C:\\a\u030a\\file", "C:\\Å"),
-    ("C:\\ДАННЫЕ-extra\\file", "C:\\данные"),
-    ("C:\\данные\\..\\outside", "C:\\ДАННЫЕ"),
-    ("C:\\данные\\file:stream", "C:\\ДАННЫЕ"),
-])
-def test_regression_unicode_path_containment_matches_python(acl_pg, path, root):
-    import psycopg
-    from sli_agent.file_audit_policy import path_in_root
-    try:
-        expected = path_in_root(path, root)
-    except ValueError:
-        expected = False
-    with psycopg.connect(acl_pg) as conn:
-        actual = conn.execute("select public.file_audit_path_in_root_v264(%s,%s)", (path, root)).fetchone()[0]
-        assert actual is expected
-
-
-@pytest.mark.postgres_integration
-@pytest.mark.postgres_empty
-def test_regression_canonical_page_not_jsonb_presentation_defines_size(acl_pg):
-    import psycopg
-    from server.sli.plugins.file_audit.management import _snapshot
-    item = inventory()
-    template = deepcopy(item["objects"][0])
-    item["objects"] = [{**template, "path": f"C:\\synthetic\\file-{i}", "object_id": f"object-{i}"}
-                       for i in range(100)]
-    assert len(canonical(item["objects"])) < 32768
-    ace = "(A;;FR;;;S-1-5-21-1000000000-1000000000-1000000000-10000)"
-    while len(canonical(item)) <= 49152:
-        item["share"]["dacl"] += ace
-    item["share"]["dacl"] = item["share"]["dacl"][:-len(ace)]
-    item["snapshot_sha256"] = digest({key: value for key, value in item.items()
-                                      if key not in ("snapshot_sha256", "snapshot_id")})
-    item["snapshot_id"] = str(uuid5(NAMESPACE_URL, COMMAND + item["snapshot_sha256"]))
-    cfg = {"inventory_objects": 100000, "roots": [{"collection_scope_id": SCOPE,
-           "share_name": "synthetic", "path": "C:\\synthetic"}]}
-    command = {"policy_revision": "1", "collection_scope_ids": [SCOPE], "command_id": COMMAND}
-    assert _snapshot(item, cfg, command) == item
-    with psycopg.connect(acl_pg) as conn:
-        seed(conn)
-        presentation = conn.execute("select octet_length(%s::jsonb::text)", (json.dumps(item),)).fetchone()[0]
-        assert len(canonical(item)) <= 49152 < presentation
-        conn.execute("""update sli_plugin_file_audit.access_snapshots set snapshot_id=%s,
-            snapshot_sha256=%s,snapshot=%s::jsonb""", (item["snapshot_id"], item["snapshot_sha256"], json.dumps(item)))
-        assert verified(conn, item)
-
-@pytest.mark.postgres_integration
-@pytest.mark.postgres_empty
-def test_regression_builtin_unicode_lower_matches_python_case_table(acl_pg):
-    import psycopg
-    from sli_agent.file_audit_policy import path_in_root
-    # Every changing single-code-point lowercase mapping in the supported
-    # Python runtime, plus context-sensitive final-sigma/ignorable sequences.
-    values = [chr(point) for point in range(0x110000)
-              if not 0xd800 <= point <= 0xdfff and chr(point).lower() != chr(point)]
-    values += ["ΟΣ", "ΟΣΑ", "AΣ\u0301", "AΣ\u0345", "AΣ\u0345A", "AΣ'A", "AΣ\u00b7"]
-    roots = ["C:\\" + value for value in values]
-    paths = [root.lower() + "\\file" for root in roots]
-    assert len(roots) > 1000
-    assert all(path_in_root(path, root) for path, root in zip(paths, roots, strict=True))
-    with psycopg.connect(acl_pg) as conn:
-        rows = conn.execute("""select public.file_audit_path_in_root_v264(path,root)
-            from unnest(%s::text[],%s::text[]) as inputs(path,root)""", (paths, roots)).fetchall()
-        assert len(rows) == len(roots) and all(row[0] is True for row in rows)
-
-
-@pytest.mark.postgres_integration
-@pytest.mark.postgres_empty
 @pytest.mark.parametrize("kind", ["string", "array", "object"])
 def test_regression_canonical_exact_page_and_one_byte_over(acl_pg, kind):
     import psycopg
@@ -414,33 +364,6 @@ def test_regression_canonical_exact_page_and_one_byte_over(acl_pg, kind):
             psycopg.errors.RaiseException, match="file_audit_snapshot_content_invalid"
         ):
             conn.execute("select public.file_audit_snapshot_canonical_v264(%s::jsonb)", (json.dumps(oversized),))
-
-
-@pytest.mark.postgres_integration
-@pytest.mark.postgres_empty
-def test_regression_unicode_root_accepted_with_retained_provenance(acl_pg):
-    import psycopg
-    from server.sli.plugins.file_audit.management import _snapshot
-    root = "C:\\ДАННЫЕ"
-    with psycopg.connect(acl_pg) as conn:
-        item = seed(conn)
-        item["share"]["path"] = root
-        item["objects"][0]["path"] = "C:\\данные\\file"
-        item["snapshot_sha256"] = digest({key: value for key, value in item.items()
-                                          if key not in ("snapshot_sha256", "snapshot_id")})
-        item["snapshot_id"] = str(uuid5(NAMESPACE_URL, COMMAND + item["snapshot_sha256"]))
-        config = {"inventory_objects": 100000, "roots": [{"collection_scope_id": SCOPE,
-                  "share_name": "synthetic", "path": root}]}
-        command = {"policy_revision": "1", "collection_scope_ids": [SCOPE], "command_id": COMMAND}
-        assert _snapshot(item, config, command) == item
-        conn.execute("update sli_agents set assigned_modules=jsonb_set(assigned_modules,'{0,config,roots,0,path}',%s::jsonb)",
-                     (json.dumps(root),))
-        conn.execute("update sli_plugin_file_audit.policy_revisions set policy=jsonb_set(policy,'{roots,0,path}',%s::jsonb)",
-                     (json.dumps(root),))
-        conn.execute("update sli_plugin_file_audit.policy_revisions set policy_sha256=encode(sha256(convert_to(policy::text,'UTF8')),'hex')")
-        conn.execute("""update sli_plugin_file_audit.access_snapshots set snapshot_id=%s,
-            snapshot_sha256=%s,snapshot=%s::jsonb""", (item["snapshot_id"], item["snapshot_sha256"], json.dumps(item)))
-        assert verified(conn, item)
 
 
 @pytest.mark.postgres_integration

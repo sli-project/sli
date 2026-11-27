@@ -7,13 +7,8 @@ from uuid import uuid4
 
 import pytest
 
-from server.sli.sigma import rule_list
-from server.sli.sigma.registry import RegistryScope, register_revision
-from server.sli.storage.evidence_ref import EvidenceScope
 from tests.migrations.historical_postgres import historical_connection
 from tests.postgres_integration_guard import assert_disposable_database
-from tests.unit.test_sigma_attack_coverage import END, START, observation
-from tests.unit.test_sigma_rule_list import policy
 
 pytestmark = pytest.mark.postgres_integration
 HISTORICAL_TIP = (325, "t109_workstation_path")
@@ -24,99 +19,6 @@ def sigma_label_history(tmp_path, monkeypatch):
     # The complete predecessor of NPS 326 supports these historical unwinds.
     with historical_connection(tmp_path, monkeypatch, HISTORICAL_TIP) as conn:
         yield conn
-
-
-def test_api_role_reads_exact_scopes_revisions_and_policy_without_title_grant(monkeypatch):
-    psycopg = pytest.importorskip("psycopg")
-    from psycopg.conninfo import make_conninfo
-    from psycopg.rows import dict_row
-    dsn = os.environ.get("ADLOG_TEST_PG_DSN")
-    if not dsn:
-        pytest.skip("Disposable migrated PostgreSQL required")
-    scope = EvidenceScope(str(uuid4()), "sli.windows.ad-dc", "fixture-t019-source", "fixture-generation")
-    monkeypatch.setattr(rule_list, "get_runtime_connection",
-                        lambda: psycopg.connect(make_conninfo(dsn, user="adlog_user"), row_factory=dict_row))
-    with psycopg.connect(make_conninfo(dsn, user="adlog_user"), row_factory=dict_row) as runtime:
-        assert_disposable_database(runtime)
-        assert runtime.execute("select session_user,current_user").fetchone() == {
-            "session_user": "adlog_user", "current_user": "adlog_user"}
-    with psycopg.connect(dsn, autocommit=True, row_factory=dict_row) as admin:
-        assert_disposable_database(admin)
-        privileges = admin.execute("""select
-            has_column_privilege('adlog_user','sli_sigma.sigma_rule_revisions','raw_sha256','SELECT') as digest,
-            has_column_privilege('adlog_user','sli_sigma.sigma_rule_revisions','canonical_rule','SELECT') as metadata,
-            has_function_privilege('adlog_user','public.read_admitted_sigma_revision(text,integer)','EXECUTE') as worker_reader
-        """).fetchone()
-        assert privileges == {"digest": True, "metadata": False, "worker_reader": False}
-        with admin.cursor() as cur:
-            canonical = {"id": "00000000-0000-0000-0000-000000000001", "title": "Synthetic retained rule title",
-                         "description": "Synthetic retained purpose", "private_unused_field": "must not be returned"}
-            registered = register_revision(cur, RegistryScope(scope.installation_id, scope.plugin_id, scope.source_instance_id),
-                raw_yaml=b"title: Synthetic retained rule title\n", canonical_rule=canonical,
-                upstream_commit="b" * 40, status="test", level="low", tags=[], author="Synthetic fixture",
-                license_id="DRL-1.1", source_uri="https://example.invalid/rule.yml", requirements={})
-            cur.execute("""insert into sli_sigma.attack_source_scopes
-                (installation_id,plugin_id,source_instance_id,source_generation,collection_scope_id,resources)
-                values(%s,%s,%s,%s,%s,%s::jsonb)""",
-                (*asdict(scope).values(), json.dumps([{"server_id": 1, "channel": "Security"}])))
-            history = observation(counts={"scanned": 10, "evaluable": 10, "matched": 3})
-            history["document_json"]["mode"] = "test"
-            cur.execute("""insert into sli_sigma.attack_history_coverage
-                (installation_id,plugin_id,source_instance_id,source_generation,collection_scope_id,
-                 rule_id,raw_sha256,time_from,time_to,document_json)
-                values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)""",
-                (*asdict(scope).values(), canonical["id"], registered["raw_sha256"], START, END,
-                 json.dumps(history["document_json"])))
-            item = policy(policy_id=f"fixture-t019-{uuid4()}")
-            item["selector"]["execution"].update(scope=asdict(scope), rule_sha256=registered["raw_sha256"])
-            cur.execute("""insert into semantic_risk_policies
-                (policy_id,policy_version,source_kind,lifecycle_status,definition_json,definition_sha256)
-                values(%s,2,'detection_match','shadow',%s::jsonb,%s)""",
-                (item["policy_id"], json.dumps({"title": item["policy_title"], "source_selector": item["selector"]}), bytes(32)))
-        # Even a product owner cannot bypass the DB session user's scope ACL.
-        assert rule_list.get_sigma_rules({"platform_owner": True}, scope=scope)["state"] == "unavailable"
-        with psycopg.connect(make_conninfo(dsn, user="adlog_user"), row_factory=dict_row) as runtime:
-            assert runtime.execute("select * from sli_sigma.read_rule_labels(%s,%s,%s,%s,%s)",
-                (scope.installation_id, scope.plugin_id, scope.source_instance_id, canonical["id"], registered["raw_sha256"])).fetchall() == []
-        admin.execute("""insert into sli_sigma.scope_access
-            (principal_oid,principal_name,installation_id,plugin_id,source_instance_id)
-            select oid,rolname,%s,%s,%s from pg_roles where rolname='adlog_user'""",
-            (scope.installation_id, scope.plugin_id, scope.source_instance_id))
-        discovery = rule_list.get_sigma_rules({"platform_owner": True})
-        assert asdict(scope) in discovery["sources"]
-        data = rule_list.get_sigma_rules({"platform_owner": True}, scope=scope)
-        assert data["state"] == "available", data["reason"]
-        row = data["rules"][0]
-        assert row["raw_sha256"] == registered["raw_sha256"] and row["title"] == canonical["title"]
-        assert row["description"] == canonical["description"] and row["metadata_state"] == "available"
-        assert row["executions"][0]["counts"]["matched"] == 3
-        assert row["runtime"]["enabled"] == 0
-        assert row["admission"]["policies"][0]["policy_id"] == item["policy_id"]
-        assert row["admission"]["policies"][0]["policy_version"] == 2
-        assert row["admission"]["policies"][0]["admitted"] is False
-        denied = rule_list.get_sigma_rules({"platform_owner": True}, scope=EvidenceScope(
-            scope.installation_id, scope.plugin_id, scope.source_instance_id, "different-generation"))
-        assert denied["state"] == "unavailable" and denied["rules"] == []
-        with psycopg.connect(make_conninfo(dsn, user="adlog_user"), autocommit=True, row_factory=dict_row) as runtime:
-            params = (scope.installation_id, scope.plugin_id, scope.source_instance_id, canonical["id"], registered["raw_sha256"])
-            sql = "select * from sli_sigma.read_rule_labels(%s,%s,%s,%s,%s)"
-            labels = runtime.execute(sql, params).fetchone()
-            assert set(labels) == {"rule_id", "raw_sha256", "title", "description"}
-            assert labels["title"] == canonical["title"] and labels["description"] == canonical["description"]
-            for index, wrong in [(0, str(uuid4())), (1, "sli.file-audit"), (2, "other-source"), (3, str(uuid4())), (4, "f" * 64)]:
-                changed = list(params); changed[index] = wrong
-                assert runtime.execute(sql, changed).fetchall() == []
-            with pytest.raises(psycopg.errors.InsufficientPrivilege):
-                runtime.execute("select canonical_rule,raw_yaml from sli_sigma.sigma_rule_revisions")
-            for title, description, expected in [("x" * 512, "y" * 4000, True), ("x" * 513, "y" * 4001, False), ({"bad": True}, 12, False)]:
-                with admin.cursor() as cur:
-                    extra = register_revision(cur, RegistryScope(scope.installation_id, scope.plugin_id, scope.source_instance_id),
-                        raw_yaml=json.dumps([title, description]).encode(), canonical_rule={"id": canonical["id"], "title": title, "description": description},
-                        upstream_commit="b" * 40, status="test", level="low", tags=[], author="Synthetic", license_id="DRL-1.1",
-                        source_uri="https://example.invalid/rule.yml", requirements={})
-                result = runtime.execute(sql, (*params[:4], extra["raw_sha256"])).fetchone()
-                assert (result["title"] == title if expected else result["title"] is None)
-                assert (result["description"] == description if expected else result["description"] is None)
 
 
 @pytest.mark.postgres_owned_cluster

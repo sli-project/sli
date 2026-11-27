@@ -5,17 +5,9 @@ runtime behavior while the shared resource gate prevents that test run.
 """
 from pathlib import Path
 
-from server.sli.plugins.workstations import inventory, inventory_jobs, overview, scope
 
 ROOT = Path(__file__).resolve().parents[2]
 SQL = (ROOT / "config/postgres_migrations/287_workstation_inventory_job.sql").read_text("utf-8")
-
-
-def test_old_inventory_cannot_borrow_a_different_current_directory_resource():
-    assert "null::bigint as ad_computer_id" in scope.RESOURCES
-    assert "e.id as ad_computer_id" in scope.RESOURCES
-    assert "current_binding.ad_computer_id=i.ad_computer_id" in overview.STATION_RESOURCES
-    assert "i.domain_id" in overview.STATION_RESOURCES
 
 
 def test_reused_definer_role_rejects_unexpected_recipients_as_well_as_parent_roles():
@@ -39,13 +31,6 @@ def test_canonical_page_is_derived_inside_database_and_compared_in_full():
     assert "create function sli_plugin_workstations.inventory_page_v1" in SQL
     assert "p_rows is distinct from expected->'rows'" in SQL
     assert "p_cursor is distinct from expected->>'next_cursor'" in SQL
-
-
-def test_driver_uses_the_database_page_instead_of_rebuilding_caller_facts(monkeypatch):
-    monkeypatch.setattr(inventory, "build_inventory", lambda *_: (_ for _ in ()).throw(AssertionError("caller builder")))
-    rows = [{"station_id": "ws:ad:123"}]
-    snapshot = {"page": {"rows": rows, "more": True, "next_cursor": "ws:ad:123"}}
-    assert inventory_jobs._page(snapshot, 100) == (rows, True, "ws:ad:123")
 
 
 def test_identity_conflict_has_durable_bounded_retry_without_rewriting_old_ids():

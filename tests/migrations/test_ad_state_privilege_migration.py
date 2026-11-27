@@ -5,12 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from server.sli.reporting.v2.reports.ad_state import REPORT
-
-
-def test_ad_state_intent_declares_all_categories_required_by_change_views():
-    required = set().union(*(view.access.required_fields for view in REPORT.views if view.access))
-    assert required <= set(REPORT.intent.field_classes)
 
 
 @pytest.fixture
