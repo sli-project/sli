@@ -441,23 +441,33 @@ describe("v2 registry metadata", () => {
     for (const [section, title] of Object.entries(registry.sections)) check("sections", `${section}.title`, title);
     for (const report of registry.definitions.filter((item) => item.key !== "ad.gpo.v2")) {
       check(report.key, "title", report.title);
-      // The journal and workstation overview render their own presentation.
-      if (report.key === "events.journal" || report.key === "workstations.overview") continue;
-      const localized = localizeReportDefinition(report);
-      check(report.key, "description", report.description);
-      expect(report.intent, report.key).toBeTruthy();
-      for (const field of ["question", "denominator", "freshness_expectation"] as const) {
-        check(report.key, `intent.${field}`, report.intent![field]);
-        expect(ru[`reports.v2.${report.key}.intent.${field}` as keyof typeof ru]).toBe(report.intent![field]);
+      // The fleet workspace supplies its own presentation.
+      if (report.key === "workstations.overview") continue;
+      // The journal does not display the generic description or intent.
+      if (report.key !== "events.journal") {
+        check(report.key, "description", report.description);
+        expect(report.intent, report.key).toBeTruthy();
+        for (const field of ["question", "denominator", "freshness_expectation"] as const) {
+          check(report.key, `intent.${field}`, report.intent![field]);
+          expect(ru[`reports.v2.${report.key}.intent.${field}` as keyof typeof ru]).toBe(report.intent![field]);
+        }
+        const localized = localizeReportDefinition(report);
+        const localizedIntent = localized.intent!;
+        expect({ ...localizedIntent, question: report.intent!.question, denominator: report.intent!.denominator,
+          freshness_expectation: report.intent!.freshness_expectation }).toEqual(report.intent);
+        if (!report.key.startsWith("file-audit.")) expect(JSON.stringify(localized), report.key).not.toMatch(/[А-Яа-яЁё]/);
       }
-      const localizedIntent = localized.intent!;
-      expect({ ...localizedIntent, question: report.intent!.question, denominator: report.intent!.denominator,
-        freshness_expectation: report.intent!.freshness_expectation }).toEqual(report.intent);
-      // File audit chooses its controls and columns in its own renderer.
-      if (report.key.startsWith("file-audit.")) continue;
-      expect(JSON.stringify(localized), report.key).not.toMatch(/[А-Яа-яЁё]/);
+      // File audit supplies its own controls and most table labels.
+      if (report.key.startsWith("file-audit.")) {
+        const declaredLabels = report.key === "file-audit.permissions"
+          ? ["rule_code", "employee", "share_mask", "smb_mask", "ntfs_mask"]
+          : ["operation", "path", "outcome", "access_mask", "denial_layer"];
+        columns(report.key, "columns", report.columns.filter(({ key }) => declaredLabels.includes(key)));
+        continue;
+      }
       columns(report.key, "columns", report.columns);
       for (const param of report.params) {
+        if (report.key === "events.journal" && (param.hidden || param.key === "view" || param.key === "result")) continue;
         if (param.hidden && (report.key === computerLogons.key ||
           report.key === "ad.computers.v6" && param.key === "object_guid")) continue;
         check(report.key, `params.${param.key}.label`, param.label);
