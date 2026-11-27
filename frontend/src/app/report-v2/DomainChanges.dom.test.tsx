@@ -76,6 +76,8 @@ it("shows server counts and sends the selected tab and operation", async () => {
   expect(await screen.findByRole("tab", { name: "All changes 4" })).toBeTruthy();
   expect(screen.getByRole("tab", { name: "Groups 2" })).toBeTruthy();
   const table = within(screen.getByRole("table", { name: "Domain changes" }));
+  expect(table.getByRole("columnheader", { name: "Change" })).toBeTruthy();
+  expect(table.queryByText(/· 4728/)).toBeNull();
   expect(table.queryByRole("columnheader", { name: "DC" })).toBeNull();
   fireEvent.click(screen.getByText("Columns", { selector: "summary" }));
   fireEvent.click(within(screen.getByRole("group", { name: "Columns" })).getByRole("checkbox", { name: "DC" }));
@@ -90,6 +92,7 @@ it("shows server counts and sends the selected tab and operation", async () => {
   expect(requests.at(-1)?.searchParams.get("changes_view")).toBe("accounts");
   await chooseOption(screen.getByLabelText("Operation", { selector: "button" }), "4728");
   await waitFor(() => expect(requests.at(-1)?.searchParams.get("event_id")).toBe("4728"));
+  expect(screen.getByLabelText("Operation", { selector: "button" }).textContent).toContain("Member added to global group");
 });
 
 it("requests batch members only after expansion and opens their source event and group history", async () => {
@@ -109,6 +112,7 @@ it("requests batch members only after expansion and opens their source event and
   expect(href.searchParams.get("time_from")).toBe(windowBounds.from_utc);
   fireEvent.click(within(details).getByRole("tab", { name: "Source event" }));
   expect(within(details).getByText("Security")).toBeTruthy();
+  expect(within(details).getByText("4728")).toBeTruthy();
   fireEvent.click(within(details).getByRole("button", { name: /History for Administrators/ }));
   await waitFor(() => expect(requests.at(-1)?.searchParams.get("group")).toBe("Administrators"));
   expect(requests.at(-1)?.searchParams.get("domain")).toBe("7");
