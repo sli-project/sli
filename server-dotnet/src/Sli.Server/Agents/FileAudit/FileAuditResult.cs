@@ -11,6 +11,33 @@ namespace Sli.Server.Agents.FileAudit;
 // Strict management.validate_result and _snapshot. Untrusted inventory never reaches SQL before this check.
 public static class FileAuditResult
 {
+    internal static readonly Version MinimumNativeCheckVersion = new(26, 0, 154);
+
+    internal static Version? ReportedAgentVersion(JsonNode? probe) =>
+        Version.TryParse(probe?["agent_version"]?.ToString(), out var version) && version.Build >= 0
+            ? version : null;
+
+    internal static bool NativeUnavailable(JsonNode? scope) =>
+        scope?["state"]?.ToString() == "failed" && scope["reason_code"]?.ToString() == "native_unavailable";
+
+    internal static bool NativeCheckFailed(JsonObject audit) =>
+        audit["state"]?.ToString() == "failed" && audit["scopes"] is JsonObject { Count: > 0 } scopes
+        && scopes.All(scope => NativeUnavailable(scope.Value));
+
+    internal static bool OfferCheck(JsonObject agent, JsonObject audit)
+    {
+        if (audit["state"]?.ToString() == "verified")
+            return false;
+        if (!NativeCheckFailed(audit))
+            return true;
+
+        // Older receipts have no recorded agent version. A supported policy report
+        // permits one new attempt for those commands as well.
+        var current = ReportedAgentVersion(agent["rights_probe"]);
+        return current >= MinimumNativeCheckVersion &&
+            audit["scopes"]!.AsObject().Any(scope => ReportedAgentVersion(scope.Value) != current);
+    }
+
     private static readonly HashSet<string> Reasons=["ok","coverage_incomplete","sacl_missing","policy_missing","restore_incomplete","native_unavailable","policy_blocked","management_disabled","restore_required","restore_scope_mismatch","system_required","managed_by_gpo","unknown","global_sacl_unknown","global_sacl_present","restore_scan_incomplete","inheritance_untracked","restore_conflict"];
     private static readonly HashSet<string> InventoryReasons =
     [

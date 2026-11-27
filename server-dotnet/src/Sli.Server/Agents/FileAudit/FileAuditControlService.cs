@@ -47,9 +47,19 @@ internal sealed class FileAuditControlService(IAgentControlAudit audit)
                 if (JsonRead.TryString(root["collection_scope_id"],out var scope) && scopeIds.Contains(scope))
                     folders[scope]=root["path"]?.DeepClone();
         var lastEvent=state["last_event"];
+        var scopes = state["scopes"] as JsonObject ?? new JsonObject();
+        bool serverCheck = command["action"]?.ToString() == "check" && request["config"]?["source_kind"]?.ToString() != "workstation";
+        bool retryPending = serverCheck && FileAuditResult.NativeCheckFailed(state) && FileAuditResult.OfferCheck(agent, state);
+        var incompatible = scopes.Select(scope => scope.Value).FirstOrDefault(FileAuditResult.NativeUnavailable);
+        var failedVersion = FileAuditResult.ReportedAgentVersion(incompatible)
+            ?? FileAuditResult.ReportedAgentVersion(agent["rights_probe"]);
         return AgentControlJson.Element(new JsonObject {
-            ["command"]=command.DeepClone(),["state"]=state["state"]!.DeepClone(),
-            ["scopes"]=state["scopes"]?.DeepClone() ?? new JsonObject(),["folders"]=folders,
+            ["command"]=command.DeepClone(),["state"]=retryPending ? JsonValue.Create("pending") : state["state"]!.DeepClone(),
+            ["scopes"]=scopes.DeepClone(),["folders"]=folders,
+            ["check_agent_requirement"] = serverCheck && !retryPending && incompatible is not null
+                && failedVersion is not null && failedVersion < FileAuditResult.MinimumNativeCheckVersion
+                ? new JsonObject { ["agent_version"] = failedVersion.ToString(),
+                    ["minimum_version"] = FileAuditResult.MinimumNativeCheckVersion.ToString() } : null,
             ["reported_at"]=state["reported_at"]?.DeepClone(),["may_own_audit"]=state["may_own_audit"]!.DeepClone(),
             ["last_event"]=JsonRead.TryString(lastEvent?["collection_scope_id"],out var eventScope) && scopeIds.Contains(eventScope) ? lastEvent!.DeepClone() : null
         });

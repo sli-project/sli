@@ -20,10 +20,16 @@ internal sealed class FileAuditIngestService
         if(admit is null || input is not JsonObject report || !JsonRead.TryString(report["policy_revision"],out var revision)
             || !await AgentPolicyAssignments.FilePermissionsAvailableAsync(db,tx,ct))
             throw new AgentControlException("module_disabled",503);
-        await using var read=new NpgsqlCommand("select file_audit::text from public.sli_agents where id=@agent for update",db,tx);
+        await using var read=new NpgsqlCommand("select file_audit::text,rights_probe::text from public.sli_agents where id=@agent for update",db,tx);
         read.Parameters.AddWithValue("agent",identity.Id);
-        var stored=await read.ExecuteScalarAsync(ct) as string;
-        var state=stored is null ? null : JsonNode.Parse(stored) as JsonObject;
+        JsonObject? state = null;
+        Version? agentVersion = null;
+        await using (var row = await read.ExecuteReaderAsync(ct))
+            if (await row.ReadAsync(ct))
+            {
+                state = JsonNode.Parse(row.GetString(0)) as JsonObject;
+                agentVersion = FileAuditResult.ReportedAgentVersion(JsonNode.Parse(row.GetString(1)));
+            }
         if (state is null)
             throw new AgentControlException("module_disabled",503);
         bool retired=state["retired_apply"]?["command"]?["policy_revision"]?.ToString()==revision;
@@ -66,19 +72,33 @@ internal sealed class FileAuditIngestService
             receipt["state"] = "partial";
             receipt["reason_code"] = "coverage_incomplete";
         }
+        var observedAt = report["observed_at_utc"]!.GetValue<string>();
+        if (check && observation["snapshots"]!.AsArray().Count == 0)
+        {
+            // The identity row lock serializes reports and the policy reports that
+            // carry the version. A replay must preserve the first attempt's time.
+            receipts = receipts.Where(receipt => !DuplicateCheckFailure(state, receipt, agentVersion, observedAt)).ToArray();
+            if (receipts.Length == 0)
+                return new JsonObject { ["status"] = "accepted" };
+        }
         string digest=Packets.Digest(observation);
+        var storedScopes = new JsonArray();
         foreach (var receipt in receipts)
         {
-            var scopeSuffix = receipts.Length == 1 ? "" : ":" + receipt["collection_scope_id"]!.GetValue<string>();
+            var scopeSuffix = observation["scopes"]!.AsArray().Count == 1 ? "" : ":" + receipt["collection_scope_id"]!.GetValue<string>();
             receipt["receipt_id"] = AuthAudit.Uuid5(command["command_id"]!.GetValue<string>() + digest + scopeSuffix).ToString();
             receipt["result_sha256"] = digest;
+            storedScopes.Add(receipt.DeepClone());
+            if (check && receipt["state"]?.ToString() == "failed" && agentVersion is not null)
+                receipt["agent_version"] = agentVersion.ToString();
         }
+        observation["scopes"] = storedScopes;
         await using var store=new NpgsqlCommand("select sli_plugin_file_audit.store_audit_result(@agent,@result)",db,tx);
         store.Parameters.AddWithValue("agent",identity.Id);
         store.Parameters.AddWithValue("result",NpgsqlDbType.Jsonb,observation.ToJsonString());
         await store.ExecuteNonQueryAsync(ct);
 
-        if (MergeReceipts(state, command, receipts, report["observed_at_utc"]!.GetValue<string>(), check))
+        if (MergeReceipts(state, command, receipts, observedAt, check))
         {
             if (!check)
                 state["may_own_audit"]=report["ownership_remaining"]!.DeepClone();
@@ -90,6 +110,24 @@ internal sealed class FileAuditIngestService
             await write.ExecuteNonQueryAsync(ct);
         }
         return new JsonObject { ["status"]="accepted" };
+    }
+
+    private static bool DuplicateCheckFailure(JsonObject state, JsonObject receipt, Version? agentVersion, string observedAt)
+    {
+        if (receipt["state"]?.ToString() != "failed"
+            || state["scopes"]?[receipt["collection_scope_id"]!.GetValue<string>()] is not JsonObject previous)
+            return false;
+        var lastSeen = (previous["observed_at_utc"] ?? state["reported_at"])?.ToString();
+        if (lastSeen is not null && Iso8601.ParseUtc(observedAt) <= Iso8601.ParseUtc(lastSeen))
+            return true;
+
+        var previousVersion = FileAuditResult.ReportedAgentVersion(previous);
+        bool sameAttempt = previousVersion == agentVersion
+            || FileAuditResult.NativeUnavailable(previous) && !(previousVersion >= FileAuditResult.MinimumNativeCheckVersion)
+                && !(agentVersion >= FileAuditResult.MinimumNativeCheckVersion);
+        return sameAttempt && (FileAuditResult.NativeUnavailable(previous) && FileAuditResult.NativeUnavailable(receipt)
+            || receipt.All(field => JsonNode.DeepEquals(previous[field.Key], field.Value))
+                && JsonNode.DeepEquals(previous["read_error"], receipt["read_error"]));
     }
 
     private static async Task<JsonObject?> ReadSupersededPermissionsRequestAsync(NpgsqlConnection db, NpgsqlTransaction tx,
