@@ -11,7 +11,7 @@ internal static class FileAuditManifestValidator
     // Canonical SHA-256 of frozen ddce909d reviewed bundled declarations, version 1.0.0.
     private static readonly Dictionary<string,(string Manifest,string Settings)> Supported=new(StringComparer.Ordinal)
     {
-        ["sli.file-audit"]=("c888a38b684efee504907542f2ef8e74d48d5360ba01f67a3720495ba1d8ce20","cc6f8cce2899ab68573d3493c862cf003a6fbd8ac9bb8d0c261712e7a49bcc8d"),
+        ["sli.file-audit"]=("c888a38b684efee504907542f2ef8e74d48d5360ba01f67a3720495ba1d8ce20","c8a3c015bdc3ac4865d6cd64b083892d3b9428aed523fca7d5b529521ffb7af2"),
         ["sli.ad"]=("ae3ce3896bcca905ce6b6e2e3ce90920a12f7c1c69eaca8276d0d54674f0fab9","63a4b540af2db85a005631d8449cb13a7936aa71e47a7ef0488de9648f86c24d")
     };
     private static string Fingerprint(JsonNode node)=>Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(CanonicalJson.ToBytes(node)));

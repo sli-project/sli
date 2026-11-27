@@ -1,7 +1,39 @@
+using System.Text.Json.Nodes;
+using Sli.Server.Semantic;
+
 namespace Sli.Server.Reporting.V2;
 
 public sealed partial class FileAuditReportReader
 {
+    private static async Task<JsonArray> ExcludedAccountsAsync(ISemanticSession session, CancellationToken ct)
+    {
+        var result = await session.QueryAsync("""
+            with recursive selected(sid) as materialized (
+                select lower(sid)
+                from public.platform_settings setting cross join lateral jsonb_array_elements_text(setting.value::jsonb) sid
+                where setting.key='file_audit.excluded_accounts'
+            ), members(domain_id,entity_id) as (
+                select alias.domain_id,alias.entity_id
+                from selected join public.ad_context_entity_aliases alias
+                    on alias.alias_type='object_sid' and alias.normalized_value=selected.sid
+                union
+                select rel.domain_id,rel.source_entity_id
+                from members m join public.ad_context_relation_versions rel
+                    on rel.domain_id=m.domain_id and rel.target_entity_id=m.entity_id
+                where rel.relation_kind='member_of' and rel.source_section='directory_group_graph'
+                    and rel.valid_to_utc is null
+            ), subjects as (
+                select sid from selected
+                union
+                select alias.normalized_value
+                from members m join public.ad_context_entity_aliases alias
+                    on alias.domain_id=m.domain_id and alias.entity_id=m.entity_id and alias.alias_type='object_sid'
+            )
+            select coalesce(jsonb_agg(sid),'[]'::jsonb) as excluded from subjects
+            """, ct);
+        return Array(result.FirstOrDefault()?["excluded"]);
+    }
+
     // One retained 4670 fact is one saved group. Both views use the same
     // interval-overlap selection; a group is never expanded into guessed events.
     private const string NativePermissionCandidates = """
@@ -9,6 +41,8 @@ public sealed partial class FileAuditReportReader
             select distinct agent_id, source_instance_id, collection_scope_id, path
             from jsonb_to_recordset($1::jsonb) r(agent_id uuid, source_instance_id text, collection_scope_id text, path text, source_kind text)
             where coalesce(source_kind,'server')='server'
+        ), excluded as materialized (
+            select sid from jsonb_array_elements_text(coalesce($9->'excluded_accounts','[]'::jsonb)) s(sid)
         ), native_facts as materialized (
             select encode(sha256(convert_to('file-audit-native:'||f.event_id::text,'UTF8')),'hex') as id,
                 f.time_created_utc as observed_at, r.agent_id, r.source_instance_id, r.collection_scope_id,
@@ -34,6 +68,8 @@ public sealed partial class FileAuditReportReader
                 and f.method->>'operation'=f.fields->>'operation' and f.method->>'$channel'='Security'
                 and f.method->>'$provider'='Microsoft-Windows-Security-Auditing'
                 and f.source_sha256 is not null and f.event_record_id>0
+                and (f.fields->>'operation'<>'permissions'
+                    or not exists(select 1 from excluded where sid=lower(f.actor)))
                 and (coalesce($8,'')='' or $8=f.fields->>'operation')
                 and ($9->>'activity' is distinct from 'changes' or f.fields->>'operation' in ('write','rename'))
                 and coalesce($9->>'record_unit','')<>'normalized_action'

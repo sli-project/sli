@@ -123,7 +123,7 @@ public sealed class NativeFileAuditApi : IFileAuditApi
                     var info = Marshal.PtrToStructure<Share2>(IntPtr.Add(buffer, i * size));
                     if ((info.Type & diskTypeMask) != 0) continue;
                     var name = Marshal.PtrToStringUni(info.Name);
-                    if (name?.ToUpperInvariant() is "ADMIN$" or "IPC$" or "PRINT$" or "FAX$" or "SYSVOL" or "NETLOGON")
+                    if (name?.ToUpperInvariant() is "ADMIN$" or "IPC$" or "PRINT$" or "FAX$")
                         continue;
                     var path = Marshal.PtrToStringUni(info.Path);
                     if (name is not { Length: >= 1 and <= 80 } || name.Trim() != name

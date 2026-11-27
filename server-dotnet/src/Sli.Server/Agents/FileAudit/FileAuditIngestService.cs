@@ -34,6 +34,18 @@ internal sealed class FileAuditIngestService
             throw new AgentControlException("module_disabled",503);
         bool retired=state["retired_apply"]?["command"]?["policy_revision"]?.ToString()==revision;
         var request=state[retired ? "retired_apply" : "request"];
+        if (!retired && state["previous_resource_command"] is JsonObject previous
+            && previous["policy_revision"]?.ToString() == revision)
+        {
+            string commandId = previous["command_id"]!.GetValue<string>();
+            if (report["command_id"]?.ToString() != commandId)
+                throw new AgentControlException("file_audit_result_invalid");
+            await using var old = new NpgsqlCommand("select sli_plugin_file_audit.audit_request(@agent,@command)::text", db, tx);
+            old.Parameters.AddWithValue("agent", identity.Id);
+            old.Parameters.AddWithValue("command", commandId);
+            request = await old.ExecuteScalarAsync(ct) is string retained ? JsonNode.Parse(retained) : null;
+            retired = true;
+        }
         if (!retired && await ReadSupersededPermissionsRequestAsync(db, tx, identity.Id, state, request, report, revision, ct)
             is { } superseded)
         {
@@ -49,6 +61,10 @@ internal sealed class FileAuditIngestService
             && command["action"]?.ToString()=="restore" && command["policy_revision"]?.ToString()==revision
             && command["collection_scope_ids"] is JsonArray restoreScopes && restoreScopes.Count==1
             && restoreScopes[0]?.ToString()==restoreScope;
+        bool resourceRestore = !retired && state["permissions_restore_scopes"] is JsonArray { Count: > 0 } target
+            && command["action"]?.ToString() == "restore" && command["policy_revision"]?.ToString() == revision
+            && JsonNode.DeepEquals(target, command["collection_scope_ids"]);
+        restore |= resourceRestore;
         // A read-only check report proves only the current management command.
         if(!retired && !restore && !check && !await AgentPolicyAssignments.FilePermissionsAllowedAsync(db,tx,identity.Id,revision,false,ct))
             throw new AgentControlException("module_disabled",503);
@@ -101,7 +117,16 @@ internal sealed class FileAuditIngestService
         if (MergeReceipts(state, command, receipts, observedAt, check))
         {
             if (!check)
-                state["may_own_audit"]=report["ownership_remaining"]!.DeepClone();
+                state["may_own_audit"] = resourceRestore && state["permissions_retained"] is JsonObject { Count: > 0 }
+                    ? JsonValue.Create(true) : report["ownership_remaining"]!.DeepClone();
+            if (!check)
+                foreach (var receipt in receipts)
+                {
+                    var scope = receipt["collection_scope_id"]!.GetValue<string>();
+                    if (state["scopes"]?[scope] is JsonObject stored)
+                        stored["inventory_pending"] = snapshots.Any(snapshot => snapshot["collection_scope_id"]?.ToString() == scope
+                            && snapshot["has_more"]?.GetValue<bool>() == true);
+                }
             if (restore && state["state"]?.ToString() == "verified" && state["may_own_audit"]?.GetValue<bool>() == false)
                 state.Remove("permissions_restore_origin");
             await using var write=new NpgsqlCommand("update public.sli_agents set file_audit=@state where id=@agent",db,tx);
@@ -187,8 +212,7 @@ internal sealed class FileAuditIngestService
                     continue;
             }
             var next = (JsonObject)receipt.DeepClone();
-            if (check)
-                next["observed_at_utc"] = observedAt;
+            next["observed_at_utc"] = observedAt;
             scopes[scope] = next;
             changed = true;
         }

@@ -18,7 +18,6 @@ import { AgentDeploymentPanel } from "./agent-deployment";
 import { AgentDeliveryDiagnostics } from "./agent-delivery-diagnostics";
 import { AgentEventlogDiagnostics } from "./agent-eventlog-diagnostics";
 import { AgentSequenceRecovery } from "./agent-sequence-recovery";
-import { AgentFileServerCard } from "./agent-file-audit";
 import { AgentConsoleEnrollment } from "./agent-console-enrollment";
 import { collectionDiagnosis, missingAuditSetting } from "./collection-diagnosis";
 import { statusSources } from "./status-view";
@@ -271,8 +270,7 @@ function AgentsContent() {
           disabled={selected.status !== "active" || action.isPending}
           onChange={(role) => { if (role && role !== computerRole(selected)) action.mutate({ kind: "role", body: { agent_id: selected.id, machine_role: role } }); }}/>
       </div>
-      <AgentFileServerCard key={selected.id} agent={selected} busy={action.isPending} timeZone={timeZone}
-        canManage={Boolean(access?.platform_owner || access?.subject.coarse_role === "admin" && access.capabilities.includes("access.manage"))}/>
+      {computerRole(selected) === "file_server" ? <a href="/app/report/file-audit.overview?tab=overview">{t("file-audit.screen.overview")}</a> : null}
       {selected.collection_policy || modules.length || selected.eventlog_diagnostics?.items.length || selected.delivery_diagnostics ? <section>
         <h3>{t("agents.collection")}</h3>
         {selected.collection_policy ? <AgentCollectionControls key={`${selected.id}:${selected.policy_revision}`} agent={selected} busy={action.isPending} change={changePolicy}/> : null}

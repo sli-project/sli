@@ -16,6 +16,7 @@ import { ACTION_FILTERS, FILE_SERVER_VIEWS, appliedFileAuditValues, fileAuditFie
   type ActionFilter, type FileServerView, type FileAuditTab, type FileAuditRow as Row } from "./report";
 import { evidenceRecordNumbers, fileAuditOperation, fileServerColumns, FileAuditInterval } from "./FileAuditCells";
 import { FileAuditObjectWorkspace } from "./FileAuditObjectWorkspace";
+import { useResourceAuditControls } from "./ResourceAuditControls";
 import "./file-audit.css";
 
 const minute = () => new Date(Math.floor(Date.now() / 60_000) * 60_000);
@@ -73,19 +74,24 @@ export function FileAuditReport({ definition: initial }: { definition: ReportDef
   const data = useQuery({ queryKey: ["report-v2", "file-audit", session, "data", reportKey, params?.toString()],
     queryFn: () => api.reportV2Data(reportKey, params!), enabled: Boolean(params && definition?.access?.allowed !== false && !definitionQuery.error),
     retry: false, refetchOnWindowFocus: false,
-    refetchInterval: query => view === "overview" && query.state.data?.items.some(row =>
-      row.check_pending === true || ((row.check_receipt ?? row.audit_receipt) as { reason_code?: string } | undefined)?.reason_code === "native_unavailable")
-      ? 15_000 : false });
+    refetchInterval: view === "overview" ? 5_000 : false });
   const result = data.data;
   const error = definitionQuery.error ?? data.error;
   const denied = definition?.access?.allowed === false || result?.access?.allowed === false || result?.state === "denied"
     || error instanceof ApiResponseError && [401, 403].includes(error.status);
   const failed = Boolean(error) || result?.state === "error";
   const rows = !denied && !failed ? result?.items ?? [] : [];
+  const resources = useResourceAuditControls(view === "overview" ? rows : [], session + ":" + baseParams + ":" + pages.at(-1),
+    () => void data.refetch());
   const reset = () => { setPages([null]); setFirstPage(0); setSelectedId(null); };
   const pageIndex = firstPage + pages.length - 1;
   const currentKeys = new Set(access?.reports?.filter(report => report.allowed).map(report => report.report_key));
   const canPermissions = currentKeys.has("file-audit.permissions");
+  const canRefreshCatalog = access?.platform_owner || access?.capabilities.includes("access.manage");
+  useEffect(() => {
+    if (view === "overview" && canRefreshCatalog && !denied)
+      void api.refreshFileAuditCatalogs().catch(() => { /* Agents also refresh the catalog on check-in. */ });
+  }, [view, session, canRefreshCatalog, denied]);
   const switchView = (next: string) => {
     reset(); setView(next as FileServerView); setFilter("all");
     setValues(current => ({ ...current, operation: undefined, record_unit: undefined, path_search: undefined, account_search: undefined }));
@@ -196,8 +202,12 @@ export function FileAuditReport({ definition: initial }: { definition: ReportDef
           message={definition && !params ? t("file-audit.invalid_period") : t("file-audit.screen.load_error", { subject: title })}
           onRetry={definition && !params ? undefined : retry}/>}>
         {definition && result ? <div ref={list}>
-          <DataTable caption={title} compact density="compact" columns={fileServerColumns(view, definition.columns, rows, baseParams, canPermissions, open, hrefFor, () => void data.refetch())}
-            rows={rows} rowKey={row => String(row[definition.row_key])} selectedKey={selectedId}
+          {view === "overview" ? resources.errors.map(error => <p key={error} role="alert">{error}</p>) : null}
+          <DataTable caption={title} compact density="compact" columns={[
+            ...(view === "overview" && resources.column ? [resources.column] : []),
+            ...fileServerColumns(view, definition.columns, rows, baseParams, canPermissions, open, hrefFor, () => void data.refetch()),
+          ]}
+            rows={view === "overview" ? resources.displayRows : rows} rowKey={row => String(row[definition.row_key])} selectedKey={selectedId}
             emptyContent={<p role="status">{t(emptyMessage)}</p>}
             onRowClick={view === "actions" ? open : undefined}
             renderExpandedRow={view === "actions" ? row => <FactList facts={[
@@ -217,7 +227,7 @@ export function FileAuditReport({ definition: initial }: { definition: ReportDef
               leadingControls={<div className="sli-file-audit__segments" role="group" aria-label={title}>
                 {ACTION_FILTERS.filter(key => !access || currentKeys.has('file-audit.' + actionSource(key))).map(key =>
                   <Button key={key} aria-pressed={filter === key} onClick={() => selectFilter(key)}>{t('file-audit.filters.' + key as 'file-audit.filters.all')}</Button>)}
-              </div>}/> : undefined}
+              </div>}/> : view === "overview" ? resources.toolbar : undefined}
             total={result.filtered_count}
             pageSize={{ value: pageSize, options: fileAuditPageSizes(definition.limits.max), onChange: size => {
               reset(); setRequestedSize(size); try { localStorage.setItem(preference, String(size)); } catch { /* optional preference */ }

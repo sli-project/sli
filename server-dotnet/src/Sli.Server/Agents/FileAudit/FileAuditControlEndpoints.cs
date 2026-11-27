@@ -21,6 +21,7 @@ public static class FileAuditControlEndpoints
             using var guard=admission.Enter(body?.ContainsKey("agents")==true ? "enqueue_audit_batch" : "enqueue_audit");
             if(body is null) throw new AgentControlException("file_audit_request_invalid");
             if (body.ContainsKey("agents")) return await service.Batch(db,tx,body,principal,access,ct);
+            if (body.ContainsKey("collection_scope_ids")) return await service.ChangeResources(db,tx,body,principal,access,ct);
             if (body.ContainsKey("collection_scope_id")) return await service.CheckResource(db,tx,body,principal,access,ct);
             return await service.Enqueue(db,tx,body,principal,access,ct);
         }));
@@ -28,7 +29,13 @@ public static class FileAuditControlEndpoints
         endpoints.MapGet(FileAuditCatalog.AdminRoute, (HttpContext context) => FileAuditCatalog.Admin(context));
         endpoints.MapPost(FileAuditCatalog.AdminRoute, (HttpContext context) => FileAuditCatalog.Admin(context));
         endpoints.MapPost(FileAuditCatalog.ReportRoute, (HttpContext context) => FileAuditCatalog.Report(context));
+        const string accounts = route + "/accounts";
+        endpoints.MapPost(accounts, (RequestDelegate)HandleAccounts);
         return endpoints;
+
+        static Task HandleAccounts(HttpContext context) => AgentControlEndpoints.HandleAsync(context, accounts,
+            maxBodyBytes: 24 * 1024, noStoreOnly: true, authorizedOperation: (db, tx, body, principal, access, ct) =>
+                FileAuditAdEnrichment.SearchAccounts(db, tx, Sli.Server.Compatibility.PythonJson.FromElement(body) as JsonObject, principal, access, ct));
     }
 }
 

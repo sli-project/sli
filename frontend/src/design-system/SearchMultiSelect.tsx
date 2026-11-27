@@ -6,8 +6,9 @@ import { Button } from "./Primitives";
 export type SearchOption = { value: string; label: string; important?: boolean };
 
 /** One searchable control with removable selections and bounded suggestions. */
-export function SearchMultiSelect({ label, options, values, onChange }: {
+export function SearchMultiSelect({ label, options, values, onChange, onSearchChange, disabled }: {
   label: string; options: SearchOption[]; values: string[]; onChange: (values: string[]) => void;
+  onSearchChange?: (search: string) => void; disabled?: boolean;
 }) {
   const [search, setSearch] = useState("");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -22,7 +23,8 @@ export function SearchMultiSelect({ label, options, values, onChange }: {
       .sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label)).slice(0, 50);
   }, [options, values, search, recent]);
   return <div className="sli-ds-field" data-kind="search-multiselect">
-    <ComboBox inputValue={search} onInputChange={setSearch} selectedKey={selectedKey} menuTrigger="focus"
+    <ComboBox inputValue={search} onInputChange={value => { setSearch(value); onSearchChange?.(value); }}
+      isDisabled={disabled} selectedKey={selectedKey} menuTrigger="focus"
       allowsCustomValue allowsEmptyCollection items={suggestions} onSelectionChange={(key) => {
         if (key === null) return;
         const value = String(key);
@@ -31,6 +33,7 @@ export function SearchMultiSelect({ label, options, values, onChange }: {
         onChange([...values, value]);
         setRecent((current) => [value, ...current.filter((item) => item !== value)].slice(0, 20));
         setSearch("");
+        onSearchChange?.("");
       }}>
       <Label>{label}</Label>
       <Input type="search" placeholder={t("filters.search")}/>
@@ -45,7 +48,8 @@ export function SearchMultiSelect({ label, options, values, onChange }: {
     {values.length ? <div className="sli-ds-header__meta" aria-label={t("filters.selected", { label })}>
       {values.map((value) => {
         const text = options.find((option) => option.value === value)?.label ?? value;
-        return <Button key={value} className="sli-ds-chip" aria-label={t("filters.remove", { label: text })} onClick={() => onChange(values.filter((item) => item !== value))}>
+        return <Button key={value} className="sli-ds-chip" aria-label={t("filters.remove", { label: text })} disabled={disabled}
+          onClick={() => onChange(values.filter((item) => item !== value))}>
           {text}<span aria-hidden="true"> ×</span>
         </Button>;
       })}

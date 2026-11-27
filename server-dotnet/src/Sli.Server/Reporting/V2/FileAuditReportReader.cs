@@ -53,7 +53,15 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
         try
         {
             await using var session = await database.OpenAsync(false, ct);
-            var discovered = Array((await session.QueryAsync("select sli_plugin_file_audit.report_roots() as roots", ct))[0]!["roots"]);
+            var discovery = (await session.QueryAsync("""
+                select sli_plugin_file_audit.report_roots() as roots, exists (
+                    select 1 from pg_attribute where attrelid=to_regclass('public.sli_file_audit_smb_catalog')
+                    and attname='cached_at' and not attisdropped) as catalog_available
+                """, ct))[0]!.AsObject();
+            var discovered = Array(discovery["roots"]);
+            bool catalog = tab == "overview" && context.Params.Text("source_kind", "server") == "server"
+                && discovery.Flag("catalog_available");
+            if (catalog) discovered = await CatalogRootsAsync(session, discovered, ct);
             if (discovered.Count > 1000) return ReportResult.Create(context.Definition.Key, "partial", coverage: new() { ["state"] = "unknown", ["reason"] = "result_truncated" }, limitations: [new JsonObject { ["code"] = "root_limit", ["text"] = "Область превышает 1000 шар. Уточните назначенную область доступа." }]);
             roots = new JsonArray(discovered.Where(r => Admitted(context, r!) && (context.Params["source_kind"] is null || (Text(r, "source_kind") ?? "server") == context.Params.Text("source_kind"))).Select(r => r!.DeepClone()).ToArray());
             var selected = Array(context.Params["share"]);
@@ -71,6 +79,11 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
             else
             {
                 var options = after?.Copy() ?? new JsonObject(); options["show_service"] = context.Params.Text("show_service", "false") == "true";
+                if (tab is "overview" or "actions" or "permission-changes")
+                {
+                    var excluded = await ExcludedAccountsAsync(session, ct);
+                    if (excluded.Count > 0) options["excluded_accounts"] = excluded;
+                }
                 if (context.Params["record_unit"] is { } unit) options["record_unit"] = unit.DeepClone();
                 string? operation = context.Params["operation"]?.GetValue<string>();
                 bool objectView = tab == "permissions" && context.Params.Text("view") == "objects";
@@ -89,6 +102,29 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
                 if (data["service_filter_version"]?.GetValue<int>() != 1) return Unreadable(context);
                 if (tab == "overview") await ResourceAuditAsync(session, context, Array(data["items"]), ct);
                 if (actionRows) await LinkActionProblemsAsync(session, context, Array(data["items"]), tab, ct);
+            }
+            if (catalog)
+            {
+                data["audit_resources"] = new JsonObject
+                {
+                    ["servers"] = readRoots.Select(root => Text(root, "agent_id")).Distinct().Count(),
+                    ["audited"] = readRoots.Count(root => Text(root, "audit_state") == "enabled"),
+                    ["shares"] = readRoots.Count,
+                };
+                foreach (var row in Array(data["items"]).OfType<JsonObject>())
+                {
+                    var root = readRoots.FirstOrDefault(root => ShareKey(root!) == ShareKey(row));
+                    if (root?["catalog_configured"] is null) continue;
+                    foreach (string field in new[] { "audit_state", "audit_checked_at", "audit_reason", "audit_policy_revision", "audit_can_restore" })
+                        row[field] = root[field]?.DeepClone();
+                    if (!root["catalog_configured"]!.GetValue<bool>() && row["permission_change_groups"]?.ToString() == "0")
+                        foreach (string field in new[] { "permission_changes", "permission_change_count_min", "permission_change_count_max" })
+                            row[field] = null;
+                    if (context.Action == "view" && (context.Access.Capabilities.IsOwner || context.Access.Capabilities.Decide("access.manage").Allowed)
+                        && FileAuditAccess.Allowed(context.Access.Capabilities, context.Principal.Role, context.Principal.Type, context.Principal.Id,
+                            Text(root, "agent_id")!, Text(root, "source_instance_id")!, Text(root, "collection_scope_id")!))
+                        row["audit_revision"] = root["audit_policy_revision"]?.DeepClone();
+                }
             }
             await RestoreEvidenceAsync(context, readRoots, Array(data["items"]), ct);
             if (tab == "mass-operations") await RansomDetails(session, context, roots, Array(data["items"]), ct);
@@ -183,6 +219,7 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
         if (objectView) { coverage["inventory_scope"] = "retained_snapshot_pages"; coverage["record_unit"] = "observed_object"; }
         if (data["native_group_count"] is { } nativeGroups) coverage["native_group_count"] = nativeGroups.DeepClone();
         if (data.ContainsKey("native_event_count")) coverage["native_event_count"] = data["native_event_count"]?.DeepClone();
+        if (data["audit_resources"] is { } auditResources) coverage["audit_resources"] = auditResources.DeepClone();
         var collections = tab == "overview" ? new JsonObject { ["timeline"] = rootObservationFilter ? new JsonArray() : data["timeline"]?.DeepClone() ?? new JsonArray() } : tab == "permissions" && !objectView ? new JsonObject { ["groups"] = Groups(Array(data["inventory"]), Text(context.Params, "employee")) } : new JsonObject();
         var result = ReportResult.Create(context.Definition.Key, roots.Count > 0 ? "partial" : "not_collected", items, coverage, collections, [new JsonObject { ["code"] = "coverage_unverified", ["text"] = "Полнота сбора за выбранный период не подтверждена." }]);
         result["filtered_count"] = roots.Count > 0 ? data["filtered_count"]?.DeepClone() : null; result["has_more"] = data["has_more"]?.DeepClone() ?? JsonValue.Create(false);

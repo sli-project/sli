@@ -10,6 +10,9 @@ using System.Text.Json.Nodes;
 using Sli.Server.Semantic;
 using Sli.Server.Infrastructure;
 using Sli.Server.Storage.Lifecycle;
+using Sli.Server.Agents.Control;
+using Sli.Server.Agents.FileAudit;
+using Sli.Server.Auth;
 using Sli.Server.Tests.Agents;
 using Sli.Server.Tests.Storage;
 
@@ -17,6 +20,79 @@ namespace Sli.Server.Tests.Reporting;
 
 public sealed class FileAuditReportTests
 {
+    [Fact]
+    public async Task Resources_lists_cached_unaudited_shares_and_a_second_apply_keeps_the_first()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct, throughVersion: 455);
+        var migration = Path.Combine(PostCollectionPostgres.Repository(), "config/postgres_migrations/457_file_audit_catalog_cache.sql");
+        await fixture.Pg.ApplyFileAsync(migration, null, ct);
+        await using var owner = await fixture.Pg.OpenAsync(ct);
+        var agent = Guid.Parse("11111111-1111-4111-8111-111111111111");
+        var source = Guid.Parse("22222222-2222-4222-8222-222222222222").ToString("D");
+        await PostCollectionPostgres.Sql(owner, """
+            insert into public.sli_agents(id,host_id,key_fingerprint,registration_host_name,policy_revision,collection_policy)
+            values('11111111-1111-4111-8111-111111111111','22222222-2222-4222-8222-222222222222',
+                repeat('a',64),'fs.example.test',1,'{"manage_windows_audit":true}');
+            insert into public.sli_file_audit_smb_catalog(agent_id,source_id,supported_until,request_id,expires_at,cached_at,cached_shares)
+            select id,host_id::text,now()+interval '15 minutes',id,now()-interval '1 minute',now()-interval '6 minutes',
+                '[{"Name":"Finance","Path":"C:\\Finance"},{"Name":"Projects","Path":"C:\\Projects"},
+                  {"Name":"NETLOGON","Path":"C:\\Netlogon"},{"Name":"SYSVOL","Path":"C:\\Sysvol"},
+                  {"Name":"ADMIN$","Path":"C:\\Windows"},{"Name":"C$","Path":"C:\\"}]'
+            from public.sli_agents where id='11111111-1111-4111-8111-111111111111';
+            """, ct);
+
+        var report = new FileAuditReportReader(new SemanticDatabase(new PostgresConnections(fixture)));
+        var definition = new ReportDefinitionRegistry().Get("file-audit.overview");
+        await using var app = await ReportFixture.Start(Facts("overview"), definition, nativeReader: report);
+        using var response = await app.Client.GetAsync("/api/v2/reports/file-audit.overview/data?source_kind=server", ct);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await ReportFixture.Body(response);
+        var shares = result["items"]!.AsArray().OfType<JsonObject>().ToDictionary(row => row["share_name"]!.GetValue<string>());
+        Assert.Equal(new[] { "Finance", "NETLOGON", "Projects", "SYSVOL" }, shares.Keys.Order());
+        Assert.All(shares.Values, row => Assert.Equal("disabled", row["audit_state"]!.GetValue<string>()));
+        Assert.Equal(4, result["coverage"]!["audit_resources"]!["shares"]!.GetValue<int>());
+
+        await using var db = await fixture.Pg.OpenAsync(ct, "adlog_user");
+        var service = new FileAuditControlService(new AgentControlAudit());
+        var principal = new Principal("session", 1, "admin");
+        var capabilities = new CapabilityDecisionSet(true, new HashSet<string>(), new HashSet<string>(), [],
+            new Dictionary<string, System.Text.Json.JsonElement>());
+        async Task Enable(string share, long expected)
+        {
+            await using var tx = await db.BeginTransactionAsync(ct);
+            var command = new JsonObject
+            {
+                ["agent_id"] = agent.ToString("D"), ["source_instance_id"] = source, ["expected_revision"] = expected,
+                ["action"] = "apply", ["collection_scope_ids"] = new JsonArray(shares[share]["collection_scope_id"]?.DeepClone()),
+            };
+            var queued = await service.ChangeResources(db, tx, command, principal, capabilities, ct);
+            Assert.Equal(expected + 1, queued.GetProperty("policy_revision").GetInt64());
+            await tx.CommitAsync(ct);
+        }
+        await Enable("Finance", 1);
+        await Enable("Projects", 2);
+        await using var read = new NpgsqlCommand("""
+            select assigned_modules#>'{0,config,roots}',
+                public.file_permissions_allowed405(id,'3',null,false),
+                public.file_permissions_allowed405(id,'3',null,true),
+                public.file_permissions_allowed405(id,'3','scope:outside',false)
+            from public.sli_agents where id=@id
+            """, db);
+        read.Parameters.AddWithValue("id", agent);
+        await using (var rows = await read.ExecuteReaderAsync(ct))
+        {
+            Assert.True(await rows.ReadAsync(ct));
+            var roots = JsonNode.Parse(rows.GetString(0))!.AsArray();
+            Assert.Equal(new[] { "Finance", "Projects" }, roots.Select(root => root!["share_name"]!.ToString()));
+            Assert.True(rows.GetBoolean(1));
+            Assert.False(rows.GetBoolean(2));
+            Assert.False(rows.GetBoolean(3));
+        }
+        await fixture.Pg.ApplyFileAsync(Path.ChangeExtension(migration, ".rollback.sql"), null, ct);
+    }
+
     [Theory] [InlineData("data")] [InlineData("export.csv")]
     public async Task Old_period_restores_archived_agent_evidence_for_data_and_export(string action)
     {

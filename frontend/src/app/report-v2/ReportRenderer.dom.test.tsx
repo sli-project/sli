@@ -62,7 +62,10 @@ afterEach(() => { cleanup(); PAGE_ACTIONS["vpn.print-sheet"] = originalPrintShee
 
 function renderReport(reportKey = "demo.events") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={client}><ReportRenderer reportKey={reportKey}/></QueryClientProvider>);
+  const report = <ReportRenderer reportKey={reportKey}/>;
+  return render(<QueryClientProvider client={client}>
+    {reportKey.startsWith("file-audit.") ? <OverlayProvider>{report}</OverlayProvider> : report}
+  </QueryClientProvider>);
 }
 
 it.each(["list", "drawer"] as const)("resolves a problem from the legacy %s in two actions", async (surface) => {
