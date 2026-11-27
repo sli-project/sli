@@ -8,22 +8,9 @@ from uuid import uuid4
 
 import pytest
 
-from tests.migrations.test_file_audit_source_lookup_index_migration266 import (
-    AGENT,
-    MODULE,
-    OTHER_AGENT,
-    authority_state,
-    defaults_pg as defaults_pg,  # noqa: PLC0414
-    lookup_pg as lookup_pg,  # noqa: PLC0414
-    enumerate_sources,
-    function_state,
-    migration_source,
-    observe,
-    plan_nodes,
-    pg as pg,  # noqa: PLC0414
-    publication_pg as publication_pg,  # noqa: PLC0414
-    receipt,
-)
+from tests.migrations.test_qw_finding_notifications_migration229 import publication_pg as publication_pg
+
+from tests.migrations.test_file_audit_source_lookup_index_migration266 import AGENT, MODULE, OTHER_AGENT, authority_state, defaults_pg as defaults_pg, lookup_pg as lookup_pg, enumerate_sources, function_state, migration_source, observe, plan_nodes, pg as pg, receipt
 
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATION = ROOT / 'config/postgres_migrations/267_file_audit_discovery_join.sql'

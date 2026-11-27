@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from deploy.linux import backup, backup_policy, sli_update
+from deploy.linux import backup, backup_policy
 from deploy.linux import backup_restore_check as drill
 from tests.unit.test_linux_backup import STAMP
 
@@ -58,12 +58,11 @@ def test_capacity_sql_casts_oid_to_json_number_in_both_runtimes():
     # PostgreSQL json_build_object serializes bare oid as a string. The real
     # PostgreSQL integration test checks the returned JSON; this source contract
     # prevents one independently packaged probe from losing the numeric cast.
-    assert backup.PG_CAPACITY_SQL == sli_update.PG_CAPACITY_SQL
     assert "'oid', oid::bigint" in backup.PG_CAPACITY_SQL
 
 
 def test_tablespace_oid_validation_stays_strict_and_supports_unsigned_oid():
-    for module in (backup, sli_update):
+    for module in (backup,):
         value = point()
         value["tablespaces"][-1]["oid"] = 2**32 - 1
         assert module.pg_capacity_paths(value)["tablespace:4294967295"] == "/tablespace"
@@ -113,35 +112,6 @@ def test_atomic_publisher_excludes_filesystem_paths(tmp_path):
     text = (tmp_path / ".postgres-capacity.json").read_text()
     assert "/pg/" not in text and "/tablespace" not in text
     assert json.loads(text)["cluster_id"] == "123456789"
-
-
-def test_host_probes_real_paths_with_argv_not_root_or_shell():
-    host = sli_update.DockerHost(["compose.yml"], "https://localhost/api/health/ready", None)
-    calls = []
-    def compose(args, **kwargs):
-        calls.append(args)
-        if args[:2] == ["ps", "--quiet"]: return "container-id\n"
-        if "psql" in args: return json.dumps(point())
-        if "readlink" in args: return args[-1] + "\n"
-        if "cat" in args: return "1 0 8:1 / / rw - ext4 /dev/synthetic rw\n"
-        if "stat" in args: return "4096 26214400 dev1\n"
-        if "--publish-pg-capacity" in args: return ""
-        pytest.fail(str(args))
-    host.compose = compose
-    host.publish_pg_capacity()
-    stats = [args for args in calls if "stat" in args]
-    assert {args[-1] for args in stats} == {"/pg/18/docker", "/pg/18/docker/base", "/pg/18/docker/global", "/pg/18/docker/pg_wal", "/tablespace"}
-    assert all("--" in args for args in stats)
-
-
-def test_capacity_service_is_supervised_without_docker_privileges_added():
-    unit = sli_update.capacity_service_unit(["/usr/bin/python3", "/srv/sli/updater_launcher.py", "capacity-watch",
-                                             "--compose", "/srv/sli/compose.yml"], user="sli-operator")
-    assert "User=sli-operator" in unit
-    assert "Restart=always" in unit and "RestartSec=10" in unit
-    assert "After=docker.service" in unit and "WantedBy=multi-user.target" in unit
-    assert "SupplementaryGroups=" not in unit
-    assert "NoNewPrivileges=yes" in unit
 
 
 class Admin:
@@ -330,59 +300,9 @@ def test_lock_release_failure_never_masks_original_restore_error():
     assert caught.value is original
 
 
-def test_supervisor_unit_sets_runtime_working_directory():
-    unit = sli_update.capacity_service_unit(["/usr/bin/python3", "/srv/sli/launcher.py"], user="operator",
-                                             working_directory="/srv/sli")
-    assert 'WorkingDirectory="/srv/sli"' in unit
-
-
-def test_host_probe_failure_does_not_publish_or_refresh_old_receipt():
-    host = sli_update.DockerHost(["compose.yml"], "https://localhost/api/health/ready", None)
-    calls = []
-    def compose(args, **kwargs):
-        calls.append(args)
-        if args[:2] == ["ps", "--quiet"]: return "container-id\n"
-        if "psql" in args: return json.dumps(point())
-        raise RuntimeError("synthetic stat failure")
-    host.compose = compose
-    with pytest.raises(RuntimeError):
-        host.publish_pg_capacity()
-    assert not any("--publish-pg-capacity" in args for args in calls)
-
-
-def test_watcher_retries_fixed_failure_and_stops_without_erasing_receipt(tmp_path, monkeypatch, capsys):
-    from contextlib import nullcontext
-
-    class Stop:
-        done = False
-        def is_set(self): return self.done
-        def wait(self, seconds):
-            assert seconds == 10
-            self.done = True
-    def fail():
-        raise RuntimeError("private-value")
-    monkeypatch.setattr(sli_update, "operation_lock", lambda path: nullcontext())
-    assert sli_update.watch_pg_capacity(SimpleNamespace(publish_pg_capacity=fail), tmp_path, stop=Stop()) == {"status": "stopped"}
-    assert capsys.readouterr().out == "update_capacity_unavailable\n"
-    assert not list(tmp_path.iterdir())
-
-
 def test_startup_does_not_connect_or_delete_legacy_live_cluster_artifacts(tmp_path, monkeypatch):
     monkeypatch.setattr(backup, "pg_connect", lambda *a, **kw: pytest.fail("must not touch live cluster"))
     drill.startup_restore_cleanup(tmp_path)
-
-
-def test_host_and_backup_mapping_probe_contracts_match():
-    assert sli_update.PG_CAPACITY_SQL == backup.PG_CAPACITY_SQL
-    assert sli_update.pg_capacity_paths(point()) == backup.pg_capacity_paths(point())
-
-
-def test_capacity_service_refuses_a_different_operator_identity(tmp_path, capsys):
-    launcher = tmp_path / "launcher.py"
-    launcher.write_text("# synthetic")
-    assert sli_update.main(["capacity-service", "--runtime", str(tmp_path), "--compose", str(tmp_path / "compose.yml"),
-                            "--launcher", str(launcher), "--capacity-user", "different-operator"]) == 1
-    assert "[Service]" not in capsys.readouterr().out
 
 
 def test_new_drill_never_cleans_legacy_live_cluster_databases(tmp_path, monkeypatch):
@@ -425,21 +345,3 @@ def test_pending_legacy_runs_block_before_capacity_or_live_connection(tmp_path, 
     if artifact != 'symlink':
         assert result['diagnostic']['error_code'] == 'linux_backup_restore_cleanup_required'
     assert registry.exists()
-
-
-def test_nested_unmapped_mount_fails_closed_before_receipt_publication():
-    host = sli_update.DockerHost(["compose.yml"], "https://localhost/api/health/ready", None)
-    calls = []
-    def compose(args, **kwargs):
-        calls.append(args)
-        if args[:2] == ["ps", "--quiet"]: return "container-id\n"
-        if "psql" in args: return json.dumps(point())
-        if "readlink" in args: return args[-1] + "\n"
-        if "cat" in args: return "1 0 8:1 / /tablespace/PG_18_nested rw - ext4 /dev/synthetic rw\n"
-        if "stat" in args: return "4096 26214400 dev1\n"
-        if "--publish-pg-capacity" in args: return ""
-        pytest.fail(str(args))
-    host.compose = compose
-    with pytest.raises(sli_update.UpdateError, match="update_capacity_unmapped_mount"):
-        host.publish_pg_capacity()
-    assert not any("--publish-pg-capacity" in args for args in calls)

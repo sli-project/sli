@@ -88,14 +88,13 @@ def test_ensure_creates_passwords_without_newlines_and_preserves_files(tmp_path,
         assert all(path.stat().st_mode & 0o777 == 0o640 for path in paths)
 
 
-@pytest.mark.parametrize('legacy', [False, pytest.param(True, marks=pytest.mark.legacy)])
-def test_default_install_provisions_executor_credentials(tmp_path, ownership, monkeypatch, legacy):
+def test_default_install_provisions_executor_credentials(tmp_path, ownership, monkeypatch):
     from deploy.linux import native_install, native_runtime
 
     monkeypatch.delenv('SLI_CORE_JOB_WORKSTATIONS_PROJECTION', raising=False)
     directory = tmp_path / 'synthetic-install-secrets'
     subject.ensure(directory, tls_names=['localhost'])
-    compose = yaml.safe_load((ROOT / 'deploy/linux/docker-compose.yml').read_text('utf-8')) if legacy else None
+    compose = None
     native_env = native_install.environment()
     runtime_env, runtime_secrets = native_runtime.environment('executor-light', {'radius_pilot': False})
     values = []
@@ -463,22 +462,6 @@ def test_agent_transfer_cli_needs_no_new_tls_or_offline_key(tmp_path, ownership,
     assert 'PRIVATE KEY' not in capsys.readouterr().out
 
 
-@pytest.mark.legacy
-def test_agent_overlay_provisioning_accepts_canonical_layout_and_rejects_foreign_override(
-        tmp_path, ownership, monkeypatch, capsys):
-    source, destination = tmp_path / 'source', tmp_path / 'new'
-    names = list(subject.AGENT_FILE_SETTINGS)
-    subject.ensure(source, names=names, offline_root_dir=tmp_path / 'offline')
-    for setting in subject.AGENT_FILE_SETTINGS.values():
-        monkeypatch.delenv(setting, raising=False)
-    args = ['ensure', '--directory', str(destination), '--agent-secrets-from', str(source),
-            '--compose', str(ROOT / 'deploy/linux/docker-compose.agent.yml')]
-    assert subject.main(args) == 0
-    monkeypatch.setenv('SLI_AGENT_CA_ISSUER_KEY_FILE', str(tmp_path / 'foreign'))
-    assert subject.main(args) == 1
-    assert 'secret_directory_layout_required' in capsys.readouterr().err
-
-
 def test_restored_agent_bundle_is_checked_from_mounted_files(tmp_path, ownership, monkeypatch):
     source = tmp_path / 'source'
     names = [name for name, spec in subject.load_manifest().items() if spec['group'] == 'agents']
@@ -502,84 +485,3 @@ def test_cli_reports_safe_error_without_secret_or_traceback(tmp_path, ownership,
     output = capsys.readouterr()
     assert 'context_password: regular_file_required' in output.err
     assert 'Traceback' not in output.err and not output.out
-
-
-@pytest.mark.legacy
-def test_installer_uses_manifest_and_rejects_unknown_secret(tmp_path, ownership):
-    from deploy.linux.installation import create_secrets
-
-    with pytest.raises(subject.SecretError, match='manifest_missing'):
-        create_secrets({'secrets': {'unregistered_password': {}}}, tmp_path / 'secrets', {})
-    assert not (tmp_path / 'secrets').exists()
-
-
-@pytest.mark.legacy
-def test_update_preflight_uses_manifest_without_creating_files(tmp_path):
-    from deploy.linux.sli_update import DockerHost
-
-    config = {'secrets': {'unregistered_password': {'file': str(tmp_path / 'missing')}},
-              'services': {'migrate': {'secrets': [{'source': 'unregistered_password'}]}}}
-    host = DockerHost([], 'https://127.0.0.1/api/health/ready', None)
-    with pytest.raises(subject.SecretError, match='manifest_missing'):
-        host.secrets_preflight(config, {'migrate'})
-    assert not (tmp_path / 'missing').exists()
-
-
-@pytest.mark.legacy
-@pytest.mark.parametrize('new_secret', ['job_dispatcher_light', 'storage_password'])
-def test_update_provisions_new_password_before_compose_can_mount_it(tmp_path, ownership, monkeypatch, new_secret):
-    from deploy.linux.sli_update import DockerHost
-
-    directory = tmp_path / 'secrets'
-    names = ['tls_ca', 'tls_certificate', 'tls_key', 'runtime_password']
-    subject.ensure(directory, names=names, tls_names=['127.0.0.1'])
-    before = {name: ((directory / name).read_bytes(), (directory / name).stat().st_mtime_ns) for name in names}
-    names.append(new_secret)
-    config = {'secrets': {name: {'file': str(directory / name)} for name in names},
-              'services': {'migrate': {'secrets': [{'source': name} for name in names]}}}
-    host = DockerHost([], 'https://127.0.0.1/api/health/ready', None)
-    monkeypatch.setattr(host, 'inspect_installation', lambda _: [])
-    monkeypatch.setattr(host, 'ownership_preflight', lambda *_: None)
-    calls = []
-    def compose(args):
-        calls.append(args)
-        assert args == ['config', '--format', 'json']
-        return json.dumps(config)
-    monkeypatch.setattr(host, 'compose', compose)
-    host.ensure_secrets({})
-    host.secrets_preflight(config, {'migrate'})
-    assert before == {name: ((directory / name).read_bytes(), (directory / name).stat().st_mtime_ns)
-                      for name in before}
-    assert re.fullmatch(rb'[A-Za-z0-9_-]{64}', (directory / new_secret).read_bytes())
-    assert calls == [['config', '--format', 'json']]
-
-
-@pytest.mark.legacy
-@pytest.mark.parametrize('bad', ['directory', 'split_directory', 'wrong_name', 'unregistered', 'foreign'])
-def test_update_ensure_refuses_unsafe_input_without_creating_password(tmp_path, ownership, monkeypatch, bad):
-    from deploy.linux.sli_update import DockerHost, UpdateError
-
-    directory = tmp_path / 'secrets'
-    directory.mkdir(mode=0o750)
-    config = {'secrets': {name: {'file': str(directory / name)}
-                          for name in ['runtime_password', 'context_password']}}
-    if bad == 'directory':
-        (directory / 'context_password').mkdir()
-    elif bad == 'split_directory':
-        config['secrets']['context_password']['file'] = str(tmp_path / 'context_password')
-    elif bad == 'wrong_name':
-        config['secrets']['context_password']['file'] = str(directory / 'wrong')
-    elif bad == 'unregistered':
-        config['secrets']['unregistered_password'] = {'file': str(directory / 'unregistered_password')}
-    host = DockerHost([], 'https://127.0.0.1/api/health/ready', None)
-    monkeypatch.setattr(host, 'inspect_installation', lambda _: [])
-    monkeypatch.setattr(host, 'compose', lambda _: json.dumps(config))
-    def ownership_preflight(*_):
-        if bad == 'foreign':
-            raise UpdateError('update_foreign_installation')
-    monkeypatch.setattr(host, 'ownership_preflight', ownership_preflight)
-    with pytest.raises(UpdateError) as error:
-        host.ensure_secrets({})
-    if bad == 'directory':
-        assert str(error.value) == 'update_secrets_ensure_failed'
-    assert not (directory / 'runtime_password').exists()

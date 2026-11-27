@@ -409,7 +409,6 @@ def test_native_migrate_and_import_accept_existing_admin_passfile(native, tmp_pa
     monkeypatch.setattr(migrate, "create_platform_owner", lambda *a: None)
     monkeypatch.setattr(migrate, "configure_worker_logins", lambda *a: None)
     monkeypatch.setattr(migrate, "configure_permanent_history", lambda: None)
-    monkeypatch.setattr(migrate, "configure_workstation_history", lambda: None)
     monkeypatch.setattr(migrate, "secret_value", secret)
     monkeypatch.setattr(restore, "secret_value", secret)
     monkeypatch.setattr(migrate, "run_sql", run_sql)

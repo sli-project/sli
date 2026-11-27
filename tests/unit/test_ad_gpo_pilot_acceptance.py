@@ -98,12 +98,6 @@ def test_unconfirmed_installation_blocks_even_with_all_lab_attestations(tmp_path
     assert all(row["status"] == "not_verified" for row in result["rows"])
 
 
-def test_every_install_and_delete_phase_requires_separate_evidence():
-    from sli_agent.gpo_deployment import DELETE_PHASES, PHASES
-    assert {"phase_" + phase for phase in PHASES} <= set(subject.CASES["configured"])
-    assert {"phase_" + phase for phase in DELETE_PHASES} <= set(subject.CASES["deletion"])
-
-
 @pytest.mark.parametrize("field,value", [("run_id", ARTIFACT), ("installation_id", RUN),
     ("source_revision", "b" * 40), ("worktree_sha256", "c" * 64), ("schema_version", True), ("password", PRIVATE),
     ("observations", []), ("observations", [{"password": PRIVATE}])])

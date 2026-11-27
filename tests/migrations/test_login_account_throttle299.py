@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pytest
 
-from server.sli.access.login_throttle import AccountAttempt, LoginThrottled
 
 MIGRATIONS = Path("config/postgres_migrations")
 
@@ -118,66 +117,3 @@ def test_migration_grants_marker_replay_guard_and_rollback(database):
     with database() as conn:
         assert conn.execute("select to_regclass('auth_login_throttle') as t").fetchone()["t"] is None
         assert conn.execute("select count(*) as n from schema_migrations where version=299").fetchone()["n"] == 0
-
-
-@pytest.mark.postgres_integration
-@pytest.mark.postgres_empty
-def test_cross_connection_budget_and_inflight_lock(database):
-    # Different transactions model different HTTP processes/IP addresses.
-    for _ in range(5):
-        with database() as conn, conn.cursor() as cur:
-            attempt = AccountAttempt(cur, " Synthetic-Admin ")
-            attempt.failed(cur)
-    with pytest.raises(LoginThrottled), database() as conn, conn.cursor() as cur:
-        AccountAttempt(cur, "SYNTHETIC-ADMIN")
-    with database() as conn:
-        conn.execute("update auth_login_throttle set blocked_until=clock_timestamp()-interval '1 second'")
-    with database() as first, database() as second, first.cursor() as cur:
-        attempt = AccountAttempt(cur, "synthetic-admin")
-        with pytest.raises(LoginThrottled), second.cursor() as other:
-            AccountAttempt(other, "synthetic-admin")
-        # A different account is independent even during verification.
-        with second.cursor() as other:
-            AccountAttempt(other, "synthetic-other").failed(other)
-        attempt.succeeded(cur)
-    with database() as conn:
-        with conn.cursor() as cur:
-            attempt = AccountAttempt(cur, "synthetic-admin")
-            assert attempt.failures == 0
-            attempt.failed(cur)
-        assert conn.execute("select failures from auth_login_throttle where account_key=%s", (attempt.key,)).fetchone()["failures"] == 1
-
-
-@pytest.mark.postgres_integration
-@pytest.mark.postgres_empty
-def test_password_entry_point_commits_failures_and_resets_budget(database, monkeypatch):
-    from server.sli.access import auth
-
-    monkeypatch.setenv("SLI_OWNER_SETUP", "0")
-    password = "synthetic-password-299"
-    with database() as conn:
-        conn.execute("""create table auth_users(id integer primary key, username text, password_hash text,
-            role text, is_active boolean, updated_at timestamptz, last_login_at timestamptz,
-            previous_login_at timestamptz)""")
-        conn.execute("grant select, update on auth_users to adlog_user")
-        conn.execute("insert into auth_users(id,username,password_hash,role,is_active) values(1,'synthetic-admin',%s,'admin',true)",
-                     (auth.PASSWORD_HASHER.hash(password),))
-
-    def runtime_connection():
-        conn = database()
-        conn.execute("set role adlog_user")
-        return conn
-
-    monkeypatch.setattr(auth, "_connect", runtime_connection)
-    for _ in range(5):
-        assert auth.authenticate_password(" Synthetic-Admin ", "synthetic-wrong-password") is None
-    with pytest.raises(LoginThrottled):
-        auth.authenticate_password("SYNTHETIC-ADMIN", password)
-    with database() as conn:
-        row = conn.execute("select failures,account_key from auth_login_throttle").fetchone()
-        assert row["failures"] == 5
-        assert "synthetic-admin" not in row["account_key"]
-        conn.execute("update auth_login_throttle set blocked_until=clock_timestamp()-interval '1 second'")
-    assert auth.authenticate_password("synthetic-admin", password)["id"] == 1
-    with database() as conn:
-        assert conn.execute("select count(*) as n from auth_login_throttle").fetchone()["n"] == 0

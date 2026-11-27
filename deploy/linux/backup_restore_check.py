@@ -304,7 +304,7 @@ def startup_light_check(root: Path, capture: dict) -> Path | None:
     if startup_capture(root) != capture:
         return None
     path = root / capture["last_success"]
-    from deploy.linux.legacy_runtime import shutdown
+    from deploy.linux.sli_core import shutdown
 
     from deploy.linux.operation_wait import OperationTimeout, Watch
     watch = Watch('startup_check', minimum=21600, size=backup.size_bytes(path),
@@ -634,4 +634,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

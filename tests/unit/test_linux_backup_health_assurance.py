@@ -10,7 +10,6 @@ import pytest
 
 from deploy.linux import backup
 from deploy.linux import backup_restore_check as drill
-from deploy.linux import sli_update as update
 from tests.unit.test_linux_backup import STAMP
 from tests.unit.test_linux_backup_verification import integrity_set, run_scheduled_cycle
 
@@ -137,51 +136,6 @@ def test_manual_light_does_not_clear_real_failure(tmp_path, monkeypatch, failure
     drill.light_check(tmp_path, selected=path)
     backup.heartbeat(tmp_path, "waiting", None)
     assert not backup.healthy(tmp_path)
-
-
-@pytest.mark.parametrize("bad", [None, "stale", "pid", "backup_failure", "api_failure"])
-def test_update_health_uses_real_backup_contract(tmp_path, monkeypatch, bad):
-    path = captured(tmp_path, monkeypatch)
-    drill.light_check(tmp_path, selected=path)
-    backup.heartbeat(tmp_path, "waiting", None)
-    if bad == "stale":
-        monkeypatch.setattr(backup, "utc_now", lambda: STAMP + timedelta(seconds=91))
-    if bad == "pid":
-        beat = json.loads((tmp_path / "heartbeat.json").read_bytes())
-        beat["process_pid"] = 22
-        backup.write_json(tmp_path / "heartbeat.json", beat)
-    if bad == "backup_failure":
-        backup.heartbeat(tmp_path, "failed", None, "failed")
-    host = update.DockerHost(
-        [tmp_path / "compose.yml"],
-        "https://127.0.0.1/api/health/ready",
-        None,
-        timeout=3,
-    )
-    rows = [
-        {"Service": name, "State": "running", "Health": "healthy"}
-        for name in ["api", "backup", *update.INFRA]
-    ]
-    next(row for row in rows if row["Service"] == "backup")["Health"] = (
-        "healthy" if backup.healthy(tmp_path) else "unhealthy"
-    )
-    monkeypatch.setattr(host, "containers", lambda: rows)
-    monkeypatch.setattr(update.ssl, "create_default_context", lambda **kw: object())
-    monkeypatch.setattr(
-        update,
-        "urlopen",
-        lambda *a, **kw: nullcontext(
-            SimpleNamespace(status=503 if bad == "api_failure" else 200)
-        ),
-    )
-    clock = iter(range(10))
-    monkeypatch.setattr(update.time, "monotonic", lambda: next(clock))
-    monkeypatch.setattr(update.time, "sleep", lambda _: None)
-    if bad:
-        with pytest.raises(update.UpdateError, match="health_timeout"):
-            host.health({"services": ["api", "backup"]})
-    else:
-        host.health({"services": ["api", "backup"]})
 
 
 @pytest.mark.parametrize("reason", ["capacity", "space", "busy", "cleanup"])
@@ -361,7 +315,7 @@ def legacy_startup_files(root, monkeypatch):
 
 def run_startup(root, monkeypatch):
     import time
-    from server.sli.ops import shutdown
+    from deploy.linux.sli_core import shutdown
 
     polls = []
     monkeypatch.setattr(drill, "startup_restore_cleanup", lambda _: None)
@@ -375,30 +329,6 @@ def run_startup(root, monkeypatch):
     monkeypatch.setattr(shutdown, "wait", wait)
     backup.serve(root, interval=86400, delay=300, retention=7)
     return json.loads((root / "heartbeat.json").read_bytes())
-
-
-def test_startup_reconciles_legacy_manual_capture_before_update_health(tmp_path, monkeypatch):
-    path, full = legacy_startup_files(tmp_path, monkeypatch)
-    beat = run_startup(tmp_path, monkeypatch)
-    assert backup.main(["--healthcheck"]) == 0
-    assert beat["restore_assurance"] == "pending"
-    assert beat["warning_reason"] == "full_check_pending"
-    assert beat["last_success"] == path.name
-    assert backup.light_evidence(tmp_path, backup.read_result(tmp_path))
-    assert json.loads((tmp_path / "last_full_restore_check.json").read_bytes()) == full
-    assert backup.read_cycle_result(tmp_path)["backup_id"] == full["backup_id"]
-
-    # Exercise the updater's strict health phase with the real CLI result,
-    # not a backup waiver or an unconditional healthy container stub.
-    host = update.DockerHost([tmp_path / "compose.yml"], "https://127.0.0.1/api/health/ready", None, timeout=3)
-    rows = [{"Service": name, "State": "running", "Health": "healthy"}
-            for name in ["api", "backup", *update.INFRA]]
-    next(row for row in rows if row["Service"] == "backup")["Health"] = (
-        "healthy" if backup.main(["--healthcheck"]) == 0 else "unhealthy")
-    monkeypatch.setattr(host, "containers", lambda: rows)
-    monkeypatch.setattr(update.ssl, "create_default_context", lambda **kw: object())
-    monkeypatch.setattr(update, "urlopen", lambda *a, **kw: nullcontext(SimpleNamespace(status=200)))
-    host.health({"services": ["api", "backup"]})
 
 
 @pytest.mark.parametrize("defect", ["capture", "artifact", "cycle", "token", "receipt", "receipt_id"])
@@ -468,7 +398,7 @@ def test_startup_revalidates_selection_under_capture_lock(tmp_path, monkeypatch,
 
 def test_startup_scan_keeps_unknown_liveness_and_shutdown_cancels_worker(tmp_path, monkeypatch):
     import threading
-    from server.sli.ops import shutdown
+    from deploy.linux.sli_core import shutdown
 
     path, full = legacy_startup_files(tmp_path, monkeypatch)
     entered, finished = threading.Event(), threading.Event()
@@ -506,7 +436,7 @@ def test_startup_scan_keeps_unknown_liveness_and_shutdown_cancels_worker(tmp_pat
 
 def test_startup_lock_wait_is_cancelled_without_rewriting_receipts(tmp_path, monkeypatch):
     import threading
-    from server.sli.ops import shutdown
+    from deploy.linux.sli_core import shutdown
 
     legacy_startup_files(tmp_path, monkeypatch)
     capture = drill.startup_capture(tmp_path)
@@ -530,7 +460,7 @@ def test_startup_lock_wait_is_cancelled_without_rewriting_receipts(tmp_path, mon
 @pytest.mark.parametrize("phase", ["hash", "zip", "deadline"])
 def test_startup_budget_interrupts_real_chunked_reads_without_receipt_changes(tmp_path, monkeypatch, phase):
     import zipfile
-    from server.sli.ops import shutdown
+    from deploy.linux.sli_core import shutdown
 
     path, _ = legacy_startup_files(tmp_path, monkeypatch)
     capture = drill.startup_capture(tmp_path)

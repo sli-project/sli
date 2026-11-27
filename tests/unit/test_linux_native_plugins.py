@@ -112,7 +112,7 @@ def test_migrate_registers_bundled_vpn_only_for_native(tmp_path, monkeypatch, mo
     monkeypatch.setattr(migrate.psycopg, "connect", lambda **kwargs: nullcontext(connection))
     monkeypatch.setattr(migrate, "secret_value", lambda setting: "synthetic-only")
     for name in ("attest_ledger", "apply_pending", "create_platform_owner", "run_sql", "configure_worker_logins",
-                 "configure_permanent_history", "configure_workstation_history"):
+                 "configure_permanent_history"):
         monkeypatch.setattr(migrate, name, lambda *args, **kwargs: None)
     migrate.migrate()
     assert len(connection.operations) == registrations

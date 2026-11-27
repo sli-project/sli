@@ -9,9 +9,8 @@ from unittest.mock import Mock
 import pytest
 
 from deploy.linux import healthcheck, native_host, native_install, native_runtime as runtime
-from deploy.linux import native_clickhouse_endpoint as site, notification_delivery
-from deploy.linux import native_backup, notification_health, telegram_setup
-from server.sli.core import notification_smtp, notification_telegram, smtp_setup
+from deploy.linux import native_clickhouse_endpoint as site
+from deploy.linux import native_backup, notification_health
 
 
 @pytest.fixture
@@ -73,27 +72,13 @@ def test_proxy_defaults_to_direct():
     assert env["SLI_NOTIFICATION_PROXY"] == ""
 
 
-@pytest.mark.parametrize("legacy", [False, pytest.param(True, marks=pytest.mark.legacy)])
 @pytest.mark.parametrize("age,pid,valid", [(0, 42, True), (91, 42, False), (-1, 42, False), (0, 1, False), (20, 42, False)])
-def test_delivery_health_binds_pid_and_start(tmp_path, age, pid, valid, legacy):
+def test_delivery_health_binds_pid_and_start(tmp_path, age, pid, valid):
     now = datetime.now(timezone.utc)
     path = tmp_path / "heartbeat.json"
     path.write_text(json.dumps({"pid": pid, "at": (now - timedelta(seconds=age)).timestamp()}))
     probe = dict(process_pid=42, started_at=now - timedelta(seconds=10), status_path=path)
-    if legacy:
-        assert notification_delivery.healthy(**probe) is valid
-    else:
-        assert healthcheck.native_healthy("notification-delivery", **probe) is valid
-
-
-@pytest.mark.legacy
-def test_delivery_docker_health_still_requires_pid_one(tmp_path, monkeypatch):
-    path = tmp_path / "heartbeat.json"
-    monkeypatch.setattr(notification_delivery, "STATUS", path)
-    path.write_text(json.dumps({"pid": 1, "at": datetime.now(timezone.utc).timestamp()}))
-    assert notification_delivery.healthy()
-    path.write_text(json.dumps({"pid": 42, "at": datetime.now(timezone.utc).timestamp()}))
-    assert not notification_delivery.healthy()
+    assert healthcheck.native_healthy("notification-delivery", **probe) is valid
 
 
 @pytest.mark.parametrize("socket_available", [True, False])
@@ -111,70 +96,6 @@ def test_native_notification_setup_health_checks_selected_socket(tmp_path, monke
                                      status_path=socket_path) is socket_available
     connect.assert_called_once_with(socket_api.AF_UNIX, socket_api.SOCK_STREAM)
     client.connect.assert_called_once_with(str(socket_path))
-
-
-@pytest.mark.legacy
-def test_native_smtp_reads_coherent_credential_snapshot(tmp_path, monkeypatch, caplog, capsys):
-    config = {"host": "smtp.example.invalid", "port": 587, "username": "synthetic-login",
-              "sender": "sender@example.invalid", "recipients": {"2": "recipient@example.invalid"},
-              "base_url": "https://sli.example.invalid/app"}
-    password = "synthetic-notification-password"
-    (tmp_path / "notifications_smtp.json").write_text(json.dumps(config))
-    (tmp_path / "notifications_notification_smtp_password").write_text(password)
-    marker = tmp_path / "notifications_smtp.ready"
-    marker.write_text(smtp_setup.snapshot_marker(config, password, 3))
-    monkeypatch.setenv("SLI_DEPLOYMENT_MODE", "native")
-    monkeypatch.setenv("SLI_NOTIFICATION_SMTP_CONFIG_FILE", str(tmp_path / "notifications_smtp.json"))
-    monkeypatch.setenv("SLI_NOTIFICATION_SMTP_PASSWORD_FILE", str(tmp_path / "notifications_notification_smtp_password"))
-    assert notification_smtp._config(2, 3) == (config, "recipient@example.invalid", password)
-    (tmp_path / "notifications_notification_smtp_password").write_text("different-synthetic-password")
-    with pytest.raises(smtp_setup.SMTPSetupError, match="smtp_setup_needs_save"):
-        notification_smtp._config(2, 3)
-    assert password not in caplog.text + str(capsys.readouterr())
-
-
-@pytest.mark.legacy
-@pytest.mark.parametrize("proxy", ["", "http://proxy.example:3128"])
-def test_native_telegram_uses_site_proxy_for_delivery_and_setup(tmp_path, monkeypatch, proxy):
-    path = tmp_path / "telegram.json"
-    path.write_text(json.dumps({"base_url": "https://sli.example.invalid/app", "recipients": {"2": "123"},
-                                "proxy_url": "http://old-proxy.example:8080"}))
-    monkeypatch.setenv("SLI_DEPLOYMENT_MODE", "native")
-    monkeypatch.setenv("SLI_NATIVE_NOTIFICATION_SETUP", "1")
-    monkeypatch.setenv("SLI_NOTIFICATION_PROXY", proxy)
-    monkeypatch.setenv("SLI_NOTIFICATION_TELEGRAM_CONFIG_FILE", str(path))
-    assert notification_telegram._config(2)[2] == proxy
-    assert telegram_setup.Setup(tmp_path).read()["proxy_url"] == proxy
-
-
-@pytest.mark.legacy
-def test_setup_refreshes_credentials_only_after_mutations(monkeypatch, capsys):
-    calls = []
-    monkeypatch.setenv("SLI_NATIVE_NOTIFICATION_SETUP", "1")
-    monkeypatch.setattr(telegram_setup.subprocess, "run", lambda argv, **kw: calls.append((argv, kw)) or SimpleNamespace(returncode=0))
-    for action in ("status", "verify", "chats", "smtp_status"):
-        telegram_setup.refresh_delivery({"action": action})
-    assert not calls
-    for action in ("token", "bind", "smtp_save"):
-        telegram_setup.refresh_delivery({"action": action, "token": "synthetic-private-token"})
-    assert len(calls) == 3
-    assert all(argv == ["/usr/bin/systemctl", "restart", "sli-notification-delivery.service"] for argv, _ in calls)
-    assert "synthetic-private-token" not in str(calls) + str(capsys.readouterr())
-    monkeypatch.delenv("SLI_NATIVE_NOTIFICATION_SETUP")
-    telegram_setup.refresh_delivery({"action": "token"})
-    assert len(calls) == 3
-
-
-@pytest.mark.legacy
-def test_setup_socket_grants_only_api_group(tmp_path, monkeypatch):
-    import sys
-    monkeypatch.setitem(sys.modules, "grp", SimpleNamespace(getgrnam=lambda name: SimpleNamespace(gr_gid=234) if name == "sli-api" else pytest.fail(name)))
-    monkeypatch.setenv("SLI_NATIVE_NOTIFICATION_SETUP", "1")
-    ownership = []
-    monkeypatch.setattr(os, "chown", lambda *args: ownership.append(args), raising=False)
-    path = tmp_path / "notification-setup/control.sock"
-    assert telegram_setup.prepare_socket(path) == 234
-    assert ownership == [(path.parent, 0, 234)]
 
 
 def test_native_backup_captures_notification_config_and_marker(tmp_path, monkeypatch):
@@ -198,28 +119,6 @@ def test_native_backup_captures_notification_config_and_marker(tmp_path, monkeyp
     (notifications / "unapproved").write_bytes(b"synthetic")
     with pytest.raises(RuntimeError, match="native_backup_inventory_invalid"):
         native_backup.secret_sources()
-
-
-@pytest.mark.legacy
-@pytest.mark.parametrize("implicit_tls", [False, True])
-def test_native_smtp_connects_through_site_proxy_with_provider_tls(monkeypatch, implicit_tls):
-    monkeypatch.setenv("SLI_DEPLOYMENT_MODE", "native")
-    monkeypatch.setenv("SLI_NOTIFICATION_PROXY", "http://proxy.example:3128")
-    sock = Mock()
-    tunnel = Mock(sock=sock)
-    constructor = Mock(return_value=tunnel)
-    monkeypatch.setattr(notification_smtp.http.client, "HTTPConnection", constructor)
-    context = Mock()
-    context.wrap_socket.return_value = sock
-    client = (notification_smtp._SMTPSSL(context=context, local_hostname="example.invalid") if implicit_tls
-              else notification_smtp._SMTP(local_hostname="example.invalid"))
-    client.deadline = notification_smtp.time.monotonic() + 30
-    assert client._get_socket("smtp.example.invalid", 465 if implicit_tls else 587, 5) is sock
-    constructor.assert_called_once_with("proxy.example", 3128, timeout=5)
-    tunnel.set_tunnel.assert_called_once_with("smtp.example.invalid", 465 if implicit_tls else 587)
-    tunnel.connect.assert_called_once()
-    if implicit_tls:
-        context.wrap_socket.assert_called_once_with(sock, server_hostname="smtp.example.invalid")
 
 
 def test_candidate_configuration_applies_site_notification_proxy(tmp_path, monkeypatch):
@@ -251,19 +150,3 @@ def test_notification_launch_contains_paths_and_removes_plaintext(config, tmp_pa
     assert "SLI_NOTIFICATION_SMTP_PASSWORD" not in captured
     assert captured["SLI_NOTIFICATION_TELEGRAM_TOKEN_FILE"].endswith("/notifications_notification_telegram_token")
     assert "synthetic-private" not in str(captured) + str(capsys.readouterr())
-
-
-@pytest.mark.legacy
-def test_failed_delivery_cycle_does_not_publish_or_log_secrets(tmp_path, monkeypatch, caplog, capsys):
-    stop = notification_delivery.threading.Event()
-    monkeypatch.setattr(notification_delivery.threading, "Event", lambda: stop)
-    monkeypatch.setattr(notification_delivery.signal, "signal", lambda *args: None)
-    path = tmp_path / "heartbeat.json"
-    monkeypatch.setenv("SLI_NOTIFICATION_STATUS_FILE", str(path))
-    def failed_cycle(**kwargs):
-        stop.set()
-        raise RuntimeError("123:synthetic-private-token")
-    monkeypatch.setattr(notification_delivery, "process_one", failed_cycle)
-    assert notification_delivery.main() == 0
-    assert not path.exists()
-    assert "synthetic-private" not in caplog.text + str(capsys.readouterr())

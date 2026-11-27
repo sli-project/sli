@@ -5,10 +5,6 @@ $tokens = $null
 $parseErrors = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile($SourcePath, [ref]$tokens, [ref]$parseErrors)
 if ($parseErrors.Count) { throw 'installer_parse_failed' }
-foreach ($name in @('build-sli-agent-msi.ps1')) {
-    $null = [Management.Automation.Language.Parser]::ParseFile((Join-Path (Split-Path $SourcePath) $name), [ref]$tokens, [ref]$parseErrors)
-    if ($parseErrors.Count) { throw 'msi_build_parse_failed' }
-}
 if ($PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1) { throw 'requires_windows_powershell_51' }
 . $SourcePath
 

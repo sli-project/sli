@@ -13,7 +13,6 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 BOOTSTRAP = ROOT / "scripts/ops/Start-SLIWorkerSupervisor.ps1"
 INSTALLER = ROOT / "scripts/ops/Install-SLIWorkerSupervisor.ps1"
-SUPERVISOR = ROOT / "scripts/maintenance/worker_supervisor.py"
 
 
 def _source(path: Path) -> str:
@@ -88,16 +87,3 @@ $job = [BootstrapJob]::CreateAndBindCurrentProcess()
         "kill_on_close": True,
         "handle_inheritable": False,
     }
-
-
-def test_task_registration_contract_remains_exact_and_limited() -> None:
-    source = _source(INSTALLER)
-
-    assert '$TaskName = "SLI Worker Supervisor"' in source
-    assert '$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\\.."))' in source
-    assert 'Start-SLIWorkerSupervisor.ps1' in source
-    assert "-MultipleInstances IgnoreNew" in source
-    assert "-RunLevel Limited" in source
-    assert "-LogonType Interactive" in source
-    assert "Stop-Process" not in _source(BOOTSTRAP)
-    assert "CREATE_BREAKAWAY_FROM_JOB" not in _source(SUPERVISOR)

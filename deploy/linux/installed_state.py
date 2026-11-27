@@ -79,15 +79,6 @@ def native_ledger_matches(installed, observed):
     return {"max_version": max(versions), "sha256": hashlib.sha256(canonical_json(actual)).hexdigest()}
 
 
-def ledger_matches(installed, observed):
-    try:
-        return native_ledger_matches(installed, observed)
-    except PackageError as exc:
-        from deploy.linux.sli_update import UpdateError
-
-        raise UpdateError(str(exc)) from exc
-
-
 def inventory(installed):
     keys = ("version", "image_tag", "image_digest", "build_id", "source_commit", "migrations", "migration_ledger")
     return {**{key: installed.get(key) for key in keys}, "plugins": {
@@ -96,7 +87,7 @@ def inventory(installed):
 
 
 def installation_key(installed):
-    require(isinstance(installed.get("compose_project"), str) and installed["compose_project"]
+    require_native(isinstance(installed.get("compose_project"), str) and installed["compose_project"]
             and isinstance(installed.get("volumes"), dict),
             "update_foreign_installation")
     return hashlib.sha256(canonical_json({"project": installed["compose_project"], "volumes": installed["volumes"]})).hexdigest()
@@ -105,16 +96,16 @@ def installation_key(installed):
 def registry_matches(installed, observed):
     registry = observed.get("installed_release")
     if registry is not None:
-        require(registry.get("installation_key") == installation_key(installed), "update_foreign_installation")
-        require(registry.get("inventory") == inventory(installed), "update_installed_registry_mismatch")
+        require_native(registry.get("installation_key") == installation_key(installed), "update_foreign_installation")
+        require_native(registry.get("inventory") == inventory(installed), "update_installed_registry_mismatch")
 
 
 def plugins_match(installed, observed):
     rows = observed.get("plugins", [])
     active = {row["plugin_id"]: row for row in rows if row["installed"]}
-    require(len(active) == sum(bool(row["installed"]) for row in rows), "update_plugin_registry_mismatch")
+    require_native(len(active) == sum(bool(row["installed"]) for row in rows), "update_plugin_registry_mismatch")
     expected = installed.get("plugins", {})
-    require(set(active) == set(expected) and all(active[key]["version"] == value["version"]
+    require_native(set(active) == set(expected) and all(active[key]["version"] == value["version"]
             for key, value in expected.items()), "update_plugin_registry_mismatch")
 
 
@@ -147,28 +138,9 @@ def native_pointers_match(runtime, installed):
     _pointers_match(runtime, installed, read_json, validate_payload)
 
 
-def pointers_match(runtime, installed):
-    from deploy.linux.plugin_update import validate_payload
-    from deploy.linux.sli_update import parse_json
-
-    try:
-        _pointers_match(runtime, installed, parse_json, validate_payload)
-    except PackageError as exc:
-        from deploy.linux.sli_update import UpdateError
-
-        raise UpdateError(str(exc)) from exc
-
-
-def require(condition, code):
-    if not condition:
-        from deploy.linux.sli_update import UpdateError
-
-        raise UpdateError(code)
-
-
 def validate(installed, observed, runtime=None, *, registry=True):
-    ledger_matches(installed, observed)
-    require(observed.get("services") and all(
+    native_ledger_matches(installed, observed)
+    require_native(observed.get("services") and all(
         row["image_digest"] == installed["image_digest"] and row["image_tag"] == installed["image_tag"]
         and (row["version"] == installed["version"] or (row["version"] is None
              and installed.get("adoption") and installed["version"].startswith("adopted-")))
@@ -177,34 +149,4 @@ def validate(installed, observed, runtime=None, *, registry=True):
     if registry:
         registry_matches(installed, observed)
     if runtime is not None:
-        pointers_match(runtime, installed)
-
-
-def observe_plugins(runtime, observed):
-    """Report selected immutable assets separately from the database's version."""
-    from deploy.linux.sli_update import parse_json, reason_code
-    result = []
-    for row in observed.get("plugins", []):
-        active = {**row, "registry_version": row["version"], "generation": None}
-        try:
-            plugin_id = row["plugin_id"]
-            require(re.fullmatch(r"sli\.[a-z0-9-]+", plugin_id), "update_plugin_pointer_mismatch")
-            directory = Path(runtime) / "plugins" / plugin_id
-            pointer = directory / "active.json"
-            active["draining"] = (directory / "draining.json").exists()
-            if pointer.exists():
-                require(not pointer.is_symlink() and not directory.is_symlink(), "update_plugin_pointer_mismatch")
-                generation = parse_json(pointer.read_bytes()).get("generation")
-                require(isinstance(generation, str) and re.fullmatch(r"[a-f0-9]{64}", generation),
-                        "update_plugin_pointer_mismatch")
-                release = directory / "versions" / generation
-                require(not release.is_symlink() and not (release / "release.json").is_symlink(),
-                        "update_plugin_pointer_mismatch")
-                manifest = parse_json((release / "release.json").read_bytes())
-                require(manifest["plugin_id"] == plugin_id, "update_plugin_pointer_mismatch")
-                active.update(version=manifest["plugin_version"], generation=generation,
-                              build_id=manifest["build_id"], source_commit=manifest["source_commit"])
-        except Exception as exc:
-            active.update(version=None, reason_code=reason_code(exc, "update_plugin_inventory_unavailable"))
-        result.append(active)
-    return result
+        native_pointers_match(runtime, installed)

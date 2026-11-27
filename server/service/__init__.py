@@ -1,1 +1,0 @@
-"""SLI Windows Service package."""

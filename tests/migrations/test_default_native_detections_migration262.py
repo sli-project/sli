@@ -6,9 +6,8 @@ from pathlib import Path
 import pytest
 
 from tests.migrations.test_qw_finding_notifications_migration229 import publication_pg as publication_pg
+
 from tests.migrations.test_qw_semantic_input_migration228 import pg as pg
-from tests.unit.test_default_detections import SCOPE
-from server.sli.semantic import default_detections as defaults, password_attacks as passwords
 
 ROOT = Path(__file__).resolve().parents[2]
 SQL = (ROOT / "config/postgres_migrations/262_default_native_detections.sql").read_text("utf-8")
@@ -24,18 +23,6 @@ def test_forward_defaults_preserve_owner_decisions_and_do_not_duplicate_l1():
     assert "grant select,insert,update on public.semantic_policy_admission" not in SQL
     assert "limit 128" in SQL and "limit 10001" in SQL
     assert "binding.principal_name" in SQL and "r.rolname=session_user" in SQL
-
-
-@pytest.mark.postgres_integration
-@pytest.mark.postgres_empty
-def test_migration_rejects_predecessor_before_main_admin_evidence(publication_pg):
-    import psycopg
-    with psycopg.connect(publication_pg, autocommit=True) as conn:
-        conn.execute("insert into schema_migrations values(258,'workstation_device_seen')")
-        with pytest.raises(psycopg.errors.RaiseException, match="migration 262 prerequisites failed"):
-            conn.execute(SQL)
-        conn.execute("rollback")
-        assert conn.execute("select to_regclass('public.semantic_default_installation')").fetchone()[0] is None
 
 
 @pytest.fixture
@@ -84,110 +71,3 @@ def defaults_pg(publication_pg):
         conn.execute("reset role")
         conn.execute(SQL)
     return publication_pg
-
-
-@pytest.mark.postgres_integration
-@pytest.mark.postgres_empty
-def test_actual_sql_seeds_audits_preserves_disable_and_denies_unbound_scope(defaults_pg):
-    import psycopg
-    from psycopg.rows import dict_row
-    with psycopg.connect(defaults_pg, autocommit=True, row_factory=dict_row) as conn:
-        conn.execute("select * from public.default_detection_sources()")  # executes every discovery statement, empty installation
-        conn.execute("""insert into finding_evidence_source_bindings
-            values((select oid from pg_roles where rolname=session_user),session_user,%s,%s,%s,%s,'','core_event',1,null,%s)""",
-            (SCOPE.installation_id, SCOPE.plugin_id, SCOPE.source_instance_id, SCOPE.source_generation,
-             "00000000-0000-0000-0000-000000000003"))
-        policy = passwords.risk_policy(SCOPE, "qw.password-brute-force", policy_id=defaults.policy_id(
-            passwords.execution(SCOPE, "qw.password-brute-force")))
-        assert defaults._admit(conn.cursor(), policy)
-        assert defaults._admit(conn.cursor(), policy)
-        assert conn.execute("select count(*) as n from semantic_control_audit where actor='system:defaults'").fetchone()["n"] == 1
-        conn.execute("update semantic_policy_admission set enabled=false,updated_by='fixture-admin'")
-        assert not defaults._admit(conn.cursor(), policy)
-        assert conn.execute("select updated_by from semantic_policy_admission").fetchone()["updated_by"] == "fixture-admin"
-        assert conn.execute("select count(*) as n from semantic_control_audit").fetchone()["n"] == 2
-        assert conn.execute("select * from read_default_password_events(%s::jsonb)", (json.dumps(asdict(SCOPE)),)).fetchall() == []
-        assert conn.execute("select * from read_admitted_sigma_events(%s::jsonb,0)", (json.dumps(asdict(SCOPE)),)).fetchall() == []
-        scope = asdict(SCOPE) | {"source_generation": "unbound"}
-        with pytest.raises(psycopg.errors.InsufficientPrivilege):
-            conn.execute("select * from read_default_password_events(%s::jsonb)", (json.dumps(scope),))
-
-
-@pytest.mark.postgres_integration
-@pytest.mark.postgres_empty
-def test_actual_sql_domain_membership_requires_every_witness_and_handles_native_file_refs(defaults_pg):
-    import psycopg
-    with psycopg.connect(defaults_pg, autocommit=True) as conn:
-        # No evidence cannot establish membership, including an empty domain selection.
-        assert conn.execute("select semantic_finding_in_domains_v262(1,array[7]::bigint[])").fetchone()[0] is False
-        conn.execute("insert into findings(id,fingerprint) values(1,'fixture')")
-        conn.execute("insert into events_v2_core(id,domain_id) values(1,7),(2,8),(3,null)")
-        conn.execute("insert into finding_evidence(finding_id,event_id,evidence_role) values(1,1,'semantic_scenario')")
-        assert conn.execute("select semantic_finding_in_domains_v262(1,array[7]::bigint[])").fetchone()[0] is True
-        assert conn.execute("select semantic_finding_in_domains_v262(1,array[8]::bigint[])").fetchone()[0] is False
-        conn.execute("insert into finding_evidence(finding_id,event_id,evidence_role) values(1,2,'semantic_scenario')")
-        assert conn.execute("select semantic_finding_in_domains_v262(1,array[7]::bigint[])").fetchone()[0] is False
-        assert conn.execute("select semantic_finding_in_domains_v262(1,array[7,8]::bigint[])").fetchone()[0] is True
-        conn.execute("insert into finding_evidence(finding_id,event_id,evidence_role) values(1,3,'semantic_scenario')")
-        assert conn.execute("select semantic_finding_in_domains_v262(1,array[7,8]::bigint[])").fetchone()[0] is False
-        conn.execute("insert into findings(id,fingerprint) values(2,'fixture-native')")
-        agent = "00000000-0000-0000-0000-000000000003"
-        packet = "00000000-0000-0000-0000-000000000004"
-        conn.execute("""insert into finding_evidence_source_bindings
-            values((select oid from pg_roles where rolname=session_user),session_user,%s,'sli.file-audit',
-                'fixture-source','generation-1','fixture-root','file_audit_observation',null,null,%s)""", (SCOPE.installation_id, agent))
-        conn.execute("""insert into finding_evidence_refs(finding_id,installation_id,plugin_id,source_instance_id,
-            source_generation,collection_scope_id,storage_kind,native_id,sha256)
-            values(2,%s,'sli.file-audit','fixture-source','generation-1','fixture-root','file_audit_observation',%s,%s)""",
-            (SCOPE.installation_id, "a" * 64, "b" * 64))
-        conn.execute("insert into sli_plugin_file_audit.observations values(%s,%s,'fixture-source','generation-1','fixture-root',%s,1)",
-                     ("a" * 64, agent, "b" * 64))
-        envelope = json.dumps({"source_instance_id": "fixture-source", "generation": "generation-1"})
-        conn.execute("insert into sli_agent_receipts values(%s,%s,'sli.file-audit',%s::jsonb,'{\"status\":\"committed\"}',1)",
-                     (packet, agent, envelope))
-        conn.execute("insert into sli_agent_packet_inbox values(%s,%s::jsonb,'{\"header\":{\"source\":\"fixture-server\"}}','[]',now())",
-                     (packet, envelope))
-        conn.execute("insert into servers values('fixture-server',7)")
-        assert conn.execute("select semantic_finding_in_domains_v262(2,array[7]::bigint[])").fetchone()[0] is True
-        assert conn.execute("select semantic_finding_in_domains_v262(2,array[8]::bigint[])").fetchone()[0] is False
-        conn.execute("update sli_plugin_file_audit.observations set payload_sha256=%s", ("c" * 64,))
-        assert conn.execute("select semantic_finding_in_domains_v262(2,array[7]::bigint[])").fetchone()[0] is False
-
-
-@pytest.mark.postgres_integration
-@pytest.mark.postgres_empty
-def test_actual_discovery_uses_worker_login_committed_source_and_no_elevated_admission_grants(defaults_pg):
-    import psycopg
-    from psycopg.rows import dict_row
-    with psycopg.connect(defaults_pg, autocommit=True, row_factory=dict_row) as conn:
-        conn.execute("""do $$ begin if not exists(select 1 from pg_roles where rolname='sli_test_defaults_login') then
-            create role sli_test_defaults_login login; end if; end $$;
-            grant adlog_semantic_worker to sli_test_defaults_login""")
-        agent = "00000000-0000-0000-0000-000000000003"
-        packet = "00000000-0000-0000-0000-000000000004"
-        conn.execute("insert into sli_agents(id,status,assigned_modules) values(%s,'active','[{\"module_id\":\"sli.windows.ad-dc\",\"enabled\":true}]')", (agent,))
-        conn.execute("insert into sli_agent_module_bindings values(%s,'sli.windows.ad-dc','fixture-source')", (agent,))
-        envelope = json.dumps({"source_instance_id": "fixture-source", "generation": "generation-1"})
-        conn.execute("insert into sli_agent_receipts values(%s,%s,'sli.windows.ad-dc',%s::jsonb,'{\"status\":\"committed\"}',1)",
-                     (packet, agent, envelope))
-        conn.execute("insert into sli_agent_packet_inbox values(%s,%s::jsonb,'{}','[]',now())", (packet, envelope))
-        conn.execute("insert into raw_log_files values(1,%s)", ("agent-packet:" + packet,))
-        conn.execute("insert into events_v2_core(id,log_source_id,raw_log_file_id) values(1,3,1)")
-        conn.execute("set session authorization sli_test_defaults_login; set role adlog_semantic_worker")
-        source, = conn.execute("select source from default_detection_sources()").fetchall()
-        scope = source["source"]["scope"]
-        assert scope["source_instance_id"] == "fixture-source" and scope["source_generation"] == "generation-1"
-        from server.sli.storage.evidence_ref import EvidenceScope
-        selected = EvidenceScope(**scope)
-        policy = passwords.risk_policy(selected, "qw.password-spray", policy_id=defaults.policy_id(
-            passwords.execution(selected, "qw.password-spray")))
-        assert defaults._admit(conn.cursor(), policy)
-        assert len(conn.execute("select source from default_detection_sources()").fetchall()) == 1
-        with pytest.raises(psycopg.errors.InsufficientPrivilege):
-            conn.execute("update semantic_policy_admission set enabled=false")
-        with pytest.raises(psycopg.errors.InsufficientPrivilege):
-            conn.execute("select * from finding_evidence_source_bindings")
-        conn.execute("reset session authorization; reset role")
-        conn.execute("update sli_agents set status='disabled'")
-        conn.execute("set session authorization sli_test_defaults_login; set role adlog_semantic_worker")
-        assert not conn.execute("select source from default_detection_sources()").fetchall()

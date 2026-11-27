@@ -84,7 +84,8 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
                 if (raw is null) return Finish("agent_not_enrolled", false, 0, false);
                 var input = EnrollmentInput.Parse(raw, clock.GetUtcNow());
                 using var bootstrapHttp = NewHttp(null);
-                var enrollment = new Enrollment(store, bootstrapHttp, clock);
+                var enrollment = new Enrollment(store, bootstrapHttp, clock,
+                    hasFileShares: string.IsNullOrEmpty(_options.CaCertificate) ? null : HasFileShares);
                 identity = input.ComputerEntityId is { } entity
                     ? await enrollment.EnrollGroupAsync(input.Token, entity, cancellationToken, _options.InstanceName).ConfigureAwait(false)
                     : await enrollment.EnrollAsync(input.Token, cancellationToken, _options.InstanceName).ConfigureAwait(false);
@@ -372,7 +373,9 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
         {
             var token = Encoding.UTF8.GetString(clear);
             var input = EnrollmentInput.Parse(token, clock.GetUtcNow());
-            if (clock.GetUtcNow() - created > TimeSpan.FromSeconds(input.ComputerEntityId is null ? 3600 : 604800)) throw new AgentException("agent_bootstrap_expired");
+            bool packaged = !string.IsNullOrEmpty(_options.CaCertificate) && input.ComputerEntityId is null;
+            if (!packaged && clock.GetUtcNow() - created > TimeSpan.FromSeconds(input.ComputerEntityId is null ? 3600 : 604800))
+                throw new AgentException("agent_bootstrap_expired");
             return token;
         }
         finally { CryptographicOperations.ZeroMemory(clear); }
@@ -385,11 +388,23 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
         if (OperatingSystem.IsWindows()) MsiConfiguration.ClearToken();
     }
 
+    private bool HasFileShares(CancellationToken ct)
+    {
+        var catalog = localShareReader?.Invoke(ct) ?? (OperatingSystem.IsWindows() ? NativeFileAuditApi.ListLocalShares(ct) : null);
+        return catalog is { State: LocalSmbCatalogState.Ready, Shares.Count: > 0 };
+    }
+
     private AgentHttpClient NewHttp(AgentIdentity? identity)
     {
         if (transportFactory is not null) return transportFactory(identity);
         var roots = new X509Certificate2Collection();
         if (!string.IsNullOrEmpty(_options.CaBundle)) roots.ImportFromPemFile(_options.CaBundle);
+        if (!string.IsNullOrEmpty(_options.CaCertificate))
+        {
+            if (string.IsNullOrEmpty(_options.CaFingerprint)) throw new AgentException("agent_config_invalid");
+            try { roots.Add(X509CertificateLoader.LoadCertificate(Convert.FromBase64String(_options.CaCertificate))); }
+            catch (Exception error) when (error is FormatException or CryptographicException) { throw new AgentException("agent_config_invalid"); }
+        }
         return new AgentHttpClient(AgentHttp.Create(new Uri(_options.ServerUrl), identity?.Certificate, roots, _options.CaFingerprint),
             clientCertificateConfigured: identity is not null);
     }

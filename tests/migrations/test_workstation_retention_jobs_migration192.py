@@ -3,7 +3,6 @@ import json
 from pathlib import Path
 
 from scripts.maintenance.existing_postgres_bootstrap import forward_migration_inventory
-from server.sli.core.job_queue import digest
 
 ROOT = Path(__file__).resolve().parents[2]
 PATH = ROOT / "config/postgres_migrations/192_workstation_retention_jobs.sql"
@@ -19,17 +18,6 @@ def test_retention_migration_is_next_and_versions_are_unique():
     assert len(pairs) == len({version for version, _ in pairs})
     assert max(version for version, _ in pairs[:position]) + 1 == 192
     assert inventory[position].path == PATH
-
-
-def test_exact_predecessor_and_pinned_manifest():
-    manifest = json.loads((ROOT / "config/plugin_packages/sli.workstations.jobs-v3.json").read_text("utf-8"))
-    assert f"p_spec->>'manifest_sha256'='{digest(manifest)}'" in SQL
-    assert "version=191 and name='file_audit_reports'" in SQL
-    assert "version=176 and name='workstation_history'" in SQL
-    assert "version>=192" in SQL and "values(192,'workstation_retention_jobs')" in SQL
-    assert "pg_advisory_xact_lock(hashtext('sli_workstation_retention_jobs_v192'))" in SQL
-    assert "migration 192 prerequisites failed" in SQL
-    assert list(PATH.parent.glob("192_*.sql")) == [PATH]
 
 
 def test_only_publisher_can_delete_with_current_fence_and_process_usb_scope():

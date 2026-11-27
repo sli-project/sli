@@ -77,12 +77,13 @@ public sealed class PasswordInteropTests(ITestOutputHelper output)
         const string script = """
             import json, platform, sys
             from importlib.metadata import version
-            from argon2 import PasswordHasher, Type
+            from argon2 import Type
             from argon2.exceptions import InvalidHashError, VerificationError
             from argon2.low_level import hash_secret
             assert version('argon2-cffi') == '25.1.0'
             request = json.load(sys.stdin)
-            hasher = PasswordHasher(time_cost=3,memory_cost=65536,parallelism=2,hash_len=32,salt_len=16)
+            sys.path.insert(0, sys.argv[1])
+            from deploy.linux.sli_core.auth import PASSWORD_HASHER as hasher
             def reject(encoded, password):
                 try:
                     hasher.verify(encoded, password)
@@ -119,6 +120,7 @@ public sealed class PasswordInteropTests(ITestOutputHelper output)
             RedirectStandardError = true, UseShellExecute = false
         };
         start.ArgumentList.Add("-I"); start.ArgumentList.Add("-c"); start.ArgumentList.Add(script);
+        start.ArgumentList.Add(Sli.Server.Tests.Agents.PostCollectionPostgres.Repository());
         using var process = Process.Start(start)!;
         var ct = TestContext.Current.CancellationToken;
         var stdout = process.StandardOutput.ReadToEndAsync(ct);

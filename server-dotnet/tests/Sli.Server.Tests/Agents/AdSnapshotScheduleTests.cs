@@ -26,8 +26,7 @@ public sealed class AdSnapshotScheduleTests
     {
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new SqlPostgresFixture();
-        await fixture.StartAsync(ct, throughVersion: 391);
-        await fixture.Pg.ApplyFileAsync(Migration(), null, ct);
+        await fixture.StartAsync(ct);
         await using var app = new NpgsqlConnection(fixture.Dsn("adlog_user"));
         await app.OpenAsync(ct);
 

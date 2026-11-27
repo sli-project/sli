@@ -62,8 +62,6 @@ def verify(archive, trust, **kwargs):
 
 @pytest.mark.parametrize("module_name", [
     "deploy.linux.release_package",
-    pytest.param("scripts.maintenance.release_package", marks=pytest.mark.legacy),
-    pytest.param("server.sli.release_package", marks=pytest.mark.legacy),
 ])
 def test_verifies_real_signature_without_executing_payload(signed_package, tmp_path, module_name):
     from importlib import import_module
@@ -78,8 +76,6 @@ def test_verifies_real_signature_without_executing_payload(signed_package, tmp_p
 
 @pytest.mark.parametrize("module_name", [
     "deploy.linux.release_package",
-    pytest.param("scripts.maintenance.release_package", marks=pytest.mark.legacy),
-    pytest.param("server.sli.release_package", marks=pytest.mark.legacy),
 ])
 @pytest.mark.parametrize("component,kind,owner,restart", [
     ("server", "core-install", "sli.core", "docker-compose"),
@@ -127,8 +123,6 @@ def test_v2_component_contracts_coexist(component, kind, owner, restart, module_
 
 @pytest.mark.parametrize("module_name", [
     "deploy.linux.release_package",
-    pytest.param("scripts.maintenance.release_package", marks=pytest.mark.legacy),
-    pytest.param("server.sli.release_package", marks=pytest.mark.legacy),
 ])
 @pytest.mark.parametrize("installed_edits,error", [
     ({}, None),
@@ -309,61 +303,6 @@ def test_builder_creates_package_accepted_by_public_verifier(signed_package, tmp
         assert "external.key" not in z.namelist()
 
 
-@pytest.mark.legacy
-def test_unsigned_updater_never_reaches_candidate_code(tmp_path, monkeypatch):
-    from scripts.maintenance import apply_update
-
-    archive = tmp_path / "unsafe.zip"
-    with zipfile.ZipFile(archive, "w") as z:
-        z.writestr("scripts/maintenance/release_check.py", "raise RuntimeError('must not run')")
-    monkeypatch.setattr(apply_update, "run_command", lambda *a, **kw: pytest.fail("untrusted code executed"), raising=False)
-    result = apply_update.apply_update(archive)
-    assert result["status"] == "rejected"
-    assert result["executed"] is False
-
-
-@pytest.mark.legacy
-def test_signed_updater_verifies_but_does_not_claim_installation(signed_package):
-    from scripts.maintenance import apply_update
-
-    archive, trust = signed_package()
-    result = apply_update.apply_update(archive, trust_store=trust, dry_run=True)
-    assert result["status"] == "verified"
-    assert result["installed"] is False
-    result = apply_update.apply_update(archive, trust_store=trust)
-    assert result["status"] == "blocked"
-    assert result["reason_code"] == "runtime_schema_unsupported"
-
-
-@pytest.mark.legacy
-def test_legacy_environment_variable_does_not_bypass_trust(tmp_path, monkeypatch):
-    from scripts import apply_project_zip
-
-    archive = tmp_path / "source.zip"
-    with zipfile.ZipFile(archive, "w") as z:
-        z.writestr("package.json", "{}")
-    root = tmp_path / "project"
-    root.mkdir()
-    monkeypatch.setenv("SLI_INTERNAL_UPDATE_ORCHESTRATOR", "1")
-    monkeypatch.setattr("sys.argv", ["apply_project_zip.py", str(archive), "--project-root", str(root)])
-    assert apply_project_zip.main() == 3
-    assert not (root / "package.json").exists()
-
-
-@pytest.mark.legacy
-def test_backup_cli_cannot_be_used_as_unsigned_update(tmp_path, monkeypatch):
-    from scripts.maintenance import rollback_update
-
-    archive = tmp_path / "pretend-backup.zip"
-    with zipfile.ZipFile(archive, "w") as z:
-        z.writestr("server/attack.py", "pass")
-    root = tmp_path / "project"
-    root.mkdir()
-    result = rollback_update.rollback(archive)
-    assert result["status"] == "blocked"
-    assert not (root / "server/attack.py").exists()
-
-
 def test_invalid_signature_does_not_read_payload(signed_package, monkeypatch):
     archive, trust = signed_package(signature_edits={"signature": base64.b64encode(b"0" * 64).decode()})
     original = zipfile.ZipFile.open
@@ -423,22 +362,6 @@ def test_signed_core_cannot_use_case_alias_to_mutable_or_admin_root(signed_packa
         verify(archive, trust)
 
 
-@pytest.mark.legacy
-def test_public_cli_reports_verified_and_refuses_activation(signed_package, tmp_path):
-    from pathlib import Path
-
-    archive, trust = signed_package()
-    root = Path(__file__).resolve().parents[2]
-    command = [sys.executable, str(root / "scripts/maintenance/apply_update.py"),
-               "--package", str(archive), "--trust-store", str(trust), "--json"]
-    checked = subprocess.run([*command, "--verify-only"], cwd=tmp_path, capture_output=True, text=True, check=False, timeout=30)
-    assert checked.returncode == 0, checked.stderr
-    assert json.loads(checked.stdout)["verification_scope"] == "signature_and_contents_only"
-    blocked = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True, check=False, timeout=30)
-    assert blocked.returncode == 1
-    assert json.loads(blocked.stdout)["status"] == "blocked"
-
-
 def test_builder_does_not_overwrite_existing_artifact(signed_package, tmp_path):
     from deploy.linux.release_package import build_package
 
@@ -472,29 +395,3 @@ def test_builder_rejects_hard_link_to_external_signing_key(signed_package, tmp_p
     with pytest.raises(ValueError, match="hard.link"):
         build_package(root, output, metadata, signing_key=private, key_id="test-only")
     assert not output.exists()
-
-
-@pytest.mark.legacy
-def test_nonfinite_json_is_structured_rejection_before_trust(tmp_path):
-    from scripts.maintenance import apply_update
-
-    archive = tmp_path / "infinite.json.zip"
-    with zipfile.ZipFile(archive, "w") as z:
-        z.writestr("SLI_RELEASE.json", b'{"x":1e999}')
-        z.writestr("SLI_SIGNATURE.json", b"{}")
-        z.writestr("payload/server/example.py", b"pass")
-    result = apply_update.apply_update(archive, trust_store=tmp_path / "unused-trust.json", dry_run=True)
-    assert result["status"] == "rejected"
-    assert result["reason_code"] == "package_verification_failed"
-    assert result["executed"] is False
-
-
-@pytest.mark.legacy
-def test_maintenance_entrypoints_share_the_journaled_updater(monkeypatch):
-    from deploy.linux import sli_update
-    from scripts.maintenance import apply_update, rollback_update
-
-    monkeypatch.setattr(sli_update, "main", lambda argv: argv)
-    assert apply_update.main(["--runtime", "/example"]) == ["apply", "--runtime", "/example"]
-    assert apply_update.main(["--verify-only"]) == ["verify"]
-    assert rollback_update.main(["--runtime", "/example"]) == ["rollback", "--runtime", "/example"]

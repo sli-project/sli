@@ -153,7 +153,7 @@ public class FileAuditConsumerDatabaseTests
     [Fact]
     public async Task Check_receipt_retention_keeps_the_first_and_last_legacy_failure_and_new_attempts()
     {
-        const int version = 431;
+        const int version = 445;
         var ct = TestContext.Current.CancellationToken;
         int previous = MigrationDirectory.Read().Where(m => m.Version < version).Max(m => m.Version);
         await using var fixture = new SqlPostgresFixture();
@@ -170,7 +170,7 @@ public class FileAuditConsumerDatabaseTests
                 case when n=3 then 'unknown' else 'native_unavailable' end
             from sli_plugin_file_audit.audit_commands c cross join generate_series(1,5) n;
             """, ct);
-        string migration = Path.Combine(PostCollectionPostgres.Repository(), "config/postgres_migrations/431_file_audit_check_receipt_retention.sql");
+        string migration = MigrationDirectory.Read(version).Single(m => m.Version == version).Path;
         await fixture.Pg.ApplyFileAsync(migration, null, ct);
         Assert.Equal(5, await Number(owner, "select count(*) from sli_plugin_file_audit.audit_receipts", ct));
         await PostCollectionPostgres.Sql(owner, """
@@ -192,7 +192,7 @@ public class FileAuditConsumerDatabaseTests
             """, owner);
         Assert.Equal(new[] { 1, 3, 5, 6, 7, 8 }, (int[])(await times.ExecuteScalarAsync(ct))!);
         await fixture.Pg.ApplyFileAsync(Path.ChangeExtension(migration, ".rollback.sql"), null, ct);
-        Assert.Equal(0, await Number(owner, "select count(*) from schema_migrations where version=431", ct));
+        Assert.Equal(0, await Number(owner, $"select count(*) from schema_migrations where version={version}", ct));
     }
 
     [Fact]

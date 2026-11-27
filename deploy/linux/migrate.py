@@ -165,29 +165,9 @@ def configure_job_logins(connection) -> None:
                 connection.execute(sql.SQL("grant connect on database sli to {}").format(sql.Identifier(role)))
 
 
-def configure_workstation_history() -> None:
-    # The native release has the workstation ClickHouse history adapter disabled.
-    if os.environ.get("SLI_DEPLOYMENT_MODE") != "native":
-        if os.environ.get("SLI_CORE_JOB_WORKSTATIONS_RETENTION", "0") != "1":
-            return
-        from deploy.linux.legacy_runtime import configure_workstation_history as legacy_history
-
-        legacy_history()
-
-
 def configure_permanent_history() -> None:
-    """Prepare copy-only history before Compose admits the lifecycle worker."""
-    mode = os.environ.get("ADLOG_HISTORY_READ_MODE", "disabled").strip().lower()
-    if mode == "disabled":
-        return
-    if mode != "primary":
+    if os.environ.get("ADLOG_HISTORY_READ_MODE", "disabled").strip().lower() != "disabled":
         raise ValueError("history_read_mode_invalid")
-    if os.environ.get("SLI_DEPLOYMENT_MODE") == "native":
-        raise ValueError("history_read_mode_invalid")
-    else:
-        from deploy.linux.legacy_runtime import configure_permanent_history as legacy_history
-
-        legacy_history()
 
 
 def pgpass_escape(value: str) -> str:
@@ -355,5 +335,4 @@ def migrate() -> None:
             connection.execute("revoke create on schema public from public, adlog_user")
             configure_worker_logins(connection)
     configure_permanent_history()
-    configure_workstation_history()
     print("linux_migrations_verified")

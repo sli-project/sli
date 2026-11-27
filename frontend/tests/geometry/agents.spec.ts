@@ -27,6 +27,10 @@ test('agents list, computer card and registration panel', async ({ page }, testI
     policy_audit: [{ id: index + 1, action: 'policy_ack', actor: 'fixture-admin', occurred_at: observed, details: {} }],
   }));
   await page.addInitScript(() => { localStorage.setItem('sli.locale', 'ru'); localStorage.setItem('sli.theme', 'light'); });
+  const serverUrl = 'https://agents.example.test/';
+  const downloadPath = '/api/v1/admin/agent-install-package/download';
+  const revision = '00000000000040008000000000000001';
+  const fileName = 'SLI-Agent-agents.example.test-26.0.185.msi';
   const unexpected: string[] = [];
   await page.route(url => url.pathname.startsWith('/api/'), async route => {
     const path = new URL(route.request().url()).pathname;
@@ -35,9 +39,15 @@ test('agents list, computer card and registration panel', async ({ page }, testI
     else if (path === '/api/v1/access/effective') body = { subject: { type: 'user', id: 1, username: 'fixture-admin' }, platform_owner: true, capabilities: ['access.manage'], reports: [] };
     else if (path === '/api/v2/reports') body = { contract_id: 'sli.report-catalog.v2', navigation, items: [] };
     else if (path === '/api/v1/overview') body = {};
-    else if (path === '/api/v1/setup/status') body = {};
+    else if (path === '/api/v1/setup/status') body = { domains: [] };
     else if (path === '/api/v1/admin/agents') body = { items };
-    else if (path === '/api/v1/admin/agent-console-tokens/settings') body = { server_url: null };
+    else if (path === '/api/v1/admin/agent-install-package' && route.request().method() === 'GET')
+      body = { server_url: serverUrl, package_url: `${downloadPath}?revision=${revision}`, sha256: 'a'.repeat(64) };
+    else if (path === downloadPath && new URL(route.request().url()).searchParams.get('revision') === revision) {
+      await route.fulfill({ contentType: 'application/octet-stream',
+        headers: { 'Content-Disposition': `attachment; filename="${fileName}"` }, body: 'synthetic MSI' });
+      return;
+    }
     else if (path === '/api/v1/admin/agents/file-audit') { await route.fulfill({ status: 404, json: { error: 'not_found' } }); return; }
     else { unexpected.push(path); await route.fulfill({ status: 501, json: { error: 'unmocked_agent_request' } }); return; }
     await route.fulfill({ json: body });
@@ -50,7 +60,9 @@ test('agents list, computer card and registration panel', async ({ page }, testI
     await expect(version).toBeVisible();
     expect(await version.evaluate(cell => cell.scrollWidth <= cell.clientWidth), value).toBe(true);
   }
-  const auditIssue = table.getByText('Включите аудит в политике домена', { exact: true });
+  const dcRow = table.getByRole('row').filter({ has: page.getByRole('cell', { name: 'dc1.example.test', exact: true }) });
+  await expect(dcRow.getByRole('cell', { name: 'Управляется групповой политикой · Audit Policy', exact: true })).toBeVisible();
+  const auditIssue = dcRow.getByRole('cell', { name: 'Включите аудит в политике домена', exact: true });
   await expect(auditIssue).toBeVisible();
   expect(await auditIssue.evaluate(cell => cell.scrollWidth <= cell.clientWidth)).toBe(true);
   await expect(table.locator('tbody details')).toHaveCount(0);
@@ -85,16 +97,17 @@ test('agents list, computer card and registration panel', async ({ page }, testI
   await expect(table.getByText('dc20.example.test')).toHaveCount(0);
   await page.getByRole('button', { name: 'Добавить агента', exact: true }).click();
   const panel = page.getByRole('dialog', { name: 'Добавить агента', exact: true });
-  const limit = panel.getByRole('spinbutton', { name: 'Число компьютеров' });
-  const create = panel.getByRole('button', { name: 'Создать команду', exact: true });
-  await expect(limit).toHaveValue('1');
-  await expect(create).toBeVisible();
-  await expect(panel.getByRole('checkbox', { name: 'Настраивать аудит на контроллере домена' })).toBeChecked();
-  await expect(panel.getByRole('link', { name: 'Скачать пакет' })).toHaveAttribute('href', '/api/v1/agent/installer/SliAgent.msi');
-  const inputBox = (await limit.boundingBox())!;
-  const buttonBox = (await create.boundingBox())!;
-  expect(Math.abs(inputBox.y + inputBox.height - buttonBox.y - buttonBox.height)).toBeLessThanOrEqual(2);
-  expect(buttonBox.x).toBeGreaterThanOrEqual(inputBox.x + inputBox.width);
+  const address = panel.getByRole('textbox', { name: 'Адрес сервера для агентов' });
+  const download = panel.getByRole('button', { name: 'Скачать агент для Windows', exact: true });
+  const limit = panel.getByRole('spinbutton', { name: 'Максимум компьютеров' });
+  await expect(address).toHaveValue(serverUrl);
+  await expect(download).toBeEnabled();
+  const [installer] = await Promise.all([page.waitForEvent('download'), download.click()]);
+  expect(installer.suggestedFilename()).toBe(fileName);
+  await expect(limit).toBeHidden();
+  await panel.getByRole('button', { name: 'Ограничить', exact: true }).click();
+  await expect(limit).toBeVisible();
+  await expect(limit).toHaveValue('');
   await page.screenshot({ path: testInfo.outputPath('agents-add.png') });
   expect(unexpected).toEqual([]);
 });

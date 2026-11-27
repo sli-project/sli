@@ -37,6 +37,52 @@ def workflow(name: str) -> dict:
     return yaml.safe_load((ROOT / ".github/workflows" / name).read_text(encoding="utf-8"))
 
 
+@pytest.mark.parametrize(("version", "allowed"), [(430, False), (444, False), (449, True)])
+@pytest.mark.parametrize("event", ["pull_request", "merge_group"])
+def test_required_gate_checks_added_migrations_against_live_base(tmp_path, version, allowed, event):
+    git = ["git", "-C", str(tmp_path)]
+
+    def run_git(*args):
+        return subprocess.check_output([*git, *args], text=True).strip()
+
+    def add_migration(number, name="synthetic"):
+        (migrations / f"{number}_{name}.sql").write_text("select 1;\n", encoding="utf-8")
+        run_git("add", "config/postgres_migrations")
+        run_git("commit", "-qm", f"Add migration {number}")
+        return run_git("rev-parse", "HEAD")
+
+    run_git("init", "-q", "-b", "main")
+    run_git("config", "user.name", "Synthetic CI")
+    run_git("config", "user.email", "synthetic@example.test")
+    run_git("config", "commit.gpgsign", "false")
+    run_git("remote", "add", "origin", ".")
+    migrations = tmp_path / "config" / "postgres_migrations"
+    migrations.mkdir(parents=True)
+    initial_base = add_migration(429)
+    live_base = add_migration(444, "existing")
+    base = initial_base if event == "pull_request" else live_base
+    run_git("checkout", "-qb", "candidate", base)
+    head = add_migration(version)
+
+    gate = workflow("pr-gate.yml")
+    assert event in gate[True]  # PyYAML reads the workflow's `on` key as a boolean.
+    assert "changes" in gate["jobs"]["gate"]["needs"]
+    step, = [step for step in gate["jobs"]["changes"]["steps"] if step.get("id") == "migration-order"]
+    env = os.environ | {
+        "BASE": base, "HEAD": head, "BASE_REF": "main" if event == "pull_request" else "refs/heads/main",
+        "PYTHONPATH": str(ROOT), "TEST_PYTHON": Path(sys.executable).as_posix(),
+    }
+    script = 'python3() { "$TEST_PYTHON" "$@"; }\n' + step["run"]
+    bash = shutil.which("bash")
+    assert bash, "Bash is required to check the migration gate"
+    result = subprocess.run([bash, "-eo", "pipefail", "-c", script], cwd=tmp_path,
+                            env=env, capture_output=True, text=True)
+    assert result.returncode == (0 if allowed else 1), result.stderr
+    if not allowed:
+        assert f"{version}_synthetic.sql" in result.stderr
+        assert "444" in result.stderr
+
+
 @pytest.mark.parametrize(("path", "expected"), [
     ("server-dotnet/tests/Sli.Server.Tests/Semantic/PasswordThroughputPostgresTests.cs", False),
     ("server-dotnet/tests/Sli.Server.Tests/Storage/ShortEventAdmissionPostgresTests.cs", True),
@@ -180,7 +226,7 @@ def test_ci_gates_cover_locked_runtime_frontend_and_postgres(name: str) -> None:
     assert "npm --prefix frontend run lint" in frontend_runs
     assert "npm --prefix frontend exec vitest run src" in frontend_runs
     assert "npm --prefix frontend run build" in frontend_runs
-    assert any("ruff check --config .github/ruff-ci.toml server scripts tests" in step.get("run", "")
+    assert any("ruff check --config .github/ruff-ci.toml scripts tests" in step.get("run", "")
                for job in jobs.values() for step in job["steps"])
 
     postgres = jobs["postgres"]
@@ -454,7 +500,7 @@ def test_ci_bootstrap_uses_installer_roles_baseline_and_exact_ledger(
     monkeypatch.setenv("ADLOG_TEST_PG_DSN", "postgresql://postgres@127.0.0.1:5432/sli_test_ci")
     monkeypatch.setattr(psycopg, "connect", connect)
     monkeypatch.setattr(
-        "server.sli.access.auth.PASSWORD_HASHER",
+        "deploy.linux.sli_core.auth.PASSWORD_HASHER",
         SimpleNamespace(hash=lambda _password: "synthetic-hash"),
     )
     monkeypatch.setattr("subprocess.run", run)
@@ -506,4 +552,3 @@ def test_ci_bootstrap_uses_installer_roles_baseline_and_exact_ledger(
         assert "--no-password" in command
         assert kwargs["capture_output"] is True
         assert kwargs["check"] is False
-

@@ -268,7 +268,7 @@ public static class AgentHttp
                     if ((errors & SslPolicyErrors.RemoteCertificateNameMismatch) != 0) throw new TransportException("agent_tls_name_mismatch");
                     var trusted = caFingerprint is null ? trustedRoots.Count == 0 ? errors == SslPolicyErrors.None
                         : ServerTrust.IsTrusted(certificate, chain, errors, trustedRoots)
-                        : ServerTrust.IsPinned(certificate, chain, errors, caFingerprint);
+                        : ServerTrust.IsPinned(certificate, chain, errors, caFingerprint, trustedRoots);
                     if (!trusted)
                     {
                         var now = DateTime.UtcNow;
@@ -319,15 +319,17 @@ public static class AgentHttp
 
 public static class ServerTrust
 {
-    public static bool IsPinned(X509Certificate? certificate, X509Chain? presented, SslPolicyErrors errors, string fingerprint)
+    public static bool IsPinned(X509Certificate? certificate, X509Chain? presented, SslPolicyErrors errors, string fingerprint,
+        X509Certificate2Collection? configuredRoots = null)
     {
-        if (presented is null || !System.Text.RegularExpressions.Regex.IsMatch(fingerprint, "^[a-fA-F0-9]{64}$")) return false;
-        var pinned = new X509Certificate2Collection();
-        foreach (var element in presented.ChainElements)
-            if (Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(element.Certificate.RawData)).Equals(fingerprint, StringComparison.OrdinalIgnoreCase)
-                && element.Certificate.Extensions.OfType<X509BasicConstraintsExtension>().SingleOrDefault()?.CertificateAuthority == true)
-                pinned.Add(element.Certificate);
-        return pinned.Count == 1 && IsTrusted(certificate, presented, errors, pinned);
+        if (!System.Text.RegularExpressions.Regex.IsMatch(fingerprint, "^[a-fA-F0-9]{64}$")) return false;
+        var candidates = (presented?.ChainElements.Cast<X509ChainElement>().Select(element => element.Certificate) ?? [])
+            .Concat(configuredRoots?.Cast<X509Certificate2>() ?? []);
+        foreach (var candidate in candidates)
+            if (Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(candidate.RawData)).Equals(fingerprint, StringComparison.OrdinalIgnoreCase)
+                && candidate.Extensions.OfType<X509BasicConstraintsExtension>().SingleOrDefault()?.CertificateAuthority == true)
+                return IsTrusted(certificate, presented, errors, new X509Certificate2Collection(candidate));
+        return false;
     }
 
     /// <summary>Like Python's <c>ssl.create_default_context(cafile=...)</c>: only the supplied CAs are trusted and the name must match.</summary>

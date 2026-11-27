@@ -11,9 +11,6 @@ from pathlib import Path
 import pytest
 
 from scripts.maintenance.github_sanitary_check import scan
-from server.ad_context.contracts import AdContextContractError, _gpo_settings
-from server.ad_context.repository import _store_gpo_v2_snapshot
-from tests.tooling.test_ad_context_foundation import gpo_module  # noqa: F401 -- shared fixture
 
 ROOT = Path(__file__).resolve().parents[2]
 MODULE = ROOT / "scripts/ad_context/GpoReportContract.psm1"
@@ -33,131 +30,6 @@ def test_redaction_test_source_passes_sanitary_check(tmp_path):
     assert scan(tmp_path)["findings"] == []
 
 
-def snapshot_with_setting(setting: dict) -> dict:
-    return {
-        "schema_version": "sli.ad-gpo.snapshot/1.0", "collector_version": "test",
-        "demo": False, "collection_status": "complete",
-        **dict.fromkeys(("started_at", "completed_at", "observed_at"), "2026-10-05T00:00:00Z"),
-        "domain": {}, "scope": {},
-        "source_states": {name: {"status": "observed"} for name in (
-            "gpo_list", "gpo_reports", "gpc_directory", "sysvol_gpt",
-            "links", "permissions", "wmi_filters",
-        )},
-        "gpos": [{"id": "gpo-test", "guid": "00000000-0000-4000-8000-000000000001",
-                  "display_name": "Synthetic policy", "source_states": {},
-                  "setting_ids": ["setting-test"]}],
-        "settings": [{"id": "setting-test", "gpo_id": "gpo-test", **setting}],
-        **{name: [] for name in (
-            "scopes", "links", "permissions", "wmi_filters", "unresolved_links", "collection_errors",
-        )},
-    }
-
-
-def stored_snapshot(snapshot: dict) -> tuple[dict, str]:
-    class Cursor:
-        def execute(self, sql, params):
-            assert "insert into gpo_report_v2_source_snapshots" in sql
-            self.params = params
-
-    cursor = Cursor()
-    _store_gpo_v2_snapshot(cursor, domain_id=1, run_id="00000000-0000-4000-8000-000000000002", snapshot=snapshot)
-    text, digest = cursor.params[-2:]
-    assert hashlib.sha256(text.encode("utf-8")).hexdigest() == digest
-    return json.loads(text), text
-
-
-@pytest.mark.parametrize("name", SENSITIVE_NAMES)
-@pytest.mark.parametrize("representation", ["leaf", "path", "properties", "named", "inline", "inline_named"])
-def test_import_masks_sensitive_gpo_values(name, representation):
-    marker = "synthetic-redaction-marker"
-    setting = {"setting_name": "Properties", "path": "Preferences/Properties", "value_display": "enabled"}
-    if representation == "leaf":
-        setting.update(setting_name=name, value_display=marker, source_state={"status": "observed", "value": marker})
-    elif representation == "path":
-        setting.update(path=f"Preferences/{name}/Data", value_display=marker)
-    elif representation == "properties":
-        setting["properties"] = {name: {"Data": marker}, "action": "U"}
-    elif representation == "named":
-        setting["properties"] = {"Name": name, "Value": marker, "action": "U"}
-    elif representation == "inline":
-        setting["value_display"] = f"action=U; {name}={marker}"
-    else:
-        setting["value_display"] = f"name={name}; value={marker}"
-    snapshot = snapshot_with_setting(setting)
-    original = deepcopy(snapshot)
-    stored, text = stored_snapshot(snapshot)
-    assert marker not in text
-    assert "значение скрыто" in text
-    assert snapshot == original
-    assert stored["settings"][0]["id"] == "setting-test"
-    assert stored["gpos"][0]["setting_ids"] == ["setting-test"]
-    if representation == "leaf":
-        assert stored["settings"][0]["source_state"]["status"] == "observed"
-    assert stored_snapshot(stored)[0] == stored
-
-
-def test_import_preserves_ordinary_registry_values():
-    snapshot = snapshot_with_setting({
-        "setting_name": "Registry", "path": "Registry/Properties",
-        "value_display": "action=U; key=Software\\Synthetic; value=1",
-        "properties": {"key": "Software\\Synthetic", "value": "1"},
-    })
-    assert stored_snapshot(snapshot)[0] == snapshot
-
-
-@pytest.mark.parametrize("key_type", ["", "RSA ", "EC ", "OPENSSH "])
-def test_import_masks_embedded_private_key_blocks(key_type):
-    # Assemble a synthetic PEM envelope without a secret signature in source.
-    label = f"{key_type}PRIVATE KEY"
-    pem = "\n".join((
-        "-----" + f"BEGIN {label}" + "-----",
-        "synthetic-redaction-marker",
-        "-----" + f"END {label}" + "-----",
-    ))
-    snapshot = snapshot_with_setting({
-        "setting_name": "Data", "path": "Preferences/Data",
-        "value_display": pem,
-    })
-    stored, text = stored_snapshot(snapshot)
-    assert "synthetic-redaction-marker" not in text
-    assert stored["settings"][0]["value_display"] == "значение скрыто"
-
-
-@pytest.mark.parametrize("field", ["Value", "Values", "Data", "Text", "ValueData", "DefaultValue"])
-def test_import_masks_nested_named_value_containers(field):
-    snapshot = snapshot_with_setting({
-        "properties": [{"ValueName": "private_key", field: ["synthetic-redaction-marker"]}],
-    })
-    _, text = stored_snapshot(snapshot)
-    assert "synthetic-redaction-marker" not in text
-
-
-def test_import_masks_other_snapshot_sections_and_preserves_source_status():
-    snapshot = snapshot_with_setting({"value_display": "enabled"})
-    snapshot["gpos"][0]["source_states"] = {
-        "report": {"status": "observed", "value": {"client_secret": "synthetic-redaction-marker"}},
-    }
-    snapshot["collection_errors"] = [{
-        "id": "error-test", "message": "client_secret=synthetic-redaction-marker",
-    }]
-    stored, text = stored_snapshot(snapshot)
-    assert "synthetic-redaction-marker" not in text
-    assert stored["gpos"][0]["source_states"]["report"]["status"] == "observed"
-
-
-@pytest.mark.parametrize("name", SENSITIVE_NAMES)
-def test_compatibility_contract_accepts_redacted_names_and_rejects_sensitive_properties(name):
-    setting = {
-        "scope": "computer", "kind": "Task", "path": "Tasks/Task", "properties": {},
-        "redacted_fields": [name], "truncated_fields": [], "sensitive_value_present": True,
-        "sha256": "0" * 64,
-    }
-    assert _gpo_settings([setting])[0]["redacted_fields"] == [name.lower()]
-    setting.update(properties={name: "synthetic-redaction-marker"}, redacted_fields=[], sensitive_value_present=False)
-    with pytest.raises(AdContextContractError, match="contains a sensitive field"):
-        _gpo_settings([setting])
-
-
 def test_both_powershell_paths_filter_before_normalizing():
     module = MODULE.read_text(encoding="utf-8-sig")
     exporter = EXPORTER.read_text(encoding="utf-8-sig")
@@ -173,10 +45,12 @@ def test_both_powershell_paths_filter_before_normalizing():
     assert "Protect-SLIGpoXmlValues" in module.split("Export-ModuleMember", 1)[1]
 
 
-def test_powershell_filters_xml_attributes_leaves_and_named_values(tmp_path, gpo_module):
+def test_powershell_filters_xml_attributes_leaves_and_named_values(tmp_path):
     powershell = shutil.which("powershell") or shutil.which("pwsh")
     if powershell is None:
         pytest.skip("PowerShell is unavailable; both paths are also checked statically")
+    module = tmp_path / MODULE.name
+    module.write_text(MODULE.read_text(encoding="utf-8-sig"), encoding="utf-8-sig")
     # Extract only the pure normalizer, so AD/GroupPolicy modules are never loaded.
     runner = tmp_path / "redaction.ps1"
     runner.write_text(r'''
@@ -210,7 +84,7 @@ $changedRows = Convert-GpoReportSettings -Xml $changedXml -GpoId 'gpo-test' -Gpo
 @{ facts=$facts; rows=$rows; changedFacts=$changedFacts; changedRows=$changedRows; originalPreserved=$xml.OuterXml.Contains('synthetic-redaction-marker') } | ConvertTo-Json -Depth 15 -Compress
 ''', encoding="utf-8-sig")
     completed = subprocess.run(
-        [str(powershell), "-NoProfile", "-NonInteractive", "-File", str(runner), str(gpo_module), str(EXPORTER)],
+        [str(powershell), "-NoProfile", "-NonInteractive", "-File", str(runner), str(module), str(EXPORTER)],
         capture_output=True, timeout=30, check=True,
     )
     result = json.loads(completed.stdout.decode("utf-8-sig"))

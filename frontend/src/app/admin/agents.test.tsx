@@ -9,7 +9,7 @@ import { localeRuntime, setLocale, t } from "../../i18n";
 import { formatDateTime } from "../../shared/date-time";
 
 const state = vi.hoisted(() => ({ list: vi.fn(), action: vi.fn(), token: vi.fn(), auditStatus: vi.fn(), auditCatalog: vi.fn(), accessRevision: "first", owner: false, capabilities: [] as string[], deploymentDirectory: vi.fn(), deploymentTemplates: vi.fn(), deploymentTokens: vi.fn(), deploymentIssue: vi.fn(), deploymentWaves: vi.fn(),
-  issueCommand: vi.fn(), consoleSettings: vi.fn(), consoleTokens: vi.fn(), revokeConsoleToken: vi.fn(), setupStatus: vi.fn() }));
+  configurePackage: vi.fn(), consoleSettings: vi.fn(), consoleTokens: vi.fn(), revokeConsoleToken: vi.fn(), setupStatus: vi.fn() }));
 vi.mock("../App", () => ({ useEffectiveAccess: () => ({ platform_owner: state.owner, capabilities: state.capabilities, subject: { type: "session", id: 1, username: "fixture-owner" }, evaluated_at_utc: state.accessRevision }), useTimeZone: () => ({ timeZone: "UTC" }) }));
 vi.mock("../../api/client", async (original) => ({ ...await original<typeof import("../../api/client")>(), api: {
   agentFileAuditStatus: (agentId: string) => state.auditStatus(agentId),
@@ -17,10 +17,11 @@ vi.mock("../../api/client", async (original) => ({ ...await original<typeof impo
   agentDeploymentDirectory: (body: { domain_id?: number }) => state.deploymentDirectory(body),
   agentTemplates: () => state.deploymentTemplates(), agentGroupTokens: () => state.deploymentTokens(),
   createAgentGroupToken: (body: unknown) => state.deploymentIssue(body), agentUpdateWaves: () => state.deploymentWaves(),
-  agents: () => state.list(), agentAction: (kind: string, body: unknown) => state.action(kind, body), createAgentToken: (body: unknown) => state.token(body),
+  agents: (id?: string, after?: string) => state.list(id, after), agentAction: (kind: string, body: unknown) => state.action(kind, body), createAgentToken: (body: unknown) => state.token(body),
   setupStatus: () => state.setupStatus(),
-  agentConsoleSettings: () => state.consoleSettings(),
-  createAgentConsoleToken: (limit: number, audit: boolean, serverUrl: string) => state.issueCommand(limit, audit, serverUrl), agentConsoleTokens: () => state.consoleTokens(),
+  agentInstallPackage: () => state.consoleSettings(),
+  configureAgentInstallPackage: (settings: unknown) => state.configurePackage(settings), agentConsoleTokens: () => state.consoleTokens(),
+  revokeAgentInstallPackage: (id: string) => state.revokeConsoleToken(id),
   revokeAgentConsoleToken: (id: string) => state.revokeConsoleToken(id),
 } }));
 import { AgentsPage } from "./agents";
@@ -30,6 +31,11 @@ const agent: AgentItem = {
   host_name: "fixture-host", status: "active", last_seen: null, policy_revision: 2, applied_policy_revision: 1,
   assigned_modules: [{ module_id: "sli.workstations", enabled: true, config: { policy_revision: "2" } }],
   certificates: [{ serial: "a1", not_after: "2030-01-01T00:00:00Z", revoked_at: null }], rights_probe: {},
+};
+const packageInfo = {
+  server_url: "https://agents.example.test:8443/",
+  package_url: "/api/v1/admin/agent-install-package/download?revision=fixture",
+  sha256: "a".repeat(64),
 };
 function mount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -46,9 +52,8 @@ beforeEach(() => {
   state.deploymentDirectory.mockResolvedValue({ domains: [] }); state.deploymentTemplates.mockResolvedValue({ items: [] });
   state.deploymentTokens.mockResolvedValue({ items: [] }); state.deploymentWaves.mockResolvedValue({ items: [] });
   state.consoleTokens.mockResolvedValue({ items: [] });
-  state.consoleSettings.mockResolvedValue({ server_url: null });
-  state.issueCommand.mockImplementation(async () => ({ id: agent.id, expires_at: new Date(Date.now() + 3600000).toISOString(),
-    command: "& { 'synthetic-command' }", package_url: "/api/v1/agent/installer/SliAgent.msi" }));
+  state.consoleSettings.mockResolvedValue(packageInfo);
+  state.configurePackage.mockImplementation(async (settings) => ({ ...packageInfo, ...settings }));
 });
 afterEach(() => { cleanup(); setLocale("ru"); vi.restoreAllMocks(); });
 async function openCard(name = agent.host_name!) {
@@ -195,18 +200,21 @@ it.each(["ru", "en"] as const)("offers registration instead of removal for an er
   expect(state.action).not.toHaveBeenCalled();
 });
 
-it("opens command creation from the registration link on an empty installation", async () => {
+it("opens the ready download from the registration link without creating a command", async () => {
   window.history.replaceState(null, "", "/app/agents?register=1");
   state.list.mockResolvedValue({ items: [] });
+  const download = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
   mount();
   const panel = within(await screen.findByRole("dialog", { name: t("agents.addComputer") }));
-  const count = panel.getByRole("spinbutton", { name: t("agents.console.hostLimit") });
-  const issue = panel.getByRole<HTMLButtonElement>("button", { name: t("agents.console.issue") });
-  await waitFor(() => expect(issue.disabled).toBe(false));
-  fireEvent.change(count, { target: { value: "2" } });
-  fireEvent.click(issue);
-  expect(await panel.findByRole("button", { name: t("agents.copy") })).toBeTruthy();
-  expect(state.issueCommand).toHaveBeenCalledExactlyOnceWith(2, true, window.location.origin);
+  const address = panel.getByLabelText(t("agents.console.serverUrl"));
+  await waitFor(() => expect(address).toHaveProperty("value", packageInfo.server_url));
+  expect(panel.getByText("SHA-256").nextElementSibling?.textContent).toBe(packageInfo.sha256);
+  fireEvent.click(panel.getByRole("button", { name: t("agents.console.download") }));
+  expect(download).toHaveBeenCalledOnce();
+  expect(download.mock.contexts[0]).toHaveProperty("href", new URL(packageInfo.package_url, window.location.origin).href);
+  expect(state.configurePackage).not.toHaveBeenCalled();
+  expect(panel.queryAllByRole("textbox")).toEqual([address]);
+  expect(panel.queryByRole("checkbox")).toBeNull();
   expect(state.deploymentDirectory).not.toHaveBeenCalled();
 });
 
@@ -376,113 +384,111 @@ it("names the next step and opens the add panel from an empty list", async () =>
   const empty = await screen.findByText(t("agents.emptyComputers"));
   fireEvent.click(within(empty.parentElement!).getByRole("button", { name: t("agents.addComputer") }));
   expect(screen.getByRole("dialog", { name: t("agents.addComputer") })).toBeTruthy();
-  expect(state.issueCommand).not.toHaveBeenCalled();
+  expect(state.configurePackage).not.toHaveBeenCalled();
 });
 
-it.each([["", true], ["3", false]] as const)("creates a command with computer count %j and audit setting %s", async (limit, auditEnabled) => {
-  const copy = vi.fn().mockResolvedValue(undefined);
-  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: copy } });
-  const { client } = mount();
+async function openPackageDialog() {
+  mount();
   await screen.findByText(agent.host_name!);
   fireEvent.click(screen.getByRole("button", { name: t("agents.addComputer") }));
-  const panel = within(screen.getByRole("dialog", { name: t("agents.addComputer") }));
-  expect(state.issueCommand).not.toHaveBeenCalled();
-  expect(state.consoleTokens).not.toHaveBeenCalled();
-  expect(panel.queryByLabelText(t("agents.console.powerShell"))).toBeNull();
-  expect(panel.queryByText(t("agents.console.keys"))).toBeNull();
-  expect(panel.queryByText(t("agents.registrationSettings"))).toBeNull();
-  expect(panel.getByRole("link", { name: t("agents.console.download") }).getAttribute("href")).toBe("/api/v1/agent/installer/SliAgent.msi");
+  return within(screen.getByRole("dialog", { name: t("agents.addComputer") }));
+}
 
-  const count = panel.getByLabelText(t("agents.console.hostLimit"));
-  expect(panel.getByLabelText(t("agents.console.serverUrl"))).toHaveProperty("value", window.location.origin);
-  expect(count).toHaveProperty("value", "1");
-  const audit = panel.getByRole("checkbox", { name: t("agents.console.manageWindowsAudit") });
-  expect(audit).toHaveProperty("checked", true);
-  if (!auditEnabled) fireEvent.click(audit);
-  fireEvent.change(count, { target: { value: limit } });
-  const issue = panel.getByRole<HTMLButtonElement>("button", { name: t("agents.console.issue") });
-  await waitFor(() => expect(issue.disabled).toBe(false));
-  fireEvent.click(issue);
-  expect(await panel.findByLabelText(t("agents.console.powerShell"))).toHaveProperty("value", "& { 'synthetic-command' }");
-  expect(state.issueCommand).toHaveBeenCalledExactlyOnceWith(Number(limit || 1), auditEnabled, window.location.origin);
-  fireEvent.click(panel.getByRole("button", { name: t("agents.copy") }));
-  await waitFor(() => expect(copy).toHaveBeenCalledWith("& { 'synthetic-command' }"));
-  expect(JSON.stringify(client.getQueryCache().getAll().map((item) => item.state.data))).not.toContain("synthetic-command");
-  expect(client.getMutationCache().getAll()).toHaveLength(0);
-  fireEvent.click(panel.getByRole("button", { name: t("agents.dismiss") }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+it("saves the address and optional limits before downloading a rebuilt package", async () => {
+  const settings = { server_url: "https://branch.example.test/", host_limit: 300, expires_at: "2037-01-21T23:59:59.999Z" };
+  const rebuilt = { ...packageInfo, ...settings, sha256: "b".repeat(64), package_url: packageInfo.package_url + "-updated" };
+  state.configurePackage.mockResolvedValueOnce(rebuilt);
+  const download = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  const panel = await openPackageDialog();
+  const address = panel.getByLabelText(t("agents.console.serverUrl"));
+  await waitFor(() => expect(address).toHaveProperty("value", packageInfo.server_url));
+  fireEvent.change(address, { target: { value: settings.server_url } });
+  fireEvent.click(panel.getByRole("button", { name: t("agents.console.restrict") }));
+  fireEvent.change(panel.getByLabelText(t("agents.console.hostLimit")), { target: { value: "300" } });
+  fireEvent.change(panel.getByLabelText(t("agents.console.expiry")), { target: { value: "2037-01-21" } });
+  fireEvent.click(panel.getByRole("button", { name: t("agents.console.download") }));
+  await waitFor(() => expect(download).toHaveBeenCalledOnce());
+  expect(download.mock.contexts[0]).toHaveProperty("href", new URL(rebuilt.package_url, window.location.origin).href);
+  expect(state.configurePackage).toHaveBeenCalledExactlyOnceWith(settings);
+  expect(panel.getByText("SHA-256").nextElementSibling?.textContent).toBe(rebuilt.sha256);
 });
 
-it("loads the saved address and shows the certificate names beside a rejected address", async () => {
-  state.consoleSettings.mockResolvedValueOnce({ server_url: "https://agents.example.test:8443/" });
-  state.issueCommand.mockRejectedValueOnce(new ApiResponseError(400, "invalid_agent_console_server_url", undefined,
+it("shows the certificate names beside a rejected address", async () => {
+  state.configurePackage.mockRejectedValueOnce(new ApiResponseError(400, "invalid_agent_console_server_url", undefined,
     { allowed_hosts: ["agents.example.test", "192.0.2.40"] }));
-  mount(); await screen.findByText(agent.host_name!);
-  fireEvent.click(screen.getByRole("button", { name: t("agents.addComputer") }));
-  const address = screen.getByLabelText(t("agents.console.serverUrl"));
-  await waitFor(() => expect(address).toHaveProperty("value", "https://agents.example.test:8443/"));
+  const panel = await openPackageDialog();
+  const address = panel.getByLabelText(t("agents.console.serverUrl"));
+  await waitFor(() => expect(address).toHaveProperty("value", packageInfo.server_url));
   fireEvent.change(address, { target: { value: "https://other.example.test" } });
-  fireEvent.click(screen.getByRole("button", { name: t("agents.console.issue") }));
-  expect(await screen.findByRole("alert")).toHaveProperty("textContent",
+  fireEvent.click(panel.getByRole("button", { name: t("agents.console.download") }));
+  expect(await panel.findByRole("alert")).toHaveProperty("textContent",
     t("agents.console.serverUrlInvalid", { hosts: "agents.example.test, 192.0.2.40" }));
   expect(address.getAttribute("aria-invalid")).toBe("true");
-  expect(state.issueCommand).toHaveBeenCalledExactlyOnceWith(1, true, "https://other.example.test");
-  expect(screen.queryByLabelText(t("agents.console.powerShell"))).toBeNull();
-});
-
-it("accepts a manually entered address after the saved address fails to load", async () => {
-  state.consoleSettings.mockRejectedValueOnce(new Error("fixture settings failure"));
-  mount(); await screen.findByText(agent.host_name!);
-  fireEvent.click(screen.getByRole("button", { name: t("agents.addComputer") }));
-  const panel = within(screen.getByRole("dialog", { name: t("agents.addComputer") }));
-  expect(await panel.findByRole("alert")).toHaveProperty("textContent", t("agents.console.serverUrlLoadError"));
-  const address = panel.getByLabelText(t("agents.console.serverUrl"));
-  expect(address).toHaveProperty("disabled", false);
-  expect(address.getAttribute("aria-invalid")).toBe("false");
-  fireEvent.change(address, { target: { value: "https://manual.example.test" } });
-  const issue = panel.getByRole("button", { name: t("agents.console.issue") });
-  expect(issue).toHaveProperty("disabled", false);
-  fireEvent.click(issue);
-  expect(await panel.findByLabelText(t("agents.console.powerShell"))).toBeTruthy();
-  expect(state.issueCommand).toHaveBeenCalledExactlyOnceWith(1, true, "https://manual.example.test");
+  expect(state.configurePackage).toHaveBeenCalledExactlyOnceWith({ server_url: "https://other.example.test" });
 });
 
 it("can retry loading the saved address", async () => {
-  state.consoleSettings.mockRejectedValueOnce(new Error("fixture settings failure"))
-    .mockResolvedValueOnce({ server_url: "https://agents.example.test/" });
-  mount(); await screen.findByText(agent.host_name!);
-  fireEvent.click(screen.getByRole("button", { name: t("agents.addComputer") }));
-  const panel = within(screen.getByRole("dialog", { name: t("agents.addComputer") }));
+  state.consoleSettings.mockRejectedValueOnce(new Error("fixture settings failure"));
+  const panel = await openPackageDialog();
   fireEvent.click(await panel.findByRole("button", { name: t("state.retry") }));
   const address = panel.getByLabelText(t("agents.console.serverUrl"));
-  await waitFor(() => expect(address).toHaveProperty("value", "https://agents.example.test/"));
-  expect(address).toHaveProperty("disabled", false);
+  await waitFor(() => expect(address).toHaveProperty("value", packageInfo.server_url));
   expect(panel.queryByRole("alert")).toBeNull();
   expect(state.consoleSettings).toHaveBeenCalledTimes(2);
 });
 
-it("reports when the server has no agent package", async () => {
-  state.issueCommand.mockRejectedValue(new ApiResponseError(503, "agent_console_package_unavailable"));
-  mount(); await screen.findByText(agent.host_name!);
-  fireEvent.click(screen.getByRole("button", { name: t("agents.addComputer") }));
-  const issue = screen.getByRole<HTMLButtonElement>("button", { name: t("agents.console.issue") });
-  await waitFor(() => expect(issue.disabled).toBe(false));
-  fireEvent.click(issue);
-  expect(await screen.findByRole("alert")).toHaveProperty("textContent", t("agents.console.packageError"));
+it("reports when the server has no ready package", async () => {
+  state.consoleSettings.mockResolvedValueOnce({ server_url: null, package_url: null });
+  const panel = await openPackageDialog();
+  expect(await panel.findByRole("alert")).toHaveProperty("textContent", t("agents.console.packageError"));
+  expect(panel.getByRole("button", { name: t("agents.console.download") })).toHaveProperty("disabled", true);
 });
 
-it("offers revocation in the separate registration keys drawer", async () => {
-  const expires = new Date(Date.now() + 3600000).toISOString();
-  state.consoleTokens.mockResolvedValueOnce({ items: [{ id: agent.id, created_at: new Date().toISOString(), expires_at: expires, remaining: 3 }] });
+it("shows the package key, computer count and revocation action", async () => {
+  state.consoleTokens.mockResolvedValueOnce({ items: [{ id: agent.id, created_at: "2026-11-26T12:05:00Z", expires_at: null,
+    remaining: null, connected: 3, packaged: true }] });
   state.revokeConsoleToken.mockResolvedValue({});
   const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
   mount(); await screen.findByText(agent.host_name!);
   fireEvent.click(screen.getByRole("button", { name: t("agents.console.keys") }));
   const panel = within(screen.getByRole("dialog", { name: t("agents.console.keys") }));
-  fireEvent.click(await panel.findByRole("button", { name: t("agents.console.revoke") }));
+  await panel.findByText(t("agents.console.packagedKey", { time: "12:05", count: 3 }));
+  fireEvent.click(panel.getByRole("button", { name: t("agents.console.revoke") }));
   expect(confirm).toHaveBeenCalledOnce();
-  await waitFor(() => expect(state.revokeConsoleToken).toHaveBeenCalledWith(agent.id));
-  expect(await panel.findByText(t("agents.console.noKeys"))).toBeTruthy();
+  await waitFor(() => expect(state.revokeConsoleToken).toHaveBeenCalledExactlyOnceWith(agent.id));
+  expect(state.consoleTokens).toHaveBeenCalledTimes(2);
+});
+
+it("shows a rejected enrollment as a non-interactive row with its time and reason", async () => {
+  const time = "2026-11-26T12:05:00Z";
+  state.list.mockResolvedValue({ items: [agent], rejected_enrollments: [
+    { id: "41", reported_hostname: "new-computer", occurred_at: time, reason: "enrollment_token_revoked" },
+  ] });
+  mount();
+  const row = (await screen.findByText("new-computer")).closest("tr")!;
+  expect(within(row).getByText(t("agents.notConnected"))).toBeTruthy();
+  expect(within(row).getByText(t("agents.enrollmentReason.keyRevoked"))).toBeTruthy();
+  expect(within(row).getByText(formatDateTime(time, "UTC", { withYear: false }))).toBeTruthy();
+  expect(row.getAttribute("tabindex")).toBeNull();
+});
+
+it("changes the computer role on the agent card", async () => {
+  mount();
+  const card = within(await openCard());
+  await chooseOption(card.getByLabelText(t("agents.computerRole"), { selector: "button" }), "file_server");
+  await waitFor(() => expect(state.action).toHaveBeenCalledExactlyOnceWith("role", {
+    agent_id: agent.id, machine_role: "file_server",
+  }));
+});
+
+it("loads earlier agent registrations using the inventory cursor", async () => {
+  const earlier = { ...agent, id: "00000000-0000-4000-8000-000000000003", host_id: "00000000-0000-4000-8000-000000000004", host_name: "earlier-computer" };
+  state.list.mockImplementation(async (_id, after) => after ? { items: [earlier] } : { items: [agent], next_cursor: agent.id });
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: t("table.loadMore") }));
+  expect(await screen.findByText(earlier.host_name)).toBeTruthy();
+  expect(screen.getByText(agent.host_name!)).toBeTruthy();
+  expect(state.list).toHaveBeenLastCalledWith(undefined, agent.id);
 });
 
 it("names an inventory loading failure without exposing server details", async () => {

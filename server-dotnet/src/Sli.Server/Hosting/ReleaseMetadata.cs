@@ -21,9 +21,6 @@ internal sealed record ReleaseMetadata(string? ProjectVersion, string? BaselineI
 
     internal static JsonObject Public(IConfiguration config) {
         var release = Read(config);
-        using var reader = new StreamReader(typeof(ReleaseMetadata).Assembly.GetManifestResourceStream("Sli.Server.Hosting.release-version.py")!);
-        string source = reader.ReadToEnd();
-        string Declared(string name) => Regex.Match(source, "(?m)^" + name + " = \"([^\"]+)\"\\r?$").Groups[1].Value;
         string root = config["Sli:PackageRoot"] ?? new Sli.Server.Operations.OperationsFiles(config).Root;
         string schema = Path.Combine(root, "config", "postgres_schema.sql"), directory = Path.Combine(root, "config", "postgres_migrations");
         string[] migrations = Directory.Exists(directory) ? Directory.GetFiles(directory, "*.sql").Where(p => Regex.IsMatch(Path.GetFileName(p), @"\A[0-9]{3}_.*\.sql\z") && !p.EndsWith(".rollback.sql", StringComparison.Ordinal)).Order(StringComparer.Ordinal).ToArray() : [];
@@ -32,10 +29,10 @@ internal sealed record ReleaseMetadata(string? ProjectVersion, string? BaselineI
         var schemaMetadata = new JsonObject { ["runtime_backend"] = "postgres", ["schema_file"] = schema, ["schema_file_exists"] = File.Exists(schema), ["schema_files"] = new JsonArray(new[] { schema }.Concat(migrations).Select(p => (JsonNode)JsonValue.Create(p)!).ToArray()), ["baseline_schema_migration_version"] = 37, ["schema_declared_max_version"] = versions.Count > 0 ? versions.Max() : 37 };
         if (versions.Count > 0) schemaMetadata["schema_migrations_declared"] = new JsonArray(versions.Order().Select(v => (JsonNode)JsonValue.Create(v)!).ToArray());
         var result = release.ToJson();
-        result["project"] = Declared("PROJECT_NAME");
-        result["project_slug"] = Declared("PROJECT_SLUG");
-        result["baseline_label"] = Declared("BASELINE_LABEL");
-        result["baseline_date_utc"] = Declared("BASELINE_DATE_UTC");
+        result["project"] = "Security Log Intelligence / ad_log_reports";
+        result["project_slug"] = "ad_log_reports";
+        result["baseline_label"] = "SLI v4 product shell; composite server-side access; registered reports/datasets; universal object facade; PostgreSQL/Storage V2; surveyed systems remain read-only";
+        result["baseline_date_utc"] = "2026-07-19T00:00:00+00:00";
         result["generated_at_utc"] = DateTimeOffset.UtcNow;
         result["schema"] = schemaMetadata;
         return result;

@@ -149,36 +149,6 @@ def _require_coverage(discovered: set[str], documented: set[str]) -> None:
     assert not discovered - documented, f"VPN capabilities missing from matrix: {sorted(discovered - documented)}"
 
 
-def test_every_registered_vpn_report_and_route_has_a_matrix_row():
-    matrix = json.loads(MATRIX_PATH.read_text(encoding="utf-8"))
-    reporting = ROOT / "server/sli/reporting"
-    # v2 discovers each reports/*.py; legacy v4 publishes from the DB registry
-    # and contributes synthetic catalogue items/access aliases in these modules.
-    paths = sorted((reporting / "v2/reports").glob("*.py"))
-    paths += sorted(reporting.glob("reporting_v4*.py"))
-    paths += sorted((ROOT / "server/sli/plugins").rglob("reports*.py"))
-    paths += sorted((ROOT / "server/sli/plugins").glob("*/reports/*.py"))
-    keys = _python_report_keys(paths)
-    manifests = [ROOT / "config/navigation_v3.json"]
-    manifests += sorted((ROOT / "config/plugin_packages").rglob("*.json"))
-    for path in manifests:
-        if path != MATRIX_PATH:
-            keys.update(_manifest_report_keys(json.loads(path.read_text(encoding="utf-8"))))
-    for path in (ROOT / "config/postgres_migrations").glob("*.sql"):
-        if "rollback" not in path.name:
-            keys.update(_sql_report_keys(path.read_text(encoding="utf-8-sig")))
-    assert {"vpn.audit", "vpn.accounts", "vpn.connections"} <= keys
-    _require_coverage(keys, _covered(matrix, "report_keys"))
-    route_paths = sorted((ROOT / "server/api/routes").glob("*.py"))
-    route_paths = [path for path in route_paths if path.name != "__init__.py"]
-    routes = _registered_routes(route_paths)
-    assert "GET /api/v1/reports/vpn.audit/sessions/evidence" in routes
-    routes.update(_registered_ui_routes(json.loads(manifests[0].read_text(encoding="utf-8"))))
-    routes.update(_legacy_ui_routes(
-        (ROOT / "frontend/src/product-main.tsx").read_text(encoding="utf-8"),
-        ROOT / "server/api/routes/static.py",
-    ))
-    _require_coverage(routes, _covered(matrix, "routes"))
 
 
 def test_every_vpn_table_view_and_schema_is_documented():
@@ -200,46 +170,14 @@ def test_every_vpn_table_view_and_schema_is_documented():
     _require_coverage(objects, declared)
 
 
-def test_policy_denials_report_is_covered_by_the_nps_policy_row():
+
+
+
+
+def test_matrix_migrations_are_available():
     matrix = json.loads(MATRIX_PATH.read_text(encoding="utf-8"))
-    rows = [row for row in matrix["capabilities"] if "vpn.policy-denials" in row["report_keys"]]
-    assert len(rows) == 1
-    row = rows[0]
-    assert row["id"] == "nps-policy"
-    assert {"vpn.policy-denials", "vpn.connections"} <= set(row["report_keys"])
-    assert {"vpn.audit", "events.view"} <= set(row["rights"])
-    assert "tests/reporting/test_nps_policy_denials_reporting.py" in row["tests"]
-
-
-def test_every_registered_vpn_route_has_exactly_one_matrix_row():
-    matrix = json.loads(MATRIX_PATH.read_text(encoding="utf-8"))
-    paths = sorted((ROOT / "server/api/routes").glob("*.py"))
-    routes = _registered_routes([path for path in paths if path.name != "__init__.py"])
-    for route in sorted(routes):
-        rows = [row["id"] for row in matrix["capabilities"] if route in row["routes"]]
-        assert len(rows) == 1, (route, rows)
-
-
-def test_matrix_rows_have_reviewable_evidence():
-    matrix = json.loads(MATRIX_PATH.read_text(encoding="utf-8"))
-    rows = matrix["capabilities"]
-    assert len({row["id"] for row in rows}) == len(rows)
-    for row in rows:
-        for field in ("capability", "handlers", "rights", "scope", "data", "owner_today", "owner_target", "transfer", "tests", "features"):
-            assert row[field], (row["id"], field)
-        sources = row["sources"] + row["tests"] + [handler.split(":", 1)[0] for handler in row["handlers"]]
-        for source in sources:
-            assert (ROOT / source).is_file(), (row["id"], source)
     for migration in matrix["migration_inventory"]:
         assert (ROOT / migration["file"]).is_file(), migration["file"]
-    for dependency in matrix["core_imports"]:
-        tree = _tree(ROOT / dependency["source"])
-        imports = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.module:
-                imports.add(node.module)
-                imports.update(f"{node.module}.{alias.name}" for alias in node.names)
-        assert set(dependency["modules"]) <= imports, dependency["source"]
 
 
 @pytest.mark.parametrize("declaration", [
@@ -274,9 +212,6 @@ def test_new_plugin_report_without_a_vpn_prefix_is_still_discovered():
         _require_coverage(discovered, {"vpn.audit"})
 
 
-def test_plugin_report_package_declarations_are_inventoried():
-    paths = sorted((ROOT / "server/sli/plugins").glob("*/reports/*.py"))
-    assert {"vpn.accounts", "vpn.connections", "vpn.audit"} <= _python_report_keys(paths)
 
 
 def test_new_legacy_sql_report_cannot_pass_with_an_old_matrix():

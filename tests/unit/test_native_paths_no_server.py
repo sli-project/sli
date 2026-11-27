@@ -352,11 +352,9 @@ for name in sys.argv[1:]:
 
 os.environ['SLI_DEPLOYMENT_MODE'] = 'native'
 os.environ['ADLOG_HISTORY_READ_MODE'] = ' Disabled '
-os.environ['SLI_CORE_JOB_WORKSTATIONS_RETENTION'] = '1'
 
 def check_history():
     migrate.configure_permanent_history()
-    migrate.configure_workstation_history()
 
 migrate.migrate = check_history
 sys.argv = ['entrypoint', 'migrate']

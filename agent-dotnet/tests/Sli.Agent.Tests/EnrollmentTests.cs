@@ -74,6 +74,20 @@ public sealed class EnrollmentTests : IDisposable
         Assert.Equal(reportsDirectory && hasSid ? sid : null, (string?)report["domain_sid"]);
     }
 
+    [Fact]
+    public async Task EnrollmentWithLocalFileSharesReportsTheFileServerRole()
+    {
+        var transport = new Transport((_, body) =>
+        {
+            Assert.Equal("file_server", body["machine_role"]!.GetValue<string>());
+            Assert.Null(body["domain_dns"]);
+            return _ca.Issue(Store);
+        });
+        using var identity = await new Enrollment(Store, transport, _clock, () => "ServerNT", hasFileShares: _ => true)
+            .EnrollAsync(new string('t', 43), CancellationToken.None);
+        Assert.Equal(Helpers.AgentId, identity.AgentId);
+    }
+
     [Theory]
     [InlineData("host", "agent_certificate_invalid_san")]
     [InlineData("eku", "agent_certificate_invalid_eku")]

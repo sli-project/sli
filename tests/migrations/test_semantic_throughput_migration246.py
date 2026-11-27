@@ -2,7 +2,6 @@
 from pathlib import Path
 
 from scripts.maintenance.existing_postgres_bootstrap import forward_migration_inventory
-from server.sli.semantic import semantic_risk_runtime_repository as repository
 
 
 PATH = Path(__file__).resolve().parents[2] / 'config/postgres_migrations/246_semantic_throughput.sql'
@@ -30,16 +29,6 @@ def test_migration_is_new_atomic_owner_gated_step():
     assert SQL.strip().endswith('commit;')
 
 
-def test_risk_fifo_and_completion_indexes_match_reader_predicates():
-    cur = Cursor()
-    repository.enqueue_risk_backlog(cur, limit=16)
-    assert 'on public.canonical_actions(action_kind,occurred_at_utc,canonical_action_id)' in SQL
-    predicate = "action_status not in ('contradicted','superseded','quarantined')"
-    assert predicate in SQL and predicate in cur.query
-    assert 'order by action.occurred_at_utc,action.canonical_action_id\n' in cur.query
-    assert "on public.semantic_processing_outbox(completed_at) where status='completed'" in SQL
-
-
 def test_retry_requires_restored_admission_and_preserves_identity_and_receipt():
     for fragment in (
         "job.evaluation_status='quarantined' and job.source_kind='canonical_action'",
@@ -63,16 +52,3 @@ def test_retry_requires_restored_admission_and_preserves_identity_and_receipt():
     assert 'insert into public.semantic_policy_admission' not in SQL
     assert 'update public.semantic_policy_admission' not in SQL
     assert 'delete from' not in SQL and 'grant ' not in SQL
-
-
-def test_every_backlog_source_and_claim_require_admission_for_enabled_jobs():
-    cur = Cursor()
-    repository.enqueue_risk_backlog(cur)
-    branches = cur.query.split('union all')
-    assert len(branches) == 5
-    for branch in branches:
-        assert "<>'enabled'" in branch and 'admission.enabled is true' in branch
-    repository.claim_risk_evaluation_jobs(cur)
-    assert "job.evaluation_mode<>'enabled' or exists(" in cur.query
-    assert "job.source_kind not in" not in cur.query
-    assert 'admission.enabled is true' in cur.query

@@ -6,11 +6,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from server.api.routes import reports as routes_reports
-from server.sli.reports.computers_v5_reporting import (
-    get_computers_v5_report,
-    render_computers_v5_csv,
-)
 
 ROOT = Path(__file__).resolve().parents[2]
 OBSERVED = datetime(2026, 8, 29, 0, 0, tzinfo=timezone.utc)
@@ -98,120 +93,6 @@ def _rows(sql: str, *_args, **_kwargs):
             },
         },
     ]
-
-
-def test_v5_attention_is_enabled_only_but_quality_keeps_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("server.sli.reports.computers_v5_reporting.query_rows_bounded", _rows)
-
-    attention = get_computers_v5_report(domain_ids=[1], view="attention")
-    quality = get_computers_v5_report(domain_ids=[1], view="data_quality")
-    disabled = get_computers_v5_report(domain_ids=[1], view="workstation_disabled")
-
-    assert attention["contract_id"] == "sli.computers-report.v5"
-    assert attention["report_key"] == "ad.computers.v5"
-    assert attention["summary"]["attention_population"] == "enabled_ad_records"
-    assert [item["display_name"] for item in attention["items"]] == ["WS-INACTIVE"]
-    assert attention["items"][0]["reasons"][0]["code"] == "activity_over_60_days"
-    assert attention["items"][0]["reasons"][0]["condition"].endswith("60 дней и Enabled = true.")
-
-    assert "WS-DISABLED-NO-ACTIVITY" in {item["display_name"] for item in quality["items"]}
-    assert [item["display_name"] for item in disabled["items"]] == ["WS-DISABLED-NO-ACTIVITY"]
-    assert quality["summary"]["quality_population"] == "all_ad_records"
-
-
-def test_v5_does_not_default_missing_enabled_to_true(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("server.sli.reports.computers_v5_reporting.query_rows_bounded", _rows)
-
-    report = get_computers_v5_report(domain_ids=[1], view="all")
-    unknown = next(item for item in report["items"] if item["display_name"] == "UNKNOWN-AD-STATE")
-
-    assert unknown["enabled"] is None
-    assert unknown["account_state"] == "unknown"
-    assert "UNKNOWN-AD-STATE" not in {
-        item["display_name"] for item in get_computers_v5_report(domain_ids=[1], view="attention")["items"]
-    }
-
-
-def test_v5_exposes_complete_filter_options_and_server_side_activity_filter(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("server.sli.reports.computers_v5_reporting.query_rows_bounded", _rows)
-
-    report = get_computers_v5_report(domain_ids=[1], view="all", activity="over_60_days")
-
-    assert [item["display_name"] for item in report["items"]] == ["WS-INACTIVE"]
-    assert report["filters"]["activity"] == "over_60_days"
-    assert report["filter_options"]["operating_systems"] == ["Windows 10 Pro", "Windows 11 Pro"]
-    assert "Workstations" in report["filter_options"]["ous"]
-    assert report["filter_options"]["ad_site"] == {"state": "not_collected", "values": []}
-
-
-def test_v5_global_search_includes_observed_ip_addresses(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("server.sli.reports.computers_v5_reporting.query_rows_bounded", _rows)
-
-    report = get_computers_v5_report(domain_ids=[1], view="all", q="10.42.8")
-
-    assert [item["display_name"] for item in report["items"]] == ["WS-INACTIVE"]
-
-
-def test_v5_semantic_is_exact_published_evidence_and_reaches_object(monkeypatch: pytest.MonkeyPatch) -> None:
-    observed_sql: list[str] = []
-
-    def rows(sql: str, *args, **kwargs):
-        observed_sql.append(sql)
-        return _rows(sql, *args, **kwargs)
-
-    monkeypatch.setattr("server.sli.reports.computers_v5_reporting.query_rows_bounded", rows)
-    result = get_computers_v5_report(domain_ids=[1], view="semantic")
-
-    assert result["semantic"]["state"] == "available"
-    assert result["semantic"]["linked_computer_count"] == 1
-    assert result["semantic"]["finding_count"] == 1
-    assert result["semantic"]["link_contract"] == "exact_finding_entity_id_to_ad_computer"
-    assert result["items"][0]["semantic_findings"][0]["finding_id"] == 77
-    assert result["items"][0]["semantic_findings"][0]["why_it_matters"]
-
-    semantic_sql = next(sql for sql in observed_sql if "computers_v5_semantic" in sql)
-    normalized = "".join(semantic_sql.split())
-    assert "entity_type.value='ad_computer'" in normalized
-    assert "is_semantic_finding_published_v1(finding.id)" in semantic_sql
-    assert "join finding_entities" in semantic_sql
-
-
-def test_v5_csv_preserves_evidence_and_neutralizes_formulas(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("server.sli.reports.computers_v5_reporting.query_rows_bounded", _rows)
-    report = get_computers_v5_report(domain_ids=[1], view="attention")
-    report["items"][0]["display_name"] = "=WEBSERVICE(\"https://invalid\")"
-
-    text = render_computers_v5_csv(report).decode("utf-8-sig")
-
-    assert "sli.computers-report.v5" in text
-    assert "'=WEBSERVICE" in text
-    assert "activity_over_60_days" in text
-    assert "replicated_lastLogonTimestamp_approximation" in text
-    assert "exact_finding_entity_id_to_ad_computer" in text
-
-
-def test_retired_v2_v4_specialized_api_paths_are_removed() -> None:
-    handler = SimpleNamespace()
-
-    assert routes_reports.try_handle_get(handler, "/api/v1/reports/ad.computers.v2/computers", {}) is False
-    assert routes_reports.try_handle_get(handler, "/api/v1/reports/ad.computers.v4/computers", {}) is False
-
-
-def test_retired_users_v1_computers_v1_v5_api_paths_are_removed() -> None:
-    handler = SimpleNamespace()
-
-    for path in (
-        "/api/v1/reports/ad.users/accounts",
-        "/api/v1/reports/ad.computers/computers",
-        "/api/v1/reports/ad.computers.v5/computers",
-    ):
-        assert routes_reports.try_handle_get(handler, path, {}) is False
-    for path in (
-        "/api/v1/reports/ad.users/risk-acceptances",
-        "/api/v1/reports/ad.users/investigations",
-        "/api/v1/reports/ad.users/risk-acceptances/00000000-0000-0000-0000-000000000000/revoke",
-    ):
-        assert routes_reports.try_handle_post(handler, path) is False
 
 
 def test_migration_108_registers_v5_and_retires_v2_v4_without_touching_v1() -> None:

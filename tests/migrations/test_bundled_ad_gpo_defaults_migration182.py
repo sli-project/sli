@@ -3,7 +3,6 @@ import json
 from pathlib import Path
 
 from scripts.maintenance.existing_postgres_bootstrap import forward_migration_inventory
-from server.sli.core.job_queue import digest
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -17,16 +16,6 @@ def test_migration_inventory_orders_registration_after_its_prerequisite():
     inventory = forward_migration_inventory(ROOT / "config/postgres_migrations")
     identity = [(item.version, item.name) for item in inventory]
     assert identity.index((181, "ad_state_privilege_category")) < identity.index((182, "bundled_ad_gpo_defaults"))
-
-
-def test_registers_both_bundled_packages_with_reviewed_manifest_hashes():
-    sql = migration()
-    for plugin in ("sli.ad", "sli.gpo"):
-        manifest = json.loads((ROOT / f"config/plugin_packages/v3/{plugin}.json").read_text(encoding="utf-8"))
-        assert f"'{plugin}','{plugin}.package.v3','{digest(manifest)}'" in sql
-    assert "'1.0.0','registered','enabled_manual','unknown','running','drained',1,1" in sql
-    assert "on conflict(plugin_id) do nothing" in sql
-    assert "values('sli.ad',true),('sli.gpo',true)" in sql
 
 
 def test_upgrade_preserves_explicit_lifecycle_decisions_and_live_admission():

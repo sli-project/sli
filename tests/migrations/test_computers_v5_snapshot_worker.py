@@ -6,13 +6,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from scripts.runtime.computers_report_v5_snapshot_worker import (
-    RETENTION_DAYS,
-    SNAPSHOT_INTERVAL_SECONDS,
-    persist_computers_v5_snapshot,
-    snapshot_bucket_start,
-    snapshot_retention_cutoff,
-)
 
 
 NOW = datetime(2026, 8, 29, 17, 45, tzinfo=timezone.utc)
@@ -86,47 +79,6 @@ def _report(state: str = "available") -> dict[str, object]:
         "summary": {"total_computers": 2},
         "semantic": {"link_contract": "exact_finding_entity_id_to_ad_computer"},
     }
-
-
-def test_v5_snapshot_schedule_and_retention_are_owner_fixed() -> None:
-    assert SNAPSHOT_INTERVAL_SECONDS == 12 * 60 * 60
-    assert RETENTION_DAYS == 365
-    assert snapshot_bucket_start(datetime(2026, 8, 29, 11, 59, tzinfo=timezone.utc)) == datetime(2026, 8, 29, 0, 0, tzinfo=timezone.utc)
-    assert snapshot_bucket_start(datetime(2026, 8, 29, 12, 0, tzinfo=timezone.utc)) == datetime(2026, 8, 29, 12, 0, tzinfo=timezone.utc)
-    assert snapshot_retention_cutoff(NOW) == NOW - timedelta(days=365)
-
-
-def test_v5_snapshot_readback_happens_before_retention() -> None:
-    cursor = FakeCursor()
-    result = persist_computers_v5_snapshot(FakeConnection(cursor), report=_report(), domain_id=1, captured_at=NOW)
-
-    assert result == {"status": "captured", "snapshot_id": 5, "object_count": 2, "retired_snapshots": 2}
-    statements = [sql for sql, _params in cursor.statements]
-    assert "insert into computers_report_v5_snapshots" in statements[0]
-    assert "select object_count,payload_sha256" in statements[1]
-    assert "delete from computers_report_v5_snapshots" in statements[2]
-    assert "interval '365 days'" not in statements[2]
-    assert cursor.statements[2][1] == (snapshot_retention_cutoff(NOW),)
-
-
-def test_v5_snapshot_is_idempotent_per_twelve_hour_bucket() -> None:
-    cursor = FakeCursor(inserted=False)
-    result = persist_computers_v5_snapshot(FakeConnection(cursor), report=_report(), domain_id=1, captured_at=NOW)
-
-    assert result == {"status": "already_captured", "object_count": 2, "retired_snapshots": 0}
-    assert not any("delete from computers_report_v5_snapshots" in sql for sql, _params in cursor.statements)
-
-
-def test_v5_snapshot_rejects_unavailable_source_and_readback_mismatch() -> None:
-    unavailable = FakeCursor()
-    with pytest.raises(RuntimeError, match="snapshot_source_not_usable"):
-        persist_computers_v5_snapshot(FakeConnection(unavailable), report=_report("unavailable"), domain_id=1, captured_at=NOW)
-    assert unavailable.statements == []
-
-    mismatch = FakeCursor(readback_matches=False)
-    with pytest.raises(RuntimeError, match="snapshot_readback_mismatch"):
-        persist_computers_v5_snapshot(FakeConnection(mismatch), report=_report(), domain_id=1, captured_at=NOW)
-    assert not any("delete from computers_report_v5_snapshots" in sql for sql, _params in mismatch.statements)
 
 
 def test_migration_109_registers_snapshot_worker_heartbeat_without_losing_existing_workers() -> None:

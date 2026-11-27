@@ -8,9 +8,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from server.sli.access import access_control_v4 as access
-from server.sli.reporting.v2.access import ReportAccess
-from server.sli.reporting.v2.reports.security_problems import REPORT
 
 
 MIGRATION = Path(__file__).resolve().parents[2] / "config/postgres_migrations/259_admin_problem_evidence.sql"
@@ -99,51 +96,6 @@ class Cursor:
                      "fields_json": self.dataset_fields, "actions_json": ["view"],
                      "discoverable": True, "requestable": False}]
         return []
-
-
-def effective(monkeypatch, *, role="admin", owner=False, deny=False, denied_capability=None, legacy_registry=False):
-    cursor = Cursor(role=role, owner=owner, deny=deny, denied_capability=denied_capability,
-                    legacy_registry=legacy_registry)
-    monkeypatch.setattr(access, "ensure_access_schema", lambda: None)
-    monkeypatch.setattr(access, "_connect", lambda: nullcontext(SimpleNamespace(cursor=lambda: nullcontext(cursor))))
-    return access.effective_access({"type": "session", "id": 7, "role": role})
-
-
-@pytest.mark.parametrize("owner", [False, True])
-def test_admin_can_read_evidence_and_every_column(monkeypatch, owner):
-    declaration = ReportAccess(REPORT, effective(monkeypatch, owner=owner)).declaration()
-    assert declaration["access"]["hidden_categories"] == []
-    assert declaration["detail"]["access"]["allowed"]
-    assert {column["key"] for column in declaration["columns"]} == {column.key for column in REPORT.columns}
-    assert {column["key"] for column in declaration["detail"]["columns"]} == {column.key for column in REPORT.detail.columns}
-
-
-def test_legacy_registry_hides_evidence_even_from_owner(monkeypatch):
-    declaration = ReportAccess(REPORT, effective(monkeypatch, owner=True, legacy_registry=True)).declaration()
-    assert set(declaration["access"]["hidden_categories"]) == FIELDS - {"security"}
-    assert not declaration["detail"]["access"]["allowed"]
-    assert declaration["detail"]["columns"] == []
-
-
-@pytest.mark.parametrize("role", ["viewer", "operator"])
-def test_role_without_grant_cannot_read_queue_or_evidence(monkeypatch, role):
-    with pytest.raises(PermissionError, match="report_access_denied"):
-        ReportAccess(REPORT, effective(monkeypatch, role=role))
-
-
-def test_explicit_report_deny_still_wins_over_admin_default(monkeypatch):
-    with pytest.raises(PermissionError, match="report_access_denied"):
-        ReportAccess(REPORT, effective(monkeypatch, deny=True))
-
-
-@pytest.mark.parametrize("capability", ["evidence.exact", "field.raw_evidence", "field.technical"])
-def test_explicit_capability_deny_still_masks_admin_fields(monkeypatch, capability):
-    declaration = ReportAccess(REPORT, effective(monkeypatch, denied_capability=capability)).declaration()
-    if capability == "field.technical":
-        assert {column["key"] for column in declaration["detail"]["columns"]} == {"event_id", "time_created_utc"}
-    else:
-        assert not declaration["detail"]["access"]["allowed"]
-        assert declaration["detail"]["columns"] == []
 
 
 def test_registry_and_dataset_publish_all_queue_field_groups():

@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from deploy.linux import backup, backup_restore_check as drill, sli_update
+from deploy.linux import backup, backup_restore_check as drill
 from tests.postgres_integration_guard import assert_disposable_database
 
 pytestmark = [pytest.mark.postgres_integration, pytest.mark.postgres_empty]
@@ -31,22 +31,6 @@ def pg(isolated_postgres_integration_database):
         # Require the per-test clone, not the template or an arbitrary database.
         assert re.fullmatch(r"sli_test_[0-9a-f]{32}", str(identity["name"]))
         yield psycopg, dsn, conn
-
-
-def test_capacity_probe_real_json_shape_and_read_only_binding(pg):
-    _, _, conn = pg
-    conn.execute("BEGIN READ ONLY")
-    try:
-        point = conn.execute(backup.PG_CAPACITY_SQL).fetchone()[0]
-        host_point = conn.execute(sli_update.PG_CAPACITY_SQL).fetchone()[0]
-        assert set(point) == {"cluster_id", "postmaster_start", "data_directory",
-                              "database_size_bytes", "tablespaces"}
-        assert type(point["database_size_bytes"]) is int and point["database_size_bytes"] > 0
-        assert {1663, 1664} <= {item["oid"] for item in point["tablespaces"]}
-        assert backup.pg_capacity_binding(point) == backup.pg_capacity_binding(host_point)
-        assert backup.pg_capacity_paths(point) == sli_update.pg_capacity_paths(host_point)
-    finally:
-        conn.execute("ROLLBACK")
 
 
 def test_restore_advisory_lock_serializes_real_sessions_and_releases_on_error(pg):

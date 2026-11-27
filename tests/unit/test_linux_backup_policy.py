@@ -105,36 +105,6 @@ def test_capture_space_requirements_do_not_reserve_drill(tmp_path):
     assert not root.exists() and not unused.exists()
 
 
-@pytest.mark.parametrize('age,days', [(0, 5), (172801, None)])
-def test_public_summary_exposes_only_dates_and_fresh_capacity(tmp_path, monkeypatch, age, days):
-    from server.sli.storage.operations_storage import (
-        backup_summary,
-        load_operations_storage_snapshot,
-    )
-
-    path = tmp_path / 'summary.json'
-    monkeypatch.setenv('SLI_BACKUP_SUMMARY_PATH', str(path))
-    now = datetime.now(timezone.utc)
-    path.write_text(json.dumps({'last_backup_at_utc': now.isoformat(), 'last_verified_at_utc': None,
-                               'capacity_days': 5, 'observed_at_utc': (now - timedelta(seconds=age)).isoformat(),
-                               'private_field': 'must-not-leave-reader'}))
-    value = backup_summary()
-    assert set(value) == {'last_backup_at_utc', 'last_verified_at_utc', 'capacity_days'}
-    assert value['capacity_days'] == days and value['last_verified_at_utc'] is None
-    # Backup dates remain visible even without a complete storage footprint.
-    assert load_operations_storage_snapshot(tmp_path / 'absent.json')['backups'] == value
-
-
-@pytest.mark.parametrize('body', ['[]', '{', 'x' * 4097])
-def test_malformed_public_summary_never_fabricates_zero(tmp_path, monkeypatch, body):
-    from server.sli.storage.operations_storage import backup_summary
-
-    path = tmp_path / 'summary.json'
-    path.write_text(body)
-    monkeypatch.setenv('SLI_BACKUP_SUMMARY_PATH', str(path))
-    assert backup_summary() == {'last_backup_at_utc': None, 'last_verified_at_utc': None, 'capacity_days': None}
-
-
 def test_refusal_uses_real_restore_entrypoint_before_sandbox_or_source_mutations(tmp_path, monkeypatch,
                                                                               volume_layout):
     pytest.importorskip('psycopg')
@@ -186,48 +156,6 @@ def test_failed_capture_never_calls_prune(tmp_path, monkeypatch, volume_layout):
     with pytest.raises(backup.BackupError, match='insufficient_backup_disk_space'):
         backup.capture_backup(tmp_path, 7, ('postgres',))
     assert not any(path.name.endswith('.partial') for path in tmp_path.iterdir())
-
-
-@pytest.mark.parametrize('data_device,work_device,allowed', [
-    ('data-device', 'backup-device', True),
-    ('backup-device', 'backup-device', False),
-    ('data-device', 'data-device', False),
-    ('data-device', 'other-device', False),
-])
-def test_installation_validates_physical_volumes_before_creating_directories(tmp_path, monkeypatch,
-                                                                           volume_layout,
-                                                                           data_device, work_device, allowed):
-    pytest.importorskip('psycopg')
-    from deploy.linux import installation
-
-    runtime, data, backups, work = (tmp_path / name for name in ('runtime', 'data', 'copies', 'checks'))
-    volume_layout.update({data: data_device, backups: 'backup-device', work: work_device})
-    environment = {'SLI_BACKUP_DIR': str(backups), 'SLI_DATA_DIR': str(data), 'SLI_RESTORE_CHECK_DIR': str(work)}
-    if allowed:
-        assert installation.restore_check_directory(runtime, environment) == work
-    else:
-        with pytest.raises(installation.UpdateError, match='separate_volume'):
-            installation.restore_check_directory(runtime, environment)
-    assert not any(path.exists() for path in (runtime, data, backups, work))
-
-
-@pytest.mark.parametrize('child_device', ['backup-device', 'data-device', 'other-device'])
-def test_installation_checks_clickhouse_volume_before_creating_child(tmp_path, monkeypatch,
-                                                                    volume_layout, child_device):
-    pytest.importorskip('cryptography')
-    from deploy.linux import installation
-
-    work = tmp_path / 'checks'
-    child = work / 'clickhouse'
-    volume_layout.update({work: 'backup-device', child: child_device})
-    monkeypatch.setattr(installation.os, 'chown', lambda *args: None, raising=False)
-    if child_device == 'backup-device':
-        installation.prepare_restore_directory(work)
-        assert child.is_dir()
-    else:
-        with pytest.raises(installation.UpdateError, match='separate_volume'):
-            installation.prepare_restore_directory(work)
-        assert not child.exists()
 
 
 def test_volume_layout_resolves_declared_paths_through_symlinks(tmp_path, volume_layout):

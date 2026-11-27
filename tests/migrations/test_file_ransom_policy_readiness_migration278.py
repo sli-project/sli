@@ -8,6 +8,8 @@ from uuid import uuid4
 
 import pytest
 
+from tests.migrations.test_qw_finding_notifications_migration229 import publication_pg as publication_pg
+
 from tests.migrations.test_file_audit_discovery_join_migration267 import (
     AGENT,
     MODULE,
@@ -30,9 +32,6 @@ from tests.migrations.test_file_audit_discovery_join_migration267 import (
 )
 from tests.migrations.test_file_audit_discovery_join_migration267 import (
     pg as pg,  # noqa: PLC0414 -- imported pytest fixture
-)
-from tests.migrations.test_file_audit_discovery_join_migration267 import (
-    publication_pg as publication_pg,  # noqa: PLC0414 -- imported pytest fixture
 )
 
 ROOT = Path(__file__).resolve().parents[2]

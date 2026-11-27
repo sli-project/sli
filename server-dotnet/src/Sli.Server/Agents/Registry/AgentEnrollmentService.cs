@@ -44,7 +44,7 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
                 replacement = reader.IsDBNull(4) ? null : reader.GetGuid(4);
             }
         }
-        (Guid Id, bool ManageWindowsAudit)? consoleGrant = keyFingerprint is null
+        (Guid Id, bool ManageWindowsAudit, bool Packaged)? consoleGrant = keyFingerprint is null
             ? await LockConsoleTokenAsync(connection, transaction, digest, ct)
             : null;
         Guid? consoleToken = consoleGrant?.Id;
@@ -61,7 +61,7 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         if (hostName is null && (consoleToken is not null || body.ContainsKey("reported_hostname")))
             throw new AgentCertificateException("invalid_agent_registration_name");
         var role = body.ContainsKey("machine_role") ? StringValue(body, "machine_role") : "workstation";
-        if (role is not ("workstation" or "domain_controller")) throw new AgentCertificateException("invalid_agent_module_config");
+        if (role is not ("workstation" or "domain_controller" or "file_server")) throw new AgentCertificateException("invalid_agent_module_config");
         var dc=role=="domain_controller" && hostName is not null ? await ResolveDcAsync(connection,transaction,hostName,ct) : null;
         if(dc is {} configuredDc && configuredDc.Name.Length>128)throw new AgentCertificateException("invalid_agent_module_config");
         if (consoleToken is { } grant)
@@ -152,18 +152,20 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
             ["manage_windows_audit"] = role != "domain_controller" || consoleGrant?.ManageWindowsAudit != false,
             ["audit_process_command_line"] = false,
         }.ToJsonString();
-        await using (var q = new NpgsqlCommand("insert into sli_agents(id,host_id,key_fingerprint,instance_name,registration_host_name,collection_policy,last_seen) values(@id,@host,@key,@instance,@name,@control::jsonb,clock_timestamp())", connection, transaction))
+        await using (var q = new NpgsqlCommand("insert into sli_agents(id,host_id,key_fingerprint,instance_name,registration_host_name,machine_role,collection_policy,last_seen) values(@id,@host,@key,@instance,@name,@role,@control::jsonb,clock_timestamp())", connection, transaction))
         {
             q.Parameters.AddWithValue("id", agentId); q.Parameters.AddWithValue("host", hostId); q.Parameters.AddWithValue("key", keyFingerprint);
             q.Parameters.Add("instance", NpgsqlDbType.Text).Value = (object?)instance ?? DBNull.Value;
             q.Parameters.Add("name", NpgsqlDbType.Text).Value = (object?)hostName ?? DBNull.Value;
+            q.Parameters.AddWithValue("role", role);
             q.Parameters.AddWithValue("control", control); await q.ExecuteNonQueryAsync(ct);
         }
         Guid? newer=null;
         if ((approved is not null || consoleToken is not null) && replacement is null)
             newer=await ReplaceRegistrationAsync(connection,transaction,agentId,hostName!,instance,tokenId,ct,dc?.Server,agentVersion,consoleToken is not null);
         if (replacement is null && !await CopyTemplateAsync(connection, transaction, tokenId, agentId, ct))
-            await AssignDefaultAsync(connection, transaction, tokenId, agentId, hostId,dc?.Name ?? hostName, role!, control, ct,approved is not null ? dc?.Server : null, bootstrapDomain);
+            await AssignDefaultAsync(connection, transaction, tokenId, agentId, hostId,dc?.Name ?? hostName, role!, control, ct,
+                approved is not null ? dc?.Server : null, bootstrapDomain, consoleGrant?.Packaged == true);
         var serial = await StoreCertificateAsync(connection, transaction, agentId, cert, ct);
         if(newer is not null)await RetireRegistrationAsync(connection,transaction,agentId,newer.Value,"enrollment:"+tokenId,true,ct);
         await using (var q = new NpgsqlCommand("update sli_agent_enrollment_tokens set used_at=clock_timestamp(),enrolled_agent_id=@agent where id=@id; insert into sli_agent_group_members(agent_id,group_id) select @agent,t.group_id from sli_agent_group_approval_links a join sli_agent_group_requests r on r.id=a.request_id join sli_agent_group_tokens t on t.id=r.token_id where a.enrollment_token_id=@id", connection, transaction))
@@ -201,20 +203,22 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         return CertificateResponse(cert, agentId, serial);
     }
 
-    private static async Task<(Guid Id, bool ManageWindowsAudit)> LockConsoleTokenAsync(NpgsqlConnection db, NpgsqlTransaction tx, string digest, CancellationToken ct)
+    private static async Task<(Guid Id, bool ManageWindowsAudit, bool Packaged)> LockConsoleTokenAsync(NpgsqlConnection db, NpgsqlTransaction tx, string digest, CancellationToken ct)
     {
         // The grant and its issuance details are committed together. Older grants omit the setting.
         await using var query = new NpgsqlCommand("""
             select t.id, coalesce((select a.details->'manage_windows_audit' <> 'false'::jsonb
-                from sli_agent_audit a where a.target=t.id::text and a.action='token_create' order by a.id desc limit 1), true)
+                from sli_agent_audit a where a.target=t.id::text and a.action='token_create' order by a.id desc limit 1), true),
+                t.installer is not null
             from sli_agent_console_tokens t
-            where t.token_hash=@hash and t.remaining>0 and t.revoked_at is null and t.expires_at>clock_timestamp()
+            where t.token_hash=@hash and (t.remaining is null or t.remaining>0) and t.revoked_at is null
+                and (t.expires_at is null or t.expires_at>clock_timestamp())
             for update
             """, db, tx);
         query.Parameters.AddWithValue("hash", digest);
         await using var reader = await query.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct)) throw RejectToken();
-        return (reader.GetGuid(0), reader.GetBoolean(1));
+        return (reader.GetGuid(0), reader.GetBoolean(1), reader.GetBoolean(2));
     }
 
     private static async Task ConsumeConsoleTokenAsync(NpgsqlConnection db, NpgsqlTransaction tx, Guid grant,
@@ -225,11 +229,14 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         await using var command = new NpgsqlCommand("""
             with consumed as (
                 update sli_agent_console_tokens set remaining=remaining-1
-                where id=@grant and remaining>0 and revoked_at is null and expires_at>clock_timestamp()
-                returning id,created_at,expires_at
+                where id=@grant and (remaining is null or remaining>0) and revoked_at is null
+                    and (expires_at is null or expires_at>clock_timestamp())
+                returning id,created_at,expires_at,installer is not null as packaged
             )
             insert into sli_agent_enrollment_tokens(id,token_hash,host_id,key_fingerprint,created_at,expires_at,console_token_id)
-            select @claim,@hash,@host,@key,created_at,expires_at,id from consumed
+            select @claim,@hash,@host,@key,
+                case when packaged then statement_timestamp() else created_at end,
+                case when packaged then statement_timestamp()+interval '1 hour' else expires_at end,id from consumed
             """, db, tx);
         command.Parameters.AddWithValue("grant", grant);
         command.Parameters.AddWithValue("claim", claim);
@@ -311,10 +318,13 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         var profile=configuration?["Sli:CollectionProfile"] ?? configuration?["SLI_COLLECTION_PROFILE"] ?? "beta";
         return profile is "beta" or "full" ? profile : throw new ServerConfigurationException("Sli:CollectionProfile");
     }
-    internal static JsonArray DefaultModules(IConfiguration? configuration,string role,Guid host,string? hostName,JsonObject? domain, string? timezone = null)
+    internal static JsonArray DefaultModules(IConfiguration? configuration,string role,Guid host,string? hostName,JsonObject? domain,
+        string? timezone = null, bool packaged = false)
     {
         var beta=CollectionProfile(configuration)=="beta";
-        if(beta && role=="workstation") return new JsonArray();
+        // The file-audit card enables collection after an administrator selects the share.
+        if (role == "file_server") return new JsonArray();
+        if(beta && role=="workstation" && !packaged) return new JsonArray();
         string module; JsonObject config;
         if (role=="workstation")
         {
@@ -355,7 +365,8 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         return catalog.Channels.SelectMany(catalog.EventIds)
             .Distinct().Order().ToArray();
     }
-    private async Task AssignDefaultAsync(NpgsqlConnection c,NpgsqlTransaction t,Guid token,Guid agent,Guid host,string? hostName,string role,string control,CancellationToken ct,long? approvedServer,long? bootstrapDomain)
+    private async Task AssignDefaultAsync(NpgsqlConnection c,NpgsqlTransaction t,Guid token,Guid agent,Guid host,string? hostName,string role,string control,
+        CancellationToken ct,long? approvedServer,long? bootstrapDomain,bool packaged)
     {
         JsonObject? domain=null;
         if(CollectionProfile(configuration)=="beta" && role=="domain_controller")
@@ -386,7 +397,7 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
             }
         }
         string? timezone = domain is null ? null : await SnapshotPublication.AdSnapshotSchedule.ReadZoneAsync(c,t,ct);
-        var modules=DefaultModules(configuration,role,host,hostName,domain,timezone);
+        var modules=DefaultModules(configuration,role,host,hostName,domain,timezone,packaged);
         if(modules.Count==0) return;
         foreach(var item in modules.OfType<JsonObject>().Where(m=>m["module_id"]!.GetValue<string>() is SnapshotPolicy.Ad or SnapshotPolicy.Gpo).ToArray())
         {
@@ -581,7 +592,20 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
         host = host is null ? null : string.Concat(host.EnumerateRunes());
         var key = host is null ? "" : HostNameKey(host.Normalize(NormalizationForm.FormC));
         var target = Convert.ToHexStringLower(SHA256.HashData(Encoding.ASCII.GetBytes(key)));
-        await AdvisoryAsync(connection, transaction, $"sli-agent-enroll-rejected:{target}:{code}", ct);
+        string? address = sourceAddress?.ToString();
+        if (address is not null) await AdvisoryAsync(connection, transaction, $"sli-agent-enroll-address:{address}", ct);
+        await AdvisoryAsync(connection, transaction, $"sli-agent-enroll-rejected:{target}", ct);
+        if (code == "enrollment_token_rejected" && token is { Length: 43 })
+        {
+            await using var rejection = new NpgsqlCommand("""
+                select case when revoked_at is not null then 'enrollment_token_revoked'
+                    when expires_at<=clock_timestamp() then 'enrollment_token_expired'
+                    when remaining=0 then 'enrollment_token_exhausted' end
+                from sli_agent_console_tokens where installer is not null and token_hash=@hash
+                """, connection, transaction);
+            rejection.Parameters.AddWithValue("hash", Convert.ToHexStringLower(SHA256.HashData(Encoding.ASCII.GetBytes(token))));
+            if (await rejection.ExecuteScalarAsync(ct) is string reason) code = reason;
+        }
         var displayHost = host is null ? null : string.Concat(host.EnumerateRunes().Take(253).Select(rune =>
             (Rune.GetUnicodeCategory(rune) == UnicodeCategory.Format ? JavaScriptEncoder.Default : AuditHostEncoder)
                 .Encode(rune.ToString())));
@@ -590,14 +614,18 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
             ["outcome"] = "rejected",
             ["code"] = code,
             ["reported_hostname"] = displayHost,
-            ["source_address"] = sourceAddress?.ToString()
+            ["source_address"] = address
         };
         // The audit schema uses 'issue' for certificate issuance. Rejections
         // use a host digest and a generic actor in place of agent and token IDs.
         await using var insert = new NpgsqlCommand("""
             insert into sli_agent_audit(action,actor,target,details)
             select 'issue','enrollment',@target,@details::jsonb
-            where not exists (
+            where (@address is null or (
+                select count(*) from sli_agent_audit where action='issue' and actor='enrollment'
+                    and details->>'outcome'='rejected' and details->>'source_address'=@address
+                    and occurred_at > clock_timestamp() - interval '10 minutes'
+            ) < 10) and not exists (
                 select 1 from sli_agent_audit where action='issue' and actor='enrollment' and target=@target
                     and details->>'outcome'='rejected' and details->>'code'=@code
                     and occurred_at > clock_timestamp() - interval '10 minutes'
@@ -605,6 +633,7 @@ public sealed partial class AgentEnrollmentService(AgentIssuingCa ca, IAgentIden
             """, connection, transaction);
         insert.Parameters.AddWithValue("target", target);
         insert.Parameters.AddWithValue("code", code);
+        insert.Parameters.Add("address", NpgsqlDbType.Text).Value = (object?)address ?? DBNull.Value;
         insert.Parameters.AddWithValue("details", details.ToJsonString());
         await insert.ExecuteNonQueryAsync(ct);
     }

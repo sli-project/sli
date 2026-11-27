@@ -566,6 +566,10 @@ app.MapFallback("{**path}", async context =>
     else
         await DomainHttp.WriteAsync(context, new { error = "not_found" }, StatusCodes.Status404NotFound, context.RequestAborted);
 });
+if (app.Configuration["SLI_DEPLOYMENT_MODE"] == "native")
+    await app.Services.GetRequiredService<AgentInstallPackages>().PrepareOnStartupAsync(
+        app.Services.GetRequiredService<IPostgresConnectionFactory>(), app.Lifetime.ApplicationStopping);
+
 // Native configure starts this API after database migration. A candidate tested
 // behind the upgrade fence must not publish its MSI before the durable commit.
 if (app.Configuration["SLI_DEPLOYMENT_MODE"] == "native" &&

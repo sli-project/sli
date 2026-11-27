@@ -9,7 +9,6 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 POWER_SHELL_TOOL = PROJECT_ROOT / "tools" / "sli-control-center.ps1"
-LIFECYCLE_CONTRACT = PROJECT_ROOT / "scripts" / "maintenance" / "control_center_lifecycle.py"
 
 
 def test_control_center_ui_exposes_russian_guarded_controls() -> None:
@@ -78,17 +77,6 @@ def test_control_center_mutations_use_only_confirmed_lifecycle_contract() -> Non
         assert prohibited_direct_control not in source.casefold()
 
 
-def test_worker_selector_is_read_only_and_contract_derived() -> None:
-    source = POWER_SHELL_TOOL.read_text(encoding="utf-8-sig")
-    lifecycle_source = LIFECYCLE_CONTRACT.read_text(encoding="utf-8")
-
-    assert '"managed-workers"' in lifecycle_source
-    assert "managed_worker_names()" in lifecycle_source
-    assert '"managed-workers"' in source
-    assert "$WorkerPicker.ItemsSource = @($workers.workers)" in source
-    assert "$WorkerPicker.SelectedItem" in source
-    for retired_or_manual_name in ("computers_v6_source", "manual-worker", "collection"):
-        assert retired_or_manual_name not in source
 
 
 @pytest.mark.windows_only
