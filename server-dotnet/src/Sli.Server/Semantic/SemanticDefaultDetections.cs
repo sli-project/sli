@@ -72,9 +72,35 @@ internal sealed partial class SemanticProduction
                 var source = row!["source"]!.DeepClone();
                 var outcome = await Source("default_source:" + Digest(source["scope"]), db, async connection => {
                     var sourceDiagnostics = new DetectionDiagnostics();
-                    await using var tx = await connection.BeginTransactionAsync(ct); var session = new SemanticSession(connection,tx,diagnostics:sourceDiagnostics);
+                    int accountJobs = 0, evaluated = 0, batches = 0;
+                    if (source["scope"].Text("plugin_id") == "sli.windows.ad-dc")
+                    {
+                        bool more;
+                        do
+                        {
+                            if (Stopping) return new DetectionOutcome(accountJobs) { Diagnostics = sourceDiagnostics };
+                            await using var batch = await connection.BeginTransactionAsync(ct);
+                            var accountSession = new SemanticSession(connection, batch, diagnostics: sourceDiagnostics);
+                            await accountSession.ExecuteAsync("set local statement_timeout=0;set local lock_timeout=0", ct);
+                            var result = await RunDefaultAccounts(sourceSession?.Invoke(accountSession) ?? accountSession,
+                                source["scope"]!.AsObject(), ct);
+                            await batch.CommitAsync(ct);
+                            accountJobs += result.Jobs;
+                            evaluated += result.Events;
+                            batches++;
+                            more = result.More;
+                            SemanticWork.Progress(new JsonObject {
+                                ["cursor"] = new JsonObject { ["account_batches_committed"] = batches, ["account_events_evaluated"] = evaluated },
+                                ["heartbeat"] = SemanticJson.Stamp(DateTimeOffset.UtcNow)
+                            });
+                        } while (more);
+                    }
+                    await using var tx = await connection.BeginTransactionAsync(ct);
+                    var session = new SemanticSession(connection,tx,diagnostics:sourceDiagnostics);
                     await session.ExecuteAsync("set local statement_timeout=0;set local lock_timeout=0",ct);
-                    var portion = await RunDefaultSource(sourceSession?.Invoke(session) ?? session,source,ct,sourceDiagnostics); await tx.CommitAsync(ct);
+                    var portion = await RunDefaultSource(sourceSession?.Invoke(session) ?? session,source,ct,sourceDiagnostics, accountsAlreadyRun: true);
+                    await tx.CommitAsync(ct);
+                    portion = portion with { Jobs = accountJobs + portion.Jobs };
                     sourceDiagnostics.Write("default_source"); return portion with { Diagnostics = sourceDiagnostics };
                 }, ct);
                 if (outcome is not null) { diagnostics.Merge(outcome.Diagnostics); jobs += outcome.Jobs; failed += outcome.Failed; waiting += outcome.Waiting; if (outcome.Failed == 0) completed++; }
@@ -98,7 +124,8 @@ internal sealed partial class SemanticProduction
     {
         internal DetectionDiagnostics? Diagnostics { get; init; }
     }
-    internal static async Task<DetectionOutcome> RunDefaultSource(ISemanticSession session, JsonNode source, CancellationToken ct, DetectionDiagnostics? diagnostics = null)
+    internal static async Task<DetectionOutcome> RunDefaultSource(ISemanticSession session, JsonNode source, CancellationToken ct,
+        DetectionDiagnostics? diagnostics = null, bool accountsAlreadyRun = false)
     {
         var scope = source["scope"]!.AsObject();
         // DC rules own distinct policy/checkpoint locks. Holding the shared
@@ -110,20 +137,7 @@ internal sealed partial class SemanticProduction
         int added = 0;
                 if (scope.Text("plugin_id") == "sli.windows.ad-dc")
                 {
-                    foreach (string rule in new[] { "qw.account-decoy", "qw.account-watch" })
-                    {
-                        var definition = Definition(rule, scope); if (!await AdmitDefault(session, definition, ct)) continue;
-                        string checkpoint = AccountCheckpoint(scope, rule == "qw.account-watch", "enabled", 1); await session.QueryAsync("select pg_advisory_xact_lock(hashtextextended($1,0))", ct, checkpoint);
-                        string family = rule == "qw.account-watch" ? "watch" : "decoy";
-                        var events = await session.QueryAsync($"select * from public.read_account_{family}_events($1,$2,$3,$4,$5,null::uuid)", ct, Guid.Parse(scope.Text("installation_id")!), scope.Text("plugin_id"), scope.Text("source_instance_id"), scope.Text("source_generation"), checkpoint);
-                        if (events.Count > 128) throw new InvalidDataException("account_detection_batch_invalid");
-                        foreach (var ev in events)
-                        {
-                            var (signals, state) = EvaluateAccount(definition, ev!, DateTimeOffset.UtcNow, family == "watch");
-                            foreach (var signal in signals) { int count = await EnqueueQW(session, signal!.AsObject(), ct); if (count == 0) throw new InvalidOperationException("account_detection_policy_unavailable"); added += count; }
-                            await session.QueryAsync($"insert into semantic_account_{family}_checks(checkpoint_key,normalized_event_id,scope_json,result_code) values($1,$2,$3,$4) on conflict do nothing", ct, checkpoint, Guid.Parse(ev.Text("normalized_event_id")!), scope, state);
-                        }
-                    }
+                    if (!accountsAlreadyRun) added += (await RunDefaultAccounts(session, scope, ct)).Jobs;
                     added += await DisabledAccount(session, scope, ct);
                 }
                 if (scope.Text("plugin_id") is "sli.windows.ad-dc" or "sli.vpn-nps") added += await ProcessNpsThreshold(session, scope, ct);
@@ -134,6 +148,54 @@ internal sealed partial class SemanticProduction
                     return new(added,ransom.Failed,ransom.Waiting);
                 }
         return new(added);
+    }
+    private const int AccountBatchSize = 128;
+
+    private static async Task<(int Jobs, int Events, bool More)> RunDefaultAccounts(
+        ISemanticSession session, JsonObject scope, CancellationToken ct)
+    {
+        bool queueAvailable = (await session.QueryAsync("""
+            select to_regprocedure('public.subscribe_account_checkpoint455(text,text,jsonb)') is not null as available
+            """, ct)).Single().Flag("available");
+        int jobs = 0, evaluated = 0;
+        bool more = false;
+        foreach (string family in new[] { "decoy", "watch" })
+        {
+            bool watch = family == "watch";
+            var definition = Definition("qw.account-" + family, scope);
+            if (!await AdmitDefault(session, definition, ct))
+                continue;
+            string checkpoint = AccountCheckpoint(scope, watch, "enabled", 1);
+            await session.QueryAsync("select pg_advisory_xact_lock(hashtextextended($1,0))", ct, checkpoint);
+            bool seeding = queueAvailable && (await session.QueryAsync(
+                "select public.subscribe_account_checkpoint455($1,$2,$3::jsonb) as more", ct, family, checkpoint, scope)).Single().Flag("more");
+            var events = await session.QueryAsync($"select * from public.read_account_{family}_events($1,$2,$3,$4,$5,null::uuid)",
+                ct, Guid.Parse(scope.Text("installation_id")!), scope.Text("plugin_id"), scope.Text("source_instance_id"),
+                scope.Text("source_generation"), checkpoint);
+            if (events.Count > AccountBatchSize)
+                throw new InvalidDataException("account_detection_batch_invalid");
+            var checks = new JsonArray();
+            foreach (var ev in events)
+            {
+                var (signals, state) = EvaluateAccount(definition, ev!, DateTimeOffset.UtcNow, watch);
+                foreach (var signal in signals)
+                {
+                    int count = await EnqueueQW(session, signal!.AsObject(), ct);
+                    if (count == 0) throw new InvalidOperationException("account_detection_policy_unavailable");
+                    jobs += count;
+                }
+                checks.Add(new JsonObject { ["id"] = ev!["normalized_event_id"].Copy(), ["state"] = state });
+            }
+            if (checks.Count > 0)
+                await session.QueryAsync($"""
+                    insert into semantic_account_{family}_checks(checkpoint_key,normalized_event_id,scope_json,result_code)
+                    select $1,c.id,$2,c.state from jsonb_to_recordset($3) as c(id uuid,state text)
+                    on conflict do nothing
+                    """, ct, checkpoint, scope, checks);
+            evaluated += events.Count;
+            more |= queueAvailable && (seeding || events.Count == AccountBatchSize);
+        }
+        return (jobs, evaluated, more);
     }
     private static readonly Dictionary<string,(DateTimeOffset From,DateTimeOffset To)> RansomWaits = new();
     internal static async Task<DetectionOutcome> ManagedRansom(ISemanticSession session, JsonNode source, DateTimeOffset now, CancellationToken ct, DetectionDiagnostics? diagnostics = null)

@@ -122,15 +122,18 @@ public sealed class DetectionReadPerformancePostgresTests(ITestOutputHelper outp
     {
         var ct = TestContext.Current.CancellationToken;
         var at = new DateTimeOffset(DateTime.UtcNow.Date.AddDays(-1).AddHours(12));
-        var before = await Produce(false);
-        var after = await Produce(true);
-        Assert.Equal(before, after);
+        var before = await Produce(450);
+        Assert.Equal(before, await Produce(451));
+        Assert.Equal(before, await Produce(455));
 
-        async Task<string[]> Produce(bool upgraded)
+        async Task<string[]> Produce(int version)
         {
             await using var fixture = new SqlPostgresFixture();
             await fixture.StartAsync(ct, throughVersion: PredecessorVersion);
-            if (upgraded) await fixture.Pg.ApplyFileAsync(Migration, null, ct);
+            string pendingMigration = Path.Combine(PostCollectionPostgres.Repository(),
+                "config/postgres_migrations/455_account_detection_pending.sql");
+            if (version >= 451) await fixture.Pg.ApplyFileAsync(Migration, null, ct);
+            if (version == 455) await fixture.Pg.ApplyFileAsync(pendingMigration, null, ct);
             await using var owner = await fixture.Pg.OpenAsync(ct);
             var rows = await ShortEventAdmissionPostgresTests.SeedAsync(owner, ct, eventKinds: [4625], occurredAt: at);
             await ShortEventAdmissionPostgresTests.WriteAsync(fixture, rows, ct);
@@ -169,7 +172,7 @@ public sealed class DetectionReadPerformancePostgresTests(ITestOutputHelper outp
                 sequence: 2, firstRecordId: 2);
             await ShortEventAdmissionPostgresTests.WriteAsync(fixture, late, ct);
             await Pass();
-            if (upgraded)
+            if (version >= 451)
             {
                 var detector = new DetectionProducer(new(), new());
                 await using (var discover = new NpgsqlCommand(
@@ -212,8 +215,10 @@ public sealed class DetectionReadPerformancePostgresTests(ITestOutputHelper outp
                         await block.RollbackAsync(ct);
                     }
                 }
+                if (version == 455) await fixture.Pg.ApplyFileAsync(Path.ChangeExtension(pendingMigration, ".rollback.sql"), null, ct);
                 await fixture.Pg.ApplyFileAsync(Path.ChangeExtension(Migration, ".rollback.sql"), null, ct);
                 await fixture.Pg.ApplyFileAsync(Migration, null, ct);
+                if (version == 455) await fixture.Pg.ApplyFileAsync(pendingMigration, null, ct);
                 await Pass();
             }
 
