@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Npgsql;
 using NpgsqlTypes;
 using Sli.Agent.Protocol;
+using Sli.Agent.Protocol.Compatibility;
 using Sli.Server.Agents.Control;
 using Sli.Server.Agents.Ingress;
 using Sli.Server.Auth.Lifecycle.Security;
@@ -59,15 +60,22 @@ internal sealed class FileAuditIngestService
         var observation=(JsonObject)report.DeepClone();
         var receipts = observation["scopes"]!.AsArray().OfType<JsonObject>().ToArray();
         var roots = config["roots"]!.AsArray().OfType<JsonObject>()
-            .ToDictionary(root => root["collection_scope_id"]!.GetValue<string>(), root => root["path"]);
-        var snapshots = report["snapshots"]!.AsArray().OfType<JsonObject>();
+            .ToDictionary(root => root["collection_scope_id"]!.GetValue<string>(), root => root["path"]!.GetValue<string>());
+        var snapshots = report["snapshots"]!.AsArray().OfType<JsonObject>()
+            .ToDictionary(snapshot => snapshot["collection_scope_id"]!.GetValue<string>());
         foreach (var receipt in receipts)
         {
             var scope = receipt["collection_scope_id"]!.GetValue<string>();
-            if (receipt["state"]!.GetValue<string>() != "verified" || restore
-                || snapshots.Any(snapshot => snapshot["collection_scope_id"]!.GetValue<string>() == scope
-                    && snapshot["objects"]!.AsArray().OfType<JsonObject>().Any(item =>
-                        JsonNode.DeepEquals(item["path"], roots[scope]) && item["object_type"]?.ToString() == "directory")))
+            if (receipt["state"]!.GetValue<string>() != "verified" || restore)
+                continue;
+            var snapshot = snapshots[scope];
+            var page = snapshot["page_number"]!.GetValue<int>();
+            var root = UnicodeLower.Lower(AgentFileAuditPolicy.NormalizePath(roots[scope]));
+            bool rootPresent = snapshot["objects"]!.AsArray().OfType<JsonObject>().Any(item =>
+                item["object_type"]?.ToString() == "directory"
+                && UnicodeLower.Lower(AgentFileAuditPolicy.NormalizePath(item["path"]!.GetValue<string>())) == root);
+            if (page == 0 && rootPresent
+                || page > 0 && await HasScanPrefixAsync(db,tx,identity.Id,scope,snapshot,page,ct))
                 continue;
             receipt["state"] = "partial";
             receipt["reason_code"] = "coverage_incomplete";
@@ -110,6 +118,19 @@ internal sealed class FileAuditIngestService
             await write.ExecuteNonQueryAsync(ct);
         }
         return new JsonObject { ["status"]="accepted" };
+    }
+
+    private static async Task<bool> HasScanPrefixAsync(NpgsqlConnection db, NpgsqlTransaction tx, Guid agent,
+        string scope, JsonObject snapshot, int page, CancellationToken ct)
+    {
+        if (!await AgentPolicyAssignments.FileActivityAvailableAsync(db,tx,ct)) return false;
+        await using var command = new NpgsqlCommand("select public.file_audit_scan_prefix458(@agent,@scope,@scan,@page,@observed)",db,tx);
+        command.Parameters.AddWithValue("agent",agent);
+        command.Parameters.AddWithValue("scope",scope);
+        command.Parameters.AddWithValue("scan",Guid.Parse(snapshot["scan_id"]!.GetValue<string>()));
+        command.Parameters.AddWithValue("page",page);
+        command.Parameters.AddWithValue("observed",Iso8601.ParseUtc(snapshot["observed_at_utc"]!.GetValue<string>()));
+        return await command.ExecuteScalarAsync(ct) is true;
     }
 
     private static bool DuplicateCheckFailure(JsonObject state, JsonObject receipt, Version? agentVersion, string observedAt)

@@ -106,6 +106,9 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
         bool retryRecorded = sameCommand && walks.Any(walk => walk.Value?["check_retry_version"]?.ToString() == agentVersion);
         bool retryCheck = action == "check" && sameCommand && !retryRecorded
             && (terminalVersion is not null ? terminalVersion != agentVersion : policy.FileAuditRetryVersion == agentVersion);
+        bool pagedApplyRetry = action == "apply" && policy.FileAuditRetryPagedApply;
+        bool retryApply = pagedApplyRetry && sameCommand && state["completed_at"] is not null
+            && !walks.Any(walk => walk.Value?["paged_apply_retried"]?.GetValue<bool>() == true);
         if (state["pending_report"] is JsonObject pending)
         {
             if (!NativeCheckFailed(pending) || sameCommand && !retryCheck)
@@ -119,7 +122,7 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
         if (!commands.ContainsKey(key) && commands.Count >= 4096) throw new AgentException("file_audit_command_limit");
         commands[key]=digest;
         if (sameCommand && terminalVersion == agentVersion) return new(Shared(), null);
-        if (!sameCommand || retryCheck || !retryRecorded && state["completed_at"] is not null && now - Iso8601.ParseUtc(state["completed_at"]!.ToString()) >= TimeSpan.FromDays(1))
+        if (!sameCommand || retryCheck || retryApply || !retryRecorded && state["completed_at"] is not null && now - Iso8601.ParseUtc(state["completed_at"]!.ToString()) >= TimeSpan.FromDays(1))
         { state["scan_command"]=key; state["walks"]=new JsonObject(); state["completed_at"]=null; }
         if (state["completed_at"] is not null) return new(Shared(),null);
         Save(state);
@@ -277,6 +280,9 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
         if (upgradeRetry)
             foreach (var walk in state["walks"]!.AsObject())
                 walk.Value!["check_retry_version"] = agentVersion;
+        if (pagedApplyRetry)
+            foreach (var walk in state["walks"]!.AsObject())
+                walk.Value!["paged_apply_retried"] = true;
         if (scopeIds.All(id => state["walks"]![id!.ToString()]?["done"]?.GetValue<bool>() == true)) state["completed_at"]=Iso8601.Format(now);
         Save(state); return new(auditReport,report);
     }

@@ -92,6 +92,22 @@ it("shows the server's agent upgrade requirement on Resources", async () => {
   expect(row.textContent).not.toContain(t("file-audit.screen.audit_unreadable"));
 });
 
+it.each([
+  ["coverage_incomplete", "file-audit.screen.inventory_incomplete"],
+  ["sacl_missing", "file-audit.screen.sacl_missing"],
+  ["policy_missing", "file-audit.screen.audit_policy_missing"],
+] as const)("names the audit check that prevented collection (%s)", async (reason, message) => {
+  mocks.data.mockImplementation(async (key, params) => ({ ...result(key, params), items: [{
+    id: "fixture-resource", share_name: "Fixture share", audit_receipt: {
+      action: "apply", observed_at: "2026-11-26T08:00:00Z", state: "partial", reason_code: reason,
+    },
+  }] }));
+  mount(declaration("file-audit.overview"));
+  const row = await screen.findByRole("row", { name: /Fixture share/ });
+  expect(row.textContent).toContain(t(message));
+  expect(row.textContent).not.toContain(t("file-audit.screen.no_batch"));
+});
+
 it("requests a check for the selected manageable resource and shows the fresh result", async () => {
   const target = { agent_id: "11111111-1111-4111-8111-111111111111", source_instance_id: "synthetic-source",
     collection_scope_id: "scope:files" };

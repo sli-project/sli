@@ -8010,6 +8010,7 @@ export const en: Record<MessageKey, string> = {
   "file-audit.screen.check_pending": "Waiting for the agent",
   "file-audit.screen.check_verified": "Check passed",
   "file-audit.screen.check_partial": "Check incomplete",
+  "file-audit.screen.inventory_incomplete": "Could not complete the share inventory",
   "file-audit.screen.check_request_failed": "Could not request the audit check.",
   "file-audit.screen.permission_change": "Permission change",
   "file-audit.screen.access_denied": "Access denied",

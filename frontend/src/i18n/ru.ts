@@ -8004,6 +8004,7 @@ export const ru = {
   "file-audit.screen.check_pending": "Ожидание ответа агента",
   "file-audit.screen.check_verified": "Проверка пройдена",
   "file-audit.screen.check_partial": "Проверка не завершена",
+  "file-audit.screen.inventory_incomplete": "Не удалось завершить проверку папок и файлов",
   "file-audit.screen.check_request_failed": "Не удалось запустить проверку аудита.",
   "file-audit.screen.permission_change": "Изменение прав",
   "file-audit.screen.access_denied": "Отказ в доступе",

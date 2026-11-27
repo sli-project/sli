@@ -65,6 +65,30 @@ public sealed class FileAuditReportTests
         public Task<NpgsqlConnection> OpenAsync(CancellationToken ct) => fixture.Pg.OpenAsync(ct, "adlog_user");
     }
 
+    internal static async Task CheckActivity(SqlPostgresFixture fixture, DateTimeOffset observed, CancellationToken ct)
+    {
+        var from = observed.AddMinutes(-1).UtcDateTime.ToString("O",CultureInfo.InvariantCulture);
+        var to = observed.AddMinutes(1).UtcDateTime.ToString("O",CultureInfo.InvariantCulture);
+        var filter = $"period=custom&from={Uri.EscapeDataString(from)}&to={Uri.EscapeDataString(to)}&source_kind=server";
+        var reader = new FileAuditReportReader(new SemanticDatabase(new PostgresConnections(fixture)));
+        foreach (string tab in new[] { "actions", "overview" })
+        {
+            string key = "file-audit." + tab;
+            await using var host = await ReportFixture.Start(Facts(tab),new ReportDefinitionRegistry().Get(key),nativeReader:reader);
+            using var response = await host.Client.GetAsync($"/api/v2/reports/{key}/data?{filter}",ct);
+            Assert.Equal(HttpStatusCode.OK,response.StatusCode);
+            var body = await ReportFixture.Body(response);
+            Assert.Equal("server_file_activity",body["coverage"]!["supported_collection_mode"]!.GetValue<string>());
+            if (tab == "actions")
+                Assert.Equal(113,body["filtered_count"]!.GetValue<int>());
+            else
+            {
+                var resource = Assert.Single(body["items"]!.AsArray())!;
+                Assert.NotNull(resource["audit_received_at"]);
+            }
+        }
+    }
+
     internal static async Task CheckNativePermissionChanges(SqlPostgresFixture fixture, NpgsqlConnection owner,
         Guid agentId, string sourceId, string rootPath, JsonObject nativeEvent, CancellationToken ct)
     {

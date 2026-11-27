@@ -30,11 +30,23 @@ public sealed class AgentClientControlService(IAgentControlAudit audit,TimeProvi
             throw new InvalidOperationException("agent_plugin_generation_unavailable");
         var result=AgentClientPolicy.CheckIn(agent,fileHook);
         // The management command runs while the server verifies coverage. Until then the agent cannot capture events.
-        if(agent["file_audit"]?["permissions_scope"] is not null
-            && AgentPolicyAssignments.FindCurrent(result["assigned_modules"]!.AsArray(),"sli.file-audit") is { } fileAssignment
-            && (!await AgentPolicyAssignments.FilePermissionsAvailableAsync(db,tx,ct)
-                || !await AgentPolicyAssignments.FilePermissionsAllowedAsync(db,tx,identity.Id,null,true,ct)))
-            fileAssignment["enabled"]=false;
+        if(agent["file_audit"] is JsonObject fileAudit
+            && fileAudit["permissions_scope"]?.ToString() is { } scope
+            && AgentPolicyAssignments.FindCurrent(result["assigned_modules"]!.AsArray(),"sli.file-audit") is { } fileAssignment)
+        {
+            bool verified = await AgentPolicyAssignments.FilePermissionsAvailableAsync(db,tx,ct)
+                && await AgentPolicyAssignments.FilePermissionsAllowedAsync(db,tx,identity.Id,null,true,ct);
+            if (!verified)
+            {
+                fileAssignment["enabled"]=false;
+                var receipt = fileAudit["scopes"]?[scope];
+                if (receipt?["state"]?.ToString() == "partial" && receipt["reason_code"]?.ToString() == "coverage_incomplete"
+                    && await AgentPolicyAssignments.FileActivityAvailableAsync(db,tx,ct))
+                    result["file_audit_retry_paged_apply"]=true;
+            }
+            else if (await AgentPolicyAssignments.FileActivityAvailableAsync(db,tx,ct))
+                result["file_audit_activity"]=true;
+        }
         await AgentPolicyAssignments.FilterAccountingCheckInAsync(db,tx,result,ct);
         if (AgentEnrollmentService.CollectionProfile(configuration) == "beta" &&
             await AgentEnrollmentService.NeedsDcIdentityAsync(db, tx, identity.Id, ct))

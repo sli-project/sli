@@ -76,7 +76,14 @@ public static class FileAuditInboxConsumer
             : await AgentPolicyAssignments.ModuleEnabledAsync(db,tx,envelope.ModuleId,ct);
         if(!enabled) throw new FileAuditPending("module_disabled");
         if(filePermissions && fileAdmission is null) throw new FileAuditPending("file_audit_plugin_unavailable");
-        if(filePermissions && !AgentFileAuditValidator.PermissionsOnly(body)) throw new FileAuditPending("agent_packet_attestation_invalid");
+        if (filePermissions && !AgentFileAuditValidator.PermissionsOnly(body))
+        {
+            if (!AgentFileAuditValidator.NativeEventsOnly(body)
+                || !await AgentPolicyAssignments.FileActivityAvailableAsync(db,tx,ct))
+                throw new FileAuditPending("agent_packet_attestation_invalid");
+            await ImportActivityAsync(db,tx,packet,envelope,config,rows,body["context"]?["object_kinds"] as JsonObject,ct);
+            return;
+        }
         // Keep the verified raw journal-clear receipt and inbox evidence without creating a file action.
         if(!config.Workstation && body["context"]?["read_error"]?.GetValue<string>()=="file_audit_journal_gap"
             && rows.Count==1 && rows[0]?["event_id"]?.GetValue<int>()==1102) return;
@@ -86,5 +93,78 @@ public static class FileAuditInboxConsumer
         write.Parameters.AddWithValue("packet",packet);
         write.Parameters.AddWithValue("rows",NpgsqlDbType.Jsonb,rows.ToJsonString());
         await write.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task ImportActivityAsync(NpgsqlConnection db, NpgsqlTransaction tx, Guid packet,
+        Envelope envelope, FileAuditPolicy policy, JsonArray rows, JsonObject? objectKinds, CancellationToken ct)
+    {
+        var agent = Guid.Parse(envelope.AgentId);
+        async Task<JsonObject?> Run(string sql, params (string Key, object Value)[] args)
+        {
+            await using var command = new NpgsqlCommand(sql, db, tx);
+            command.Parameters.AddWithValue("agent", agent);
+            command.Parameters.AddWithValue("packet", packet);
+            foreach (var (key, value) in args)
+                if (value is JsonNode json) command.Parameters.AddWithValue(key, NpgsqlDbType.Jsonb, json.ToJsonString());
+                else command.Parameters.AddWithValue(key, value);
+            return await command.ExecuteScalarAsync(ct) is string jsonText ? JsonNode.Parse(jsonText)!.AsObject() : null;
+        }
+        var observations = rows.OfType<JsonObject>().Select(row => FileAuditObservation.Build(row, policy,
+            envelope.AgentId, envelope.SourceInstanceId, envelope.Generation, envelope.PolicyRevision,
+            $"agent-file-audit-event:{packet:D}:{row["record_id"]}")).ToArray();
+        var actions = new JsonArray();
+        var withinPacket = new JsonArray();
+        foreach (var observationsInHour in observations.GroupBy(row => AgentAdDcUtc.Parse(Text(row["observed_at"])).UtcTicks / TimeSpan.TicksPerHour))
+        {
+            var batch = observationsInHour.ToArray();
+            var first = batch.Min(row => AgentAdDcUtc.Parse(Text(row["observed_at"])));
+            var last = batch.Max(row => AgentAdDcUtc.Parse(Text(row["observed_at"])));
+            var context = (await Run("""
+                select sli_plugin_file_audit.collection_context_for_packet(@agent,@packet,@start,@end,@keys)::text
+                """, ("start", first.AddMinutes(-5)), ("end", last),
+                ("keys", new JsonArray(batch.Select(row => row.DeepClone()).ToArray()))))!;
+            var prior = context["complete"]!.GetValue<bool>() ? context["observations"]!.AsArray() : new JsonArray();
+            foreach (var item in withinPacket) prior.Add(item!.DeepClone());
+            foreach (var observation in batch)
+            {
+                var kind = objectKinds?[observation["record_id"]!.ToJsonString()]?.GetValue<string>() ?? "unknown";
+                foreach (var action in FileAuditCorrelation.ProjectActions(observation,prior,kind))
+                    actions.Add(action!.DeepClone());
+                prior.Add(observation.DeepClone());
+                withinPacket.Add(observation.DeepClone());
+            }
+        }
+
+        await Run("select sli_plugin_file_audit.store_collection(@agent,@packet,@projection)",
+            ("projection", new JsonObject { ["observations"] = new JsonArray(observations), ["actions"] = actions }));
+        var actionRows = actions.OfType<JsonObject>().ToArray();
+        var ruleResults = new Dictionary<string,JsonNode>(StringComparer.Ordinal);
+        var seconds = policy.Number("mass_operation_seconds");
+        foreach (var hour in actionRows.GroupBy(row => AgentAdDcUtc.Parse(Text(row["observed_at"])).UtcTicks / TimeSpan.TicksPerHour))
+        {
+            var first = hour.Min(row => AgentAdDcUtc.Parse(Text(row["observed_at"])));
+            var last = hour.Max(row => AgentAdDcUtc.Parse(Text(row["observed_at"])));
+            var context = (await Run("select sli_plugin_file_audit.rule_context(@agent,@packet,@start,@end)::text",
+                ("start", first.AddSeconds(-seconds)), ("end", last)))!;
+            if (!context["complete"]!.GetValue<bool>()) continue;
+            var currentIds = hour.Select(row => Text(row["action_id"])).ToHashSet(StringComparer.Ordinal);
+            foreach (var result in FileAuditActivityRules.Evaluate(context["actions"]!.AsArray(), policy.Value,
+                envelope.AgentId, envelope.SourceInstanceId, context["snapshots"]!.AsArray(), null))
+                if (result!["action_ids"]!.AsArray().Any(id => currentIds.Contains(Text(id))))
+                    ruleResults.TryAdd(Text(result["result_id"]),result.DeepClone());
+        }
+        if (ruleResults.Count != 0)
+            await Run("select sli_plugin_file_audit.publish_rules(@agent,@packet,null,@results)",
+                ("results", new JsonArray(ruleResults.Values.ToArray())));
+
+        var latest = actionRows.MaxBy(row => AgentAdDcUtc.Parse(Text(row["observed_at"])));
+        if (latest is not null)
+            await Run("""
+                update public.sli_agents a set file_audit=jsonb_set(a.file_audit,'{last_event}',jsonb_build_object(
+                    'collection_scope_id',@scope,'observed_at',@observed,'received_at',i.received_at,'packet_id',i.packet_id))
+                from public.sli_agent_packet_inbox i where a.id=@agent and i.packet_id=@packet
+                  and (a.file_audit#>>'{last_event,observed_at}' is null
+                       or (a.file_audit#>>'{last_event,observed_at}')::timestamptz < @observed)
+                """, ("scope", Text(latest["collection_scope_id"])), ("observed", AgentAdDcUtc.Parse(Text(latest["observed_at"]))));
     }
 }

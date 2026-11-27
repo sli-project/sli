@@ -444,6 +444,65 @@ public sealed class FileAuditManagerTests : IDisposable
     }
 
     [Fact]
+    public void OldCompletedApplyGetsOneRescanWhenTheServerRequestsIt()
+    {
+        var api = new FakeFileApi(_dir);
+        var manager = new FileAuditManager(_dir,_files,api);
+        var policy = Policy(Request());
+        var original = manager.Reconcile(policy,new FakeAudit(),Helpers.Now).Report!;
+        manager.Acknowledge(original);
+        Assert.Null(manager.Reconcile(policy,new FakeAudit(),Helpers.Now.AddSeconds(1)).Report);
+
+        var updated = policy with { FileAuditRetryPagedApply = true };
+        var retry = manager.Reconcile(updated,new FakeAudit(),Helpers.Now.AddSeconds(2)).Report!;
+        Assert.Equal("verified",retry["scopes"]![0]!["state"]!.GetValue<string>());
+        Assert.NotEqual(original["snapshots"]![0]!["scan_id"]!.ToString(),retry["snapshots"]![0]!["scan_id"]!.ToString());
+        manager.Acknowledge(retry);
+        var restarted = new FileAuditManager(_dir,_files,api);
+        Assert.Null(restarted.Reconcile(updated,new FakeAudit(),Helpers.Now.AddSeconds(3)).Report);
+        Assert.Equal(1,api.Writes);
+    }
+
+    [Fact]
+    public void PagedUnicodeApplyAndCheckVerifyWithExtraAuditPolicyBits()
+    {
+        const string root = @"C:\synthetic\Обмен";
+        var api = new FakeFileApi(_dir) {
+            ChildNames = Enumerable.Range(0, 140).Select(index => $"item-{index}.txt").ToArray(),
+            ChildSacl = "S:exact-inheritance"
+        };
+        api.Object.Row["sacl"] = "S:exact-inheritance";
+        var config = Config();
+        config["roots"]![0]!["path"] = root;
+        config["max_bytes"] = 12 * 1024;
+        var manager = new FileAuditManager(_dir, _files, api);
+        foreach (string action in new[] { "apply", "check" })
+        {
+            var policy = Policy(Request(action, action, (JsonObject)config.DeepClone()));
+            bool more;
+            int count = 0;
+            int page = 0;
+            do
+            {
+                var report = manager.Reconcile(policy, new FakeAudit(), Helpers.Now.AddSeconds(page)).Report!;
+                var snapshot = report["snapshots"]![0]!;
+                var scope = report["scopes"]![0]!;
+                var objects = snapshot["objects"]!.AsArray();
+                more = snapshot["has_more"]!.GetValue<bool>();
+                Assert.Equal(page == 0, objects.Any(item => item!["path"]!.ToString() == root));
+                Assert.Equal(more ? "partial" : "verified", scope["state"]!.ToString());
+                Assert.Equal(3, scope["actual_masks"]!["0cce922f-69ae-11d9-bed3-505054503030"]!.GetValue<int>());
+                count += objects.Count;
+                page++;
+                manager.Acknowledge(report);
+            } while (more);
+            Assert.True(page > 1);
+            Assert.Equal(141, count);
+        }
+        Assert.Equal(0, api.Writes);
+    }
+
+    [Fact]
     public void PagedInventoryKeepsEarlierMissingSaclEvidenceAcrossRestartAndAck()
     {
         var api=new FakeFileApi(_dir) { ChildNames=["child"],ChildSacl="S:exact-inheritance" }; api.Object.Row["dacl"]=new string('x',500);

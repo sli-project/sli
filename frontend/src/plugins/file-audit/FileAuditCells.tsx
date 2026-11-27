@@ -135,12 +135,13 @@ function FileAuditReceipt({ row }: { row: FileAuditRow }) {
     check_agent_requirement?: { agent_version: string; minimum_version: string } } | undefined;
   if (row.check_pending === true) return <>{t("file-audit.screen.check_pending")}</>;
   const checkResult = row.check_receipt != null || receipt?.action === "check";
-  const failure = receipt?.state === "failed" || receipt?.state === "blocked";
+  const failure = receipt?.state === "failed" || receipt?.state === "blocked" || receipt?.state === "partial";
   if (receipt?.observed_at && (checkResult || failure &&
       Date.parse(receipt.observed_at) >= (Date.parse(String(row.audit_received_at)) || 0))) {
     const reason = receipt.reason_code === "native_unavailable" ? "file-audit.screen.audit_unreadable"
       : receipt.reason_code === "sacl_missing" ? "file-audit.screen.sacl_missing"
       : receipt.reason_code === "policy_missing" ? "file-audit.screen.audit_policy_missing"
+      : receipt.reason_code === "coverage_incomplete" ? "file-audit.screen.inventory_incomplete"
       : receipt.state === "verified" ? "file-audit.screen.check_verified"
       : receipt.state === "partial" ? "file-audit.screen.check_partial" : "file-audit.screen.audit_failed";
     const requirement = receipt.check_agent_requirement;

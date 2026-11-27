@@ -37,10 +37,16 @@ public sealed partial class FileAuditReportReader
                 where receipt.agent_id=(root->>'agent_id')::uuid and receipt.module_id='sli.file-audit'
                   and receipt.envelope->>'source_instance_id'=root->>'source_instance_id'
                   and inbox.imported_at is not null
-                  and exists(select 1 from jsonb_array_elements(inbox.event_rows) as e(observation)
+                  and (exists(select 1 from jsonb_array_elements(inbox.event_rows) as e(observation)
                       where observation->>'collection_scope_id'=root->>'collection_scope_id'
                         and (lower(observation->>'path')=lower(root->>'path')
                             or starts_with(lower(observation->>'path'),rtrim(lower(root->>'path'),chr(92))||chr(92))))
+                    or exists(select 1 from public.sli_agents a
+                        cross join lateral jsonb_array_elements(a.file_audit#>'{request,config,roots}') c
+                        where a.id=receipt.agent_id and a.file_audit#>>'{last_event,packet_id}'=inbox.packet_id::text
+                          and a.file_audit#>>'{last_event,collection_scope_id}'=root->>'collection_scope_id'
+                          and c->>'collection_scope_id'=root->>'collection_scope_id'
+                          and c->>'path'=root->>'path' and c->>'share_name'=root->>'share_name'))
                 order by receipt.sequence desc limit 1
             ) accepted on true
             left join lateral (

@@ -49,11 +49,16 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
     public async Task<JsonObject> QueryAsync(ReportQueryContext context, CancellationToken ct)
     {
         string tab = context.Definition.Key["file-audit.".Length..]; if (!Tabs.Contains(tab)) throw new ReportRequestException("report_not_found", 404);
-        var after = Cursor(context.Paging.Cursor); JsonArray roots; JsonObject data;
+        var after = Cursor(context.Paging.Cursor); JsonArray roots; JsonObject data; bool fileActivity;
         try
         {
             await using var session = await database.OpenAsync(false, ct);
-            var discovered = Array((await session.QueryAsync("select sli_plugin_file_audit.report_roots() as roots", ct))[0]!["roots"]);
+            var source = (await session.QueryAsync("""
+                select sli_plugin_file_audit.report_roots() as roots,
+                    to_regprocedure('public.file_audit_scan_prefix458(uuid,text,uuid,integer,timestamptz)') is not null as file_activity
+                """, ct))[0]!;
+            var discovered = Array(source["roots"]);
+            fileActivity = source["file_activity"]?.GetValue<bool>() == true;
             if (discovered.Count > 1000) return ReportResult.Create(context.Definition.Key, "partial", coverage: new() { ["state"] = "unknown", ["reason"] = "result_truncated" }, limitations: [new JsonObject { ["code"] = "root_limit", ["text"] = "Область превышает 1000 шар. Уточните назначенную область доступа." }]);
             roots = new JsonArray(discovered.Where(r => Admitted(context, r!) && (context.Params["source_kind"] is null || (Text(r, "source_kind") ?? "server") == context.Params.Text("source_kind"))).Select(r => r!.DeepClone()).ToArray());
             var selected = Array(context.Params["share"]);
@@ -100,7 +105,7 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
         catch (NpgsqlException) { return Unreadable(context); }
         catch (Exception e) when (e is LifecycleBlocked or HttpRequestException or IOException or System.Text.Json.JsonException or Sli.Server.Storage.EventReports.EventReadConfigurationException)
         { return ReportResult.Create(context.Definition.Key,"error",coverage: new() { ["state"] = "unavailable", ["reason"] = "file_audit_history_unavailable" }, limitations: [new JsonObject { ["code"] = "file_audit_history_unavailable", ["text"] = "История доказательств аудита файлов недоступна. Повторите запрос после восстановления хранилища." }]); }
-        return Present(context, roots, data, tab);
+        return Present(context, roots, data, tab, fileActivity);
     }
     internal async Task RestoreEvidenceAsync(ReportQueryContext context, JsonArray roots, JsonArray items, CancellationToken ct)
     {
@@ -143,7 +148,7 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
         foreach (var row in items.OfType<JsonObject>()) row["ransom"] = Text(row, "rule_code") is not ("file-audit.mass-write" or "file-audit.mass-delete") ? new JsonObject { ["state"] = "not_applicable" }
             : !allowed.Any(r => ShareKey(r!) == ShareKey(row)) ? new JsonObject { ["state"] = "denied" } : decisions[Text(row, "id")!]?.DeepClone() ?? new JsonObject { ["state"] = "not_evaluated" };
     }
-    internal static JsonObject Present(ReportQueryContext context, JsonArray roots, JsonObject data, string tab)
+    internal static JsonObject Present(ReportQueryContext context, JsonArray roots, JsonObject data, string tab, bool fileActivity = false)
     {
         var items = Array(data["items"]).DeepClone().AsArray();
         bool rootObservationFilter = tab == "overview" && (context.Params["employee"] is not null || context.Params["operation"] is not null);
@@ -167,11 +172,11 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
         {
             // This describes the supported server collector, not a live-agent
             // or completeness claim. Older activity remains readable as evidence.
-            coverage["supported_collection_mode"] = "server_permissions_only";
+            coverage["supported_collection_mode"] = fileActivity ? "server_file_activity" : "server_permissions_only";
             coverage["activity_scope"] = "retained_observations";
             if (items.Count == 0)
-                coverage["reason"] = tab is "mass-operations" or "access-denials" or "out-of-hours"
-                    || tab == "actions" && context.Params["operation"] is not null && context.Params.Text("operation") != "permissions"
+                coverage["reason"] = tab == "out-of-hours" || !fileActivity && (tab is "mass-operations" or "access-denials"
+                    || tab == "actions" && context.Params["operation"] is not null && context.Params.Text("operation") != "permissions")
                     ? "full_activity_not_collected" : "no_saved_observations";
         }
         if (tab is "overview" or "audit-state" or "permissions" && items.Count > 0)

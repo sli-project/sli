@@ -14,6 +14,7 @@ using Sli.Server.Agents.Ingress;
 using Sli.Server.Access;
 using Sli.Server.Auth;
 using Sli.Server.Auth.Lifecycle.Security;
+using Sli.Server.Semantic;
 using Sli.Server.Tests.Reporting;
 using Xunit;
 using EventXml = Sli.Agent.Core.EventXml;
@@ -458,6 +459,173 @@ public class FileAuditConsumerDatabaseTests
         Assert.Equal(0, await Number(owner, "select count(*) from acquisition_source_instances where source_kind='sli.file-audit.server'", ct));
         Assert.Equal(1, await Number(owner, "select count(*) from sli_file_audit_smb_catalog where request_id is not null", ct));
         Assert.Equal(2, await Number(owner, "select count(*) from sli_plugin_file_audit.access_snapshots where completeness='partial'", ct));
+    }
+
+    [Fact]
+    public async Task Paged_unicode_apply_enables_file_activity_and_publishes_mass_write()
+    {
+        const string root = @"C:\Files\Обмен";
+        const string commandId = "paged-unicode-apply";
+        const string source = "files.example.test";
+        const string sid = "S-1-5-21-100000001-200000002-300000003-1001";
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct,throughVersion:458);
+        await using var owner = await fixture.Pg.OpenAsync(ct);
+        await Register(owner, ct, root);
+        await PostCollectionPostgres.Sql(owner, "update sli_agents set collection_policy=jsonb_set(collection_policy,'{manage_windows_audit}','true')", ct);
+        var (_, _, policy) = AgentFileAuditValidatorTests.ActionPacket();
+        policy.Roots[0]!["path"] = root;
+        var now = Iso8601.Truncate(DateTimeOffset.UtcNow);
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var cert = new CertificateRequest("CN=example.test",key,HashAlgorithmName.SHA256).CreateSelfSigned(now.AddDays(-1),now.AddDays(1));
+        var signer = new EcdsaPacketSigner(key);
+        var host = AgentFileAuditValidatorTests.ActionHost;
+        var identity = new AgentIdentity(Agent, host, new string('a',64), "active");
+        var client = new AgentClientControlService(new AgentControlAudit(), new Clock(now));
+        var service = new AgentPacketService(new Clock(now),new AgentInboxLimits(4096,268435456,32768,2147483648,65536,4294967296,17179869184),
+            new AgentIngressDiagnostics(fixture.Pg.Root,NullLogger<AgentIngressDiagnostics>.Instance,new Clock(now)));
+        var ingest = new FileAuditIngestService(null!);
+        await using var app = new NpgsqlConnection(fixture.Dsn("adlog_user"));
+        await app.OpenAsync(ct);
+        await using (var tx = await app.BeginTransactionAsync(ct))
+        {
+            var access = new CapabilityDecisionSet(true,new HashSet<string>(),new HashSet<string>(),[],new Dictionary<string,System.Text.Json.JsonElement>());
+            await new FileAuditControlService(new AgentControlAudit()).Enqueue(app, tx, new JsonObject
+            {
+                ["agent_id"] = Agent.ToString(), ["expected_revision"] = 1, ["config"] = policy.Value.DeepClone(),
+                ["enabled"] = true, ["activate_collection"] = true,
+                ["command"] = new JsonObject { ["contract_id"] = "sli.file-audit.audit-command.v1", ["command_id"] = commandId,
+                    ["action"] = "apply", ["policy_revision"] = "2", ["collection_scope_ids"] = new JsonArray("scope:files") }
+            }, new Principal("session",1,"admin"), access, ct);
+            await tx.CommitAsync(ct);
+        }
+
+        string scan = Guid.NewGuid().ToString();
+        string PathOf(int index) => $"{root}\\item-{index}.txt";
+        JsonObject Page(int page, string scanId, int seconds)
+        {
+            var report = ReportForRoot(policy,"directory",now.AddSeconds(seconds),commandId);
+            var snapshot = report["snapshots"]![0]!.AsObject();
+            snapshot["share"]!["path"] = root;
+            snapshot["scan_id"] = scanId;
+            snapshot["page_number"] = page;
+            snapshot["completeness"] = "partial";
+            snapshot["has_more"] = page == 0;
+            var objects = snapshot["objects"]!.AsArray();
+            var template = objects[0]!.AsObject();
+            template["path"] = root;
+            var file = template.DeepClone().AsObject();
+            file["object_type"] = "file";
+            if (page != 0) objects.Clear();
+            foreach (int index in Enumerable.Range(page * 70, 70))
+            {
+                var item = file.DeepClone();
+                item["path"] = PathOf(index);
+                item["object_id"] = $"fixture-{index}";
+                objects.Add(item);
+            }
+            snapshot.Remove("snapshot_sha256");
+            snapshot.Remove("snapshot_id");
+            string digest = Packets.Digest(snapshot);
+            snapshot["snapshot_sha256"] = digest;
+            snapshot["snapshot_id"] = AuthAudit.Uuid5(commandId + digest).ToString();
+            var scope = report["scopes"]![0]!;
+            scope["actual_masks"]!["0cce922f-69ae-11d9-bed3-505054503030"] = 3;
+            if (page == 0) { scope["state"] = "partial"; scope["reason_code"] = "coverage_incomplete"; }
+            return report;
+        }
+        foreach (var (report, enabled) in new[] { (Page(0,scan,-8),false), (Page(1,Guid.NewGuid().ToString(),-7),false), (Page(1,scan,-6),true) })
+        {
+            await using var tx = await app.BeginTransactionAsync(ct);
+            Assert.Equal("accepted", (await ingest.Ingest(app,tx,identity,report,ct,()=>new MemoryStream()))["status"]?.ToString());
+            var assignment = await client.CheckInAsync(app,tx,identity,ct);
+            Assert.Equal(enabled, AgentPolicyAssignments.FindCurrent(assignment["assigned_modules"]!.AsArray(), "sli.file-audit") is not null);
+            Assert.Equal(enabled, assignment["file_audit_activity"]?.GetValue<bool>() == true);
+            Assert.Equal(!enabled, assignment["file_audit_retry_paged_apply"]?.GetValue<bool>() == true);
+            await tx.CommitAsync(ct);
+        }
+
+        PacketRecord Row(int record, int eventId, string fields, bool failure = false)
+        {
+            string xml = $$"""
+                <Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event"><System>
+                <Provider Name="{{FileAuditPolicy.Provider}}"/><EventID>{{eventId}}</EventID><Keywords>{{(failure ? "0x8010000000000000" : "0x8020000000000000")}}</Keywords>
+                <EventRecordID>{{record}}</EventRecordID><TimeCreated SystemTime="{{now.UtcDateTime:O}}"/><Channel>Security</Channel></System>
+                <EventData><Data Name="SubjectUserSid">{{sid}}</Data><Data Name="SubjectLogonId">0x12</Data>
+                <Data Name="ProcessId">0x10</Data><Data Name="HandleId">0x{{(eventId == 4660 ? 110 : record):x}}</Data>{{fields}}</EventData></Event>
+                """;
+            return new PacketRecord("event_xml", record, EventXml.Parse(xml,source,"localhost","Security"));
+        }
+        var rows = Enumerable.Range(0,110).Select(index => Row(index+1,4663,
+            $"<Data Name=\"ObjectName\">{(index < 70 ? PathOf(index) : $@"{root}\new-{index}.txt")}</Data><Data Name=\"ObjectType\">File</Data><Data Name=\"AccessMask\">0x2</Data>")).ToList();
+        rows.Add(Row(111,4660,""));
+        rows.Add(Row(112,5145,$"<Data Name=\"ShareLocalPath\">{root}</Data><Data Name=\"RelativeTargetName\">item-0.txt</Data>", failure:true));
+        rows.Add(Row(113,4670,$"<Data Name=\"ObjectName\">{PathOf(0)}</Data><Data Name=\"ObjectType\">File</Data>"));
+        Cursor cursor = Cursor.Start("bookmark");
+        long? previous = null;
+        long sequence = 0;
+        foreach (var batch in rows.Chunk(25))
+        {
+            long last = (long)batch[^1].RecordId!.Value;
+            var next = new Cursor("bookmark",CanonicalJson.Serialize(new JsonObject { ["record_id"] = last, ["bookmark"] = $"fixture-{last}", ["generation"] = host.ToString() }));
+            var context = new JsonObject { ["policy_revision"] = "2", ["filtered_count"] = 0, ["lost_count"] = 0, ["read_error"] = null };
+            // The last 40 files were created after the inventory. The signed
+            // readback distinguishes them from directory writes.
+            var kinds = new JsonObject(batch.Where(row => row.RecordId > 70 && row.RecordId <= 110)
+                .Select(row => KeyValuePair.Create(row.RecordId!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture), (JsonNode?)JsonValue.Create("file"))));
+            if (kinds.Count != 0) context["object_kinds"] = kinds;
+            var payload = CollectionPacket.Make(source,"Security",host.ToString(),new JsonObject { ["after_record_id"] = previous, ["last_record_id"] = last },
+                batch,"not_proven",context,now);
+            var sample = new Sample("sli.file-audit",host.ToString(),"Security",host.ToString(),cursor,next,payload,
+                PolicyRevision:"2",ContinuityState:"not_proven",FilteredCount:0,LostCount:0);
+            await using var tx = await app.BeginTransactionAsync(ct);
+            var receipt = await service.ReceiveAsync(app,tx,identity,cert,Packets.Make(signer,Agent.ToString(),++sequence,sample,now).ToJson(),ct);
+            Assert.True(receipt["status"]?.ToString() == "committed", receipt["error_code"]?.ToString());
+            var imported = await AgentWorkstationInboxConsumer.ProcessNextAsync(app,tx,null,ct);
+            Assert.True(imported.Imported, imported.PendingReason);
+            await tx.CommitAsync(ct);
+            cursor = next;
+            previous = last;
+        }
+        Assert.Equal(sequence, await Number(owner,"select count(*) from sli_agent_packet_inbox where imported_at is not null and envelope->>'module_id'='sli.file-audit'",ct));
+        Assert.Equal(4, await Number(owner,"select count(distinct event_id) from sli_plugin_file_audit.observations where event_id in (4663,4660,5145,4670)",ct));
+        Assert.Equal(110, await Number(owner,"select count(*) from sli_plugin_file_audit.actions where operation='write'",ct));
+        Assert.Equal(3, await Number(owner,"select count(*) from sli_plugin_file_audit.actions where operation in ('delete','permissions') or outcome='failure'",ct));
+        Assert.Equal(1, await Number(owner,"""
+            select count(*) from sli_plugin_file_audit.rule_results where rule_code='file-audit.mass-write'
+              and result#>>'{details,distinct_files}'='110' and result#>>'{details,threshold}'='100'
+              and result#>>'{details,window_seconds}'='300' and finding_id is not null
+            """,ct));
+        await FileAuditReportTests.CheckActivity(fixture,now,ct);
+        await using (var worker = new NpgsqlConnection(fixture.Dsn("sli_semantic_login")))
+        {
+            await worker.OpenAsync(ct);
+            await PostCollectionPostgres.Sql(worker,"set role adlog_semantic_worker",ct);
+            await using var tx = await worker.BeginTransactionAsync(ct);
+            var diagnostics = new DetectionDiagnostics();
+            var session = new SemanticSession(worker,tx,diagnostics:diagnostics);
+            var sources = await session.QueryAsync("""
+                select source from public.default_detection_sources()
+                where source#>>'{scope,plugin_id}'='sli.file-audit'
+                """,ct);
+            var sourceBinding = Assert.Single(sources)!["source"]!;
+            Assert.Equal("ready",sourceBinding["ransom_policy"]?["state"]?.GetValue<string>());
+            var detection = await SemanticProduction.ManagedRansom(session,sourceBinding,now,ct,diagnostics);
+            var failures = new List<string>();
+            diagnostics.Write("file_ransom",failures.Add);
+            Assert.True(detection.Failed == 0,string.Join(Environment.NewLine,failures));
+            Assert.True(detection.Jobs > 0);
+            await tx.CommitAsync(ct);
+        }
+        Assert.Equal(1, await Number(owner,"select count(*) from semantic_file_ransom_episodes",ct));
+
+        // The preceding schema accepts the migration and rollback preserves
+        // the imported projection and its evidence.
+        await fixture.RollbackAfterAsync(457,ct);
+        await using (var tx = await app.BeginTransactionAsync(ct))
+            Assert.False(await AgentPolicyAssignments.FileActivityAvailableAsync(app,tx,ct));
+        Assert.Equal(113, await Number(owner,"select count(*) from sli_plugin_file_audit.actions",ct));
     }
 
     [Fact]
