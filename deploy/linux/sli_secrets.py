@@ -27,14 +27,11 @@ from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 # native installer. Keep those snapshots on their original dependency set.
 _STANDALONE_UPDATER = not Path(__file__).with_name("native_install.py").is_file()
 if _STANDALONE_UPDATER:
-    from server.sli.agents.ca import IssuingCA
-    from server.sli.core.ad_credential_secrets import (
-        MASTER_KEY_REF, MASTER_KEY_SETTING, MASTER_KEY_SPEC, decode_master_key,
-    )
-    from server.sli.core.notification_secrets import (
-        NOTIFICATION_DELIVERY_SERVICE, NOTIFICATION_SECRET_SETTINGS, validate_notification_secret,
-    )
-    from server.sli.release_package import PackageError
+    from deploy.linux.updater_component import legacy_secret_dependencies
+
+    (IssuingCA, MASTER_KEY_REF, MASTER_KEY_SETTING, MASTER_KEY_SPEC, decode_master_key,
+     NOTIFICATION_DELIVERY_SERVICE, NOTIFICATION_SECRET_SETTINGS, validate_notification_secret,
+     PackageError) = legacy_secret_dependencies()
 else:
     from deploy.linux.release_package import PackageError
     from deploy.linux.sli_core.ad_credential_secrets import (

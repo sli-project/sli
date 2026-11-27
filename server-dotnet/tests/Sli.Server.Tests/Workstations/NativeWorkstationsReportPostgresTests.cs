@@ -27,9 +27,11 @@ public sealed class NativeWorkstationsReportPostgresTests
     {
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new SqlPostgresFixture();
-        int predecessor = MigrationDirectory.Read().Where(item => item.Version < 436).Max(item => item.Version);
+        const int version = 448;
+        var migrations = MigrationDirectory.Read();
+        int predecessor = migrations.Last(item => item.Version < version).Version;
         await fixture.StartAsync(ct, throughVersion: predecessor);
-        string migration = MigrationDirectory.Read(436).Single(item => item.Version == 436).Path;
+        string migration = migrations.Single(item => item.Version == version).Path;
         await fixture.Pg.ApplyFileAsync(migration, null, ct);
         var slot = DateTimeOffset.Parse("2026-11-25T11:00:00Z");
         var observed = slot.AddMinutes(5);

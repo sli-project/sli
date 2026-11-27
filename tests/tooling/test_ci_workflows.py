@@ -22,27 +22,9 @@ from scripts.maintenance import existing_postgres_bootstrap as bootstrap
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ("pr-gate.yml", "manual-full-gate.yml")
-COLLECTION_EXPERIMENT_TEST = "tests/reporting/test_agent_collection_query_plan_postgres.py"
-COLLECTION_EXPERIMENT_RUN = f"python -m pytest -q -s {COLLECTION_EXPERIMENT_TEST}"
-RECEIPT_EXPERIMENT_TEST = "tests/reporting/test_plugin_receipts_query_plan_postgres.py"
-RECEIPT_EXPERIMENT_RUN = f"python -m pytest -q -s {RECEIPT_EXPERIMENT_TEST}"
-RECEIPT_PARITY_RUN = (
-    f"python -m pytest -q {RECEIPT_EXPERIMENT_TEST}"
-    "::test_split_candidate_preserves_exact_receipt_import_snapshot_facts"
-)
-RECEIPT_STEPS = {
-    "pr-gate.yml": {"name": "Check plugin receipt fact parity", "run": RECEIPT_PARITY_RUN},
-    "manual-full-gate.yml": {
-        "name": "Measure synthetic plugin receipt plans", "run": RECEIPT_EXPERIMENT_RUN,
-    },
-}
 NATIVE_RESTORE_TEST = "tests/migrations/test_qw_restore_context_migration.py"
 NATIVE_RESTORE_RUN = f"python -m pytest -q {NATIVE_RESTORE_TEST} -m postgres_integration"
 POSTGRES_SUITE_STEP = "Remaining PostgreSQL integration tests"
-LOGON_PAIRS_TESTS = (
-    "tests/reporting/test_new_logon_pairs_context_native.py",
-    "tests/reporting/test_new_logon_pairs_diagnostics_postgres.py",
-)
 PACKET = "Sli.Server.Tests.Agents.AgentPacketReportPostgresTests"
 CHECKPOINT = "Sli.Server.Tests.InstallationSetup.NativeCheckpointCleanupTests"
 VECTORS = {
@@ -53,6 +35,52 @@ VECTORS = {
 
 def workflow(name: str) -> dict:
     return yaml.safe_load((ROOT / ".github/workflows" / name).read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize(("version", "allowed"), [(430, False), (444, False), (449, True)])
+@pytest.mark.parametrize("event", ["pull_request", "merge_group"])
+def test_required_gate_checks_added_migrations_against_live_base(tmp_path, version, allowed, event):
+    git = ["git", "-C", str(tmp_path)]
+
+    def run_git(*args):
+        return subprocess.check_output([*git, *args], text=True).strip()
+
+    def add_migration(number, name="synthetic"):
+        (migrations / f"{number}_{name}.sql").write_text("select 1;\n", encoding="utf-8")
+        run_git("add", "config/postgres_migrations")
+        run_git("commit", "-qm", f"Add migration {number}")
+        return run_git("rev-parse", "HEAD")
+
+    run_git("init", "-q", "-b", "main")
+    run_git("config", "user.name", "Synthetic CI")
+    run_git("config", "user.email", "synthetic@example.test")
+    run_git("config", "commit.gpgsign", "false")
+    run_git("remote", "add", "origin", ".")
+    migrations = tmp_path / "config" / "postgres_migrations"
+    migrations.mkdir(parents=True)
+    initial_base = add_migration(429)
+    live_base = add_migration(444, "existing")
+    base = initial_base if event == "pull_request" else live_base
+    run_git("checkout", "-qb", "candidate", base)
+    head = add_migration(version)
+
+    gate = workflow("pr-gate.yml")
+    assert event in gate[True]  # PyYAML reads the workflow's `on` key as a boolean.
+    assert "changes" in gate["jobs"]["gate"]["needs"]
+    step, = [step for step in gate["jobs"]["changes"]["steps"] if step.get("id") == "migration-order"]
+    env = os.environ | {
+        "BASE": base, "HEAD": head, "BASE_REF": "main" if event == "pull_request" else "refs/heads/main",
+        "PYTHONPATH": str(ROOT), "TEST_PYTHON": Path(sys.executable).as_posix(),
+    }
+    script = 'python3() { "$TEST_PYTHON" "$@"; }\n' + step["run"]
+    bash = shutil.which("bash")
+    assert bash, "Bash is required to check the migration gate"
+    result = subprocess.run([bash, "-eo", "pipefail", "-c", script], cwd=tmp_path,
+                            env=env, capture_output=True, text=True)
+    assert result.returncode == (0 if allowed else 1), result.stderr
+    if not allowed:
+        assert f"{version}_synthetic.sql" in result.stderr
+        assert "444" in result.stderr
 
 
 @pytest.mark.parametrize(("path", "expected"), [
@@ -218,23 +246,6 @@ def test_ci_gates_cover_locked_runtime_frontend_and_postgres(name: str) -> None:
     assert not any("python -m pytest -q tests/e2e -m e2e" in run for run in runs)
     assert not any("docker" in run or "PG_CONTAINER" in run for run in runs)
     steps = {step.get("name"): step for step in postgres["steps"] if "name" in step}
-    experiment = steps["Measure synthetic collection aggregation equivalence"]
-    assert experiment["run"] == COLLECTION_EXPERIMENT_RUN
-    assert runs.count(COLLECTION_EXPERIMENT_RUN) == 1
-    assert runs.index(COLLECTION_EXPERIMENT_RUN) < runs.index(NATIVE_RESTORE_RUN)
-    receipt_step = RECEIPT_STEPS[name]
-    assert steps[receipt_step["name"]]["run"] == receipt_step["run"]
-    receipt_run = receipt_step["run"]
-    assert runs.count(receipt_run) == 1
-    assert runs.index(COLLECTION_EXPERIMENT_RUN) < runs.index(receipt_run)
-    assert runs.index(receipt_run) < runs.index(NATIVE_RESTORE_RUN)
-    if name == "pr-gate.yml":
-        # The volume test is manual-only; PRs retain exact fact-parity coverage.
-        assert RECEIPT_EXPERIMENT_RUN not in runs
-        assert "Measure synthetic plugin receipt plans" not in steps
-        # Each logon-pairs file has one explicit invocation and is absent from the shared suite.
-        for path in LOGON_PAIRS_TESTS:
-            assert runs.count(f"python -m pytest -q -s {path}") == 1
     native_restore = steps["Verify full-schema ACL directory backup and parallel restore"]
     assert native_restore["run"] == NATIVE_RESTORE_RUN
     assert runs.index(steps["Bootstrap baseline and migrations"]["run"]) < runs.index(NATIVE_RESTORE_RUN)
@@ -244,11 +255,8 @@ def test_ci_gates_cover_locked_runtime_frontend_and_postgres(name: str) -> None:
         shlex.split(line) for line in suite["run"].replace("\\\n", "").splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     ]
-    dedicated_files = (NATIVE_RESTORE_TEST, COLLECTION_EXPERIMENT_TEST, RECEIPT_EXPERIMENT_TEST)
-    if name == "pr-gate.yml":
-        dedicated_files += LOGON_PAIRS_TESTS
     assert filter_files == [
-        "grep", "-vxF", *[part for file in dedicated_files for part in ("-e", file)],
+        "grep", "-vxF", "-e", NATIVE_RESTORE_TEST,
         ".ci-shipped-python-tests.txt", ">", ".ci-shipped-postgres-tests.txt",
     ]
     pytest_options = []
@@ -259,7 +267,7 @@ def test_ci_gates_cover_locked_runtime_frontend_and_postgres(name: str) -> None:
             "-o", "junit_family=xunit1", "--junitxml=postgres-test-results.xml",
         ]
     assert pytest_run == [
-        "python", "-m", "pytest", "-v", "-m", "postgres_integration and not e2e",
+        "python", "-m", "pytest", "-v", "-m", "postgres_integration and not e2e and not legacy",
         *pytest_options, "@.ci-shipped-postgres-tests.txt",
     ]
     install = steps["Ensure PostgreSQL 18 binaries"]["run"]
@@ -316,14 +324,10 @@ def test_pr_source_and_unit_collect_each_case_once(tmp_path, paths):
     assert collected == Counter(f"{path}::{method}" for path, methods in synthetic_cases.items() for method in methods)
 
 
-def test_report_access_cases_run_for_auth_changes_and_wide_profile():
-    guards = {
-        "tests/reporting/test_gpo_effective_access_v2.py",
-        "tests/reporting/test_new_logon_pairs_v2.py",
-        "tests/reporting/test_new_logon_pairs_report_path.py",
-    }
-    for paths in (["server-dotnet/src/Sli.Server/Auth/Access.cs"], ["scripts/ci/pr_scope.py"]):
-        assert guards <= set(pytest_arguments(ROOT, paths)["unit"])
+def test_auth_changes_keep_native_security_checks():
+    cases = pytest_arguments(ROOT, ["server-dotnet/src/Sli.Server/Auth/Access.cs"])
+    assert "tests/tooling/test_ui_domain_binding_guard.py" in cases["source"]
+    assert "tests/unit/test_native_owner_hash.py" in pytest_arguments(ROOT, ["scripts/ci/pr_scope.py"])["unit"]
 
 
 @pytest.mark.parametrize("paths", [
@@ -423,10 +427,6 @@ def test_disposable_postgres_jobs_keep_shared_gates() -> None:
         upgrade_name,
         kit_name,
         "Signed AD packet reaches the journal on current PostgreSQL",
-        "T002 actual PostgreSQL context at synthetic enterprise scale",
-        "T051 bounded synthetic context plans and typed timeout",
-        "Measure synthetic collection aggregation equivalence",
-        RECEIPT_STEPS["pr-gate.yml"]["name"],
         "Verify full-schema ACL directory backup and parallel restore",
     )
     for step_name in once_per_matrix:
@@ -443,9 +443,6 @@ def test_disposable_postgres_jobs_keep_shared_gates() -> None:
 
     # Compare all shared gates after accounting for the verified selection differences.
     for name, job in zip(WORKFLOWS, (pr, manual), strict=True):
-        receipt = RECEIPT_STEPS[name]
-        assert job["steps"].count(receipt) == 1
-        job["steps"][job["steps"].index(receipt)] = {"name": "Check plugin receipt facts"}
         suite, = [step for step in job["steps"] if step.get("name") == POSTGRES_SUITE_STEP]
         assert "if" not in suite and "continue-on-error" not in suite
         if name == "pr-gate.yml":

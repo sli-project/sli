@@ -7,7 +7,8 @@ import { DataTable, ReportLayout, TabList, TabPanel, Tabs, type TableColumn } fr
 import { Icon } from "../../design-system/Icon";
 import { useDateFormatters } from "../../design-system/useDateFormatters";
 import { plural, t, type MessageKey } from "../../i18n";
-import { auditLeaf, auditLeafLabel, auditLeafValue, auditMode, auditPath } from "./gpo-audit-setting";
+import { auditLeaf, auditLeafLabel, auditLeafValue } from "./gpo-audit-setting";
+import { displaySettings, gpoSettingLabel, gpoSettingMetadata, type Setting } from "./gpo-settings";
 import { GpoSnapshotComparison } from "./GpoSnapshotComparison";
 import { ReportDenied } from "../../app/report-v2/ReportDenied";
 
@@ -27,7 +28,6 @@ export type PolicyRow = Versions & {
   owner?: string;
   modification_time?: string;
 };
-type Setting = { id: string; side: Side; setting_name?: string; category?: string; extension?: string; path?: string; value_display?: string; audit_mode?: string };
 type LinkRow = { id: string; scope_name?: string; order?: number; enabled?: boolean; enforced?: boolean };
 type Permission = { id: string; trustee_name?: string; permission?: string };
 type Change = { id: string; object_id: string; object_type: string; field: string; kind: string; name?: string;
@@ -67,9 +67,10 @@ const changeLabels: Record<string, MessageKey> = {
 export function GpoPolicyCard({ definition, domain, initial, backHref }: {
   definition: ReportDefinitionDto; domain: string; initial: URLSearchParams; backHref: string;
 }) {
-  const policyId = initial.get("policy_id");
+  const guid = initial.get("policy");
+  const policyId = guid ?? initial.get("policy_id");
   const snapshot = initial.get("snapshot");
-  const enabled = Boolean(domain && policyId && snapshot);
+  const enabled = Boolean(domain && policyId && (guid || snapshot));
   const [tab, setTab] = useState<PolicyTab>(() => tabs.find((key) => key === initial.get("detail_tab")) ?? "settings");
   const [item, setItem] = useState(initial.get("setting"));
   const { formatDateTime } = useDateFormatters();
@@ -82,18 +83,22 @@ export function GpoPolicyCard({ definition, domain, initial, backHref }: {
     setTab(nextTab);
     setItem(nextItem);
   };
-  const snapshotParams = { domain, policy_id: policyId ?? "", snapshot: snapshot ?? "" };
+  const policyParams = { domain, policy_id: policyId ?? "" };
   const detail = useQuery({
     queryKey: ["report-v2", "gpo-policy", domain, policyId, snapshot],
-    queryFn: () => api.reportV2Data(definition.key, new URLSearchParams({ tab: "gpos", view: "all", ...snapshotParams })),
+    queryFn: () => api.reportV2Data(definition.key, new URLSearchParams({ tab: "gpos", view: "all", ...policyParams, ...(snapshot ? { snapshot } : {}) })),
     enabled,
     staleTime: 60_000, retry: false, refetchOnWindowFocus: false,
   });
-  const policy = detail.data?.items.find((row) => row.id === policyId) as PolicyRow | undefined;
-  const exact = detail.data?.coverage.snapshot_id === snapshot && String(detail.data?.coverage.domain_id) === domain;
+  const policy = detail.data?.items.find((row) => guid
+    ? String(row.guid).replace(/^\{|\}$/g, "").toLowerCase() === guid.replace(/^\{|\}$/g, "").toLowerCase()
+    : row.id === policyId) as PolicyRow | undefined;
+  const selectedSnapshot = detail.data?.coverage.snapshot_id;
+  const exact = typeof selectedSnapshot === "string" && (!snapshot || selectedSnapshot === snapshot)
+    && String(detail.data?.coverage.domain_id) === domain;
   const history = useQuery({
-    queryKey: ["report-v2", "gpo-policy-history", domain, policyId, snapshot],
-    queryFn: () => api.reportV2Data(definition.key, new URLSearchParams({ tab: "changes", period: "90d", ...snapshotParams })),
+    queryKey: ["report-v2", "gpo-policy-history", domain, policyId, selectedSnapshot],
+    queryFn: () => api.reportV2Data(definition.key, new URLSearchParams({ tab: "changes", period: "90d", ...policyParams, snapshot: String(selectedSnapshot) })),
     enabled: enabled && exact && Boolean(policy),
     staleTime: 60_000, retry: false, refetchOnWindowFocus: false,
   });
@@ -112,7 +117,7 @@ export function GpoPolicyCard({ definition, domain, initial, backHref }: {
     </div>}/>;
   if (!policy) return <ReportLayout title={t("reports.gpo.title")} domain={domain} actions={back} state="loading"/>;
   const fields = detail.data?.collections as CardCollections | undefined;
-  const matchedHistory = history.data?.coverage.snapshot_id === snapshot && String(history.data?.coverage.domain_id) === domain;
+  const matchedHistory = history.data?.coverage.snapshot_id === selectedSnapshot && String(history.data?.coverage.domain_id) === domain;
   const changes = matchedHistory ? (history.data?.collections as CardCollections | undefined)?.changes ?? [] : [];
   const historyState = history.data?.coverage.policy_history_state;
   const historyCount = historyState === "ok" || historyState === "empty" || changes.length > 0 ? changes.length : undefined;
@@ -181,22 +186,14 @@ function PolicySettings({ settings, changes, item, selectItem }: {
   settings: Setting[]; changes: Change[]; item: string | null; selectItem: (id: string | null) => void;
 }) {
   const { formatDateTime } = useDateFormatters();
-  const [side, setSide] = useState<Side>(() => settings.find((row) => row.id === item)?.side
-    ?? (settings.some((row) => row.side === "computer") ? "computer" : "user"));
+  const display = displaySettings(settings);
+  const [side, setSide] = useState<Side>(() => display.find((row) => row.id === item)?.side
+    ?? (display.some((row) => row.side === "computer") ? "computer" : "user"));
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
   const [pageSize, setPageSize] = useState(50);
   const [page, setPage] = useState<number>();
-  const matchingSide = settings.filter((row) => row.side === side).map((row) => {
-    const leaf = auditLeaf(row.setting_name, row.path, row.category, row.extension);
-    if (!leaf) return row;
-    const path = auditPath(row.side);
-    const category = t("reports.gpo.audit.category");
-    const value = leaf === "subcategoryguid" ? (row.audit_mode == null ? undefined : auditMode(row.audit_mode))
-      : auditLeafValue(leaf, row.value_display, row.side);
-    return { ...row, category, path, setting_name: auditLeafLabel(leaf, row.value_display),
-      value_display: typeof value === "string" ? value : undefined };
-  });
+  const matchingSide = display.filter((row) => row.side === side);
   const categories = [...new Set(matchingSide.map((row) => row.category).filter((value): value is string => Boolean(value)))].sort((left, right) => left.localeCompare(right));
   const text = query.trim().toLocaleLowerCase();
   const rows = matchingSide.filter((row) => (!category || row.category === category) &&
@@ -206,25 +203,28 @@ function PolicySettings({ settings, changes, item, selectItem }: {
   const itemIndex = rows.findIndex((row) => row.id === item);
   const pageIndex = Math.min(page ?? Math.floor(Math.max(0, itemIndex) / pageSize), Math.max(0, Math.ceil(rows.length / pageSize) - 1));
   const start = pageIndex * pageSize;
+  const visibleRows = rows.slice(start, start + pageSize);
+  const sections = new Map(visibleRows.map((row, index) => [row.id, index === 0 || row.category !== visibleRows[index - 1].category ? row.category : undefined]));
   const lastChanges = new Map<string, Change>();
   for (const change of changes) {
     if (change.object_type === "gpo_setting" && change.field === "value_display" && !lastChanges.has(change.object_id)) lastChanges.set(change.object_id, change);
   }
   const open = (row: Setting) => { setPage(pageIndex); selectItem(item === row.id ? null : row.id); };
   const columns: TableColumn<Setting>[] = [
+    { key: "category", label: t("reports.gpo.category"), render: (row) => sections.get(row.id) ?? null },
     { key: "setting_name", label: t("reports.gpo.parameter"), width: "40%", render: (row) => <button type="button"
       className="sli-ds-table__disclosure" aria-expanded={item === row.id} onClick={(event) => { event.stopPropagation(); open(row); }}>
       <Icon name={item === row.id ? "chevron-down" : "chevron"}/>{row.setting_name || "—"}
     </button> },
     { key: "value_display", label: t("reports.gpo.value"), width: "27%" },
-    { key: "category", label: t("reports.gpo.category") },
-    { key: "modified", label: t("reports.gpo.setting_modified"), kind: "datetime", wideOnly: true, value: (row) => lastChanges.get(row.id)?.observed_at },
+    ...(matchingSide.some((row) => row.registry_path) ? [{ key: "registry_path", label: t("reports.gpo.path"),
+      render: (row: Setting) => row.registry_path }] : []),
   ];
   return <>
     <div className="sli-ds-split-report__toolbar">
       <div className="sli-ds-header__meta">
         {sides.map((key) => {
-          const count = settings.filter((row) => row.side === key).length;
+          const count = display.filter((row) => row.side === key).length;
           return count ? <button type="button" key={key} className="sli-ds-chip" aria-pressed={side === key}
             onClick={() => { setSide(key); setCategory(""); setQuery(""); setPage(0); selectItem(null); }}>{t(`reports.gpo.${key}`)} <b>{count}</b></button> : null;
         })}
@@ -234,8 +234,8 @@ function PolicySettings({ settings, changes, item, selectItem }: {
       {categories.length ? <div className="sli-ds-field"><Select label={t("reports.gpo.category")} value={category} onChange={(selectedValue) => { setCategory(selectedValue); setPage(0); }}
         options={[{ value: "", label: t("reports.gpo.all_categories") }, ...(categories.map((value) => ({ value: value, label: value })) ?? [])]}/></div> : null}
     </div>
-    {item && !settings.some((row) => row.id === item) ? <p role="status">{t("reports.gpo.setting_unavailable")}</p> : null}
-    <DataTable caption={t("reports.gpo.settings")} rows={rows.slice(start, start + pageSize)} columns={columns} rowKey={(row) => row.id}
+    {item && !display.some((row) => row.id === item) ? <p role="status">{t("reports.gpo.setting_unavailable")}</p> : null}
+    <DataTable caption={t("reports.gpo.settings")} rows={visibleRows} columns={columns} rowKey={(row) => row.id}
       total={rows.length} pageSize={{ value: pageSize, options: [25, 50, 100, 200], onChange: (size) => { setPageSize(size); setPage(0); } }}
       pagination={{ start: start + 1, onPrevious: pageIndex > 0 ? () => setPage(pageIndex - 1) : undefined,
         onNext: start + pageSize < rows.length ? () => setPage(pageIndex + 1) : undefined }}
@@ -291,10 +291,12 @@ function PolicyVersions({ versions, domain }: { versions: Versions[]; domain: st
 
 function PolicyChanges({ changes, settings }: { changes: Change[]; settings: Setting[] }) {
   const byId = new Map(settings.map((setting) => [setting.id, setting]));
-  const displayed = changes.map((change) => {
+  const display = new Map(displaySettings(settings).map((setting) => [setting.id, setting]));
+  const displayed = changes.filter((change) => change.object_type !== "gpo_setting" || !gpoSettingMetadata(change.name)).map((change) => {
     const setting = change.object_type === "gpo_setting" ? byId.get(change.object_id) : undefined;
     const leaf = auditLeaf(setting?.setting_name, setting?.path, setting?.category, setting?.extension);
-    if (!leaf) return change;
+    if (!leaf) return { ...change, name: display.get(change.object_id)?.setting_name ??
+      (change.name === "KeyPath" ? t("reports.gpo.path") : change.object_type === "gpo_setting" ? gpoSettingLabel(change.name) : change.name) };
     const name = auditLeafLabel(leaf, setting?.value_display);
     if (change.field !== "value_display") return { ...change, name, before_value: undefined, after_value: undefined };
     const before = auditLeafValue(leaf, change.before_value, setting?.side);

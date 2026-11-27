@@ -1,12 +1,12 @@
 begin;
 set local lock_timeout='5s';
-select pg_advisory_xact_lock(hashtext('sli_sigma_live433_migration'));
+select pg_advisory_xact_lock(hashtext('sli_sigma_live447_migration'));
 select pg_advisory_xact_lock(hashtext('sli_sigma_live433_worker'));
 do $$ begin
     if not pg_has_role(session_user,'adlog_storage_owner','MEMBER')
-        or not exists(select 1 from public.schema_migrations where version=433 and name='sigma_live')
-        or exists(select 1 from public.schema_migrations where version>433) then
-        raise exception 'sigma_live433_rollback_preflight' using errcode='55000';
+        or not exists(select 1 from public.schema_migrations where version=447 and name='sigma_live')
+        or exists(select 1 from public.schema_migrations where version>447) then
+        raise exception 'sigma_live447_rollback_preflight' using errcode='55000';
     end if;
 end $$;
 set local role adlog_storage_owner;
@@ -33,7 +33,7 @@ update public.semantic_policy_admission set enabled=false,updated_by='system:sig
 where policy_id like 'default:sigma:%' and enabled;
 drop table public.sigma_live_subjects433,public.sigma_live_hits433,public.sigma_live_rules433,
     public.sigma_live_position433,public.sigma_live_inbox433;
-delete from public.schema_migrations where version=433 and name='sigma_live';
+delete from public.schema_migrations where version=447 and name='sigma_live';
 set local role adlog_plugin_lifecycle_owner;
 revoke select(plugin_id,package_lifecycle,desired_activation,component_runtime)
     on public.plugin_installations_v1 from adlog_storage_owner;

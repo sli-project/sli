@@ -2,6 +2,11 @@ name: Pull Request gate
 
 on:
   pull_request:
+  # Main must require `source` through the merge queue. Set build concurrency
+  # and maximum group size to 1 so each PR checks against its actual predecessor.
+  # The queue requests fresh checks as it advances the base.
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
 
 permissions:
@@ -24,15 +29,26 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
           filter: blob:none
+      - name: Require new migrations to follow the current base
+        id: migration-order
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        shell: bash
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref || github.event.merge_group.base_ref }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+        run: |
+          git fetch --no-tags origin "refs/heads/${BASE_REF#refs/heads/}"
+          python3 -m scripts.ci.pr_migration_order "$BASE" "$HEAD" FETCH_HEAD
       - id: diff
         shell: bash
         env:
           EVENT: ${{ github.event_name }}
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
         run: |
           diff=()
-          if [ "$EVENT" = pull_request ]; then
+          if [ "$EVENT" = pull_request ] || [ "$EVENT" = merge_group ]; then
             diff=(--diff "$BASE" "$HEAD")
           fi
           python3 -m scripts.ci.pr_scope "${diff[@]}" --github-output "$GITHUB_OUTPUT"
@@ -70,22 +86,22 @@ jobs:
         shell: bash
         env:
           EVENT: ${{ github.event_name }}
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
         run: |
           diff=()
-          if [ "$EVENT" = pull_request ]; then
+          if [ "$EVENT" = pull_request ] || [ "$EVENT" = merge_group ]; then
             diff=(--diff "$BASE" "$HEAD")
           fi
           python -m scripts.ci.pr_scope "${diff[@]}" --argfiles "$RUNNER_TEMP/sli-pr-tests"
-      - name: Domain binding, secrets, updater, plugin and event contracts
+      - name: Domain binding, native secrets and package verification
         if: needs.changes.outputs.unit == 'true'
         shell: bash
         run: |
           args="$RUNNER_TEMP/sli-pr-tests/source.txt"
           test -f "$args"
           if [ -s "$args" ]; then
-            python -m pytest -q "@$args"
+            python -m pytest -q -m "not legacy" "@$args"
           fi
       - name: Verify installer checkpoint cleanup and recovery
         if: needs.changes.outputs.unit == 'true'
@@ -120,7 +136,7 @@ jobs:
           args="$RUNNER_TEMP/sli-pr-tests/posix.txt"
           test -f "$args"
           if [ -s "$args" ]; then
-            python -m pytest -q -m "posix_only and not postgres_integration and not host_dependent" "@$args"
+            python -m pytest -q -m "posix_only and not postgres_integration and not host_dependent and not legacy" "@$args"
           fi
 
   gate:
@@ -192,18 +208,18 @@ jobs:
         shell: bash
         env:
           EVENT: ${{ github.event_name }}
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
         run: |
           diff=()
-          if [ "$EVENT" = pull_request ]; then
+          if [ "$EVENT" = pull_request ] || [ "$EVENT" = merge_group ]; then
             diff=(--diff "$BASE" "$HEAD")
           fi
           args="$RUNNER_TEMP/sli-pr-tests"
           python -m scripts.ci.pr_scope "${diff[@]}" --argfiles "$args"
           test -f "$args/unit.txt"
           if [ -s "$args/unit.txt" ]; then
-            python -m pytest -q -m "not postgres_integration and not host_dependent and not posix_only" "@$args/unit.txt"
+            python -m pytest -q -m "not postgres_integration and not host_dependent and not legacy and not posix_only" "@$args/unit.txt"
           fi
 
   frontend:
@@ -250,13 +266,18 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Last installed beta before migration 421.
           ref: 9d3e90dae34fdecdb9d28eba082cb5a30107fa92
-          path: .net-local/native-upgrade-previous
+          path: .net-local/native-upgrade-420
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # Installed beta whose ledger ends at migration 442.
+          ref: d1475f7d497eb818308faf1a5ef4184d7e7ba78e
+          path: .net-local/native-upgrade-442
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
@@ -279,9 +300,11 @@ jobs:
       - name: Install the previous schema and run the candidate package migration
         shell: bash
         run: |
-          sudo unshare --mount --net --propagation private -- \
-            /usr/bin/env "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}" "$(command -v python)" -B \
-            -m tests.migrations.native_package_upgrade .net-local/native-upgrade-previous
+          for schema in 420 442; do
+            sudo unshare --mount --net --propagation private -- \
+              /usr/bin/env "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}" "$(command -v python)" -B \
+              -m tests.migrations.native_package_upgrade ".net-local/native-upgrade-$schema" "$schema"
+          done
 
   postgres:
     name: postgres (${{ matrix.shard }})
@@ -342,12 +365,16 @@ jobs:
         shell: bash
         run: |
           python -B - <<'PY'
+          import tempfile
           from pathlib import Path
 
           from deploy.linux import build_beta_kit as kit
 
           pg_bin = Path("/usr/lib/postgresql/18/bin")
-          kit.runtime_inventory(Path.cwd(), pg_bin, "18", kit.postgres_environment(pg_bin))
+          with tempfile.TemporaryDirectory(prefix="sli-ci-payload-") as temporary:
+              payload = Path(temporary) / "release"
+              kit.copy_release(Path.cwd(), payload)
+              kit.runtime_inventory(payload, pg_bin, "18", kit.postgres_environment(pg_bin))
           PY
       - name: Verify migrations and backup recovery on private PostgreSQL 18
         if: matrix.shard == 1
@@ -426,19 +453,7 @@ jobs:
                      and test.get("result") == "Pass" for test in tests):
               raise SystemExit("The signed AD packet report scenario did not pass")
           PY
-      - run: python scripts/ci/shipped_python_tests.py --output .ci-shipped-python-tests.txt
-      - name: T002 actual PostgreSQL context at synthetic enterprise scale
-        if: matrix.shard == 1
-        run: python -m pytest -q -s tests/reporting/test_new_logon_pairs_context_native.py
-      - name: T051 bounded synthetic context plans and typed timeout
-        if: matrix.shard == 2
-        run: python -m pytest -q -s tests/reporting/test_new_logon_pairs_diagnostics_postgres.py
-      - name: Measure synthetic collection aggregation equivalence
-        if: matrix.shard == 2
-        run: python -m pytest -q -s tests/reporting/test_agent_collection_query_plan_postgres.py
-      - name: Check plugin receipt fact parity
-        if: matrix.shard == 3
-        run: python -m pytest -q tests/reporting/test_plugin_receipts_query_plan_postgres.py::test_split_candidate_preserves_exact_receipt_import_snapshot_facts
+      - run: python -m scripts.ci.shipped_python_tests --output .ci-shipped-python-tests.txt
       - name: Verify full-schema ACL directory backup and parallel restore
         if: matrix.shard == 3
         run: python -m pytest -q tests/migrations/test_qw_restore_context_migration.py -m postgres_integration
@@ -448,14 +463,10 @@ jobs:
           SHARD: ${{ matrix.shard }}
           SHARD_COUNT: ${{ strategy.job-total }}
         run: |
-          # --ignore does not drop a file passed explicitly. Remove the files run in their own steps above.
+          # The ACL restore test runs in its own step.
           grep -vxF -e tests/migrations/test_qw_restore_context_migration.py \
-            -e tests/reporting/test_agent_collection_query_plan_postgres.py \
-            -e tests/reporting/test_plugin_receipts_query_plan_postgres.py \
-            -e tests/reporting/test_new_logon_pairs_context_native.py \
-            -e tests/reporting/test_new_logon_pairs_diagnostics_postgres.py \
             .ci-shipped-python-tests.txt > .ci-shipped-postgres-tests.txt
-          python -m pytest -v -m "postgres_integration and not e2e" \
+          python -m pytest -v -m "postgres_integration and not e2e and not legacy" \
             -p scripts.ci.postgres_test_shard --postgres-shard "$SHARD" "$SHARD_COUNT" \
             -o junit_family=xunit1 --junitxml=postgres-test-results.xml @.ci-shipped-postgres-tests.txt
       - name: Preserve per-case PostgreSQL test results

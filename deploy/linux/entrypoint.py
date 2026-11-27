@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import importlib
-import os
 import signal
 import subprocess
 import sys
@@ -80,29 +79,9 @@ def main() -> int:
             print(error.code if isinstance(error, OperationTimeout) else "linux_migration_failed", file=sys.stderr)
             return 1
         return 0
-    # The Linux core never enables Windows acquisition through HTTP startup.
-    os.environ["ADLOG_ENABLE_INPROCESS_COLLECTION_SCHEDULER"] = "0"
-    os.environ["ADLOG_ENABLE_INPROCESS_POST_COLLECTION"] = "0"
-    os.environ["ADLOG_ACQUISITION_DISABLED"] = "1"
-    os.environ["ADLOG_ENABLE_POSTGRES_COLLECTION"] = "0"
-    os.environ["ADLOG_POSTGRES_RUNTIME_COLLECTION"] = "0"
-    os.environ["ADLOG_NPS_EVENTLOG_ENABLED"] = "0"
-    if args.service == "api":
-        os.environ.setdefault("ADLOG_AUTH_REQUIRED", "1")
-        return run_api(remaining)
-    if args.service == "executor":
-        module_name = "server.sli.core.job_executor"
-    elif args.service in NOTIFICATION_WORKERS:
-        return importlib.import_module(NOTIFICATION_WORKERS[args.service]).main()
-    else:
-        module_name = WORKERS[args.service]
-    sys.argv = [module_name, *remaining]
-    if args.service in WORKERS:
-        from server.sli.ops.shutdown import graceful_shutdown
+    from deploy.linux.legacy_runtime import run_service
 
-        with graceful_shutdown():
-            return importlib.import_module(module_name).main()
-    return importlib.import_module(module_name).main()
+    return run_service(args.service, remaining, WORKERS, NOTIFICATION_WORKERS, run_api, importlib.import_module)
 
 
 if __name__ == "__main__":

@@ -145,7 +145,7 @@ public sealed class AgentInstallPackageTests
     {
         var ct = TestContext.Current.CancellationToken;
         var migrations = MigrationDirectory.Read();
-        var installer = Assert.Single(migrations, m => m.Version == 446);
+        var installer = Assert.Single(migrations, m => m.Version == 450);
         int predecessor = migrations.Where(m => m.Version < installer.Version).Max(m => m.Version);
         await using var fixture = new SqlPostgresFixture();
         await fixture.StartAsync(ct, throughVersion: predecessor);
