@@ -13,8 +13,10 @@ const policies = [
   { id: "linked", display_name: "Linked policy", guid: "b0be2c76-bdae-4110-a727-6158b8f606d3", modification_time: older, link_count: 2, setting_count: 3,
     computer_directory_version: 7, computer_sysvol_version: 7 },
   { id: "updated", display_name: "Updated policy", modification_time: newer, link_count: 0, setting_count: 1,
+    guid: "b0be2c76-bdae-4110-a727-6158b8f606d4",
     computer_directory_version: 12, computer_sysvol_version: 11, unlinked: true },
   { id: "unobserved", display_name: "Unobserved links", modification_time: older, link_count: null,
+    guid: "b0be2c76-bdae-4110-a727-6158b8f606d5",
     computer_directory_version: 7, computer_sysvol_version: null },
 ];
 const snapshot = { observed_at: newer, computer_directory_version: 7, computer_sysvol_version: 7 };
@@ -28,6 +30,11 @@ const details = {
     { id: "audit-value", side: "computer", setting_name: "SettingValue", path: "AuditSetting/SettingValue", category: "AuditSetting", value_display: "3" },
     { id: "audit-target", side: "computer", setting_name: "PolicyTarget", path: "AuditSetting/PolicyTarget", category: "AuditSetting", value_display: "System" },
     { id: "audit-mode", side: "computer", setting_name: "AuditSetting", path: "AuditSetting/AuditSetting", category: "AuditSetting", value_display: "Success and Failure" },
+    { id: "audit-name", side: "computer", setting_name: "SubcategoryName", path: "AuditSetting/SubcategoryName", category: "AuditSetting", value_display: "Audit Logon" },
+    { id: "audit-extension", side: "computer", setting_name: "Extension", path: "AuditSetting/Extension", category: "AuditSetting", value_display: "true" },
+    { id: "registry-path", side: "computer", setting_name: "KeyPath", path: "RegistrySetting/KeyPath", category: "RegistrySetting", value_display: "Software\\Example" },
+    { id: "registry-value", side: "computer", setting_name: "Value", path: "RegistrySetting/Value", category: "RegistrySetting", value_display: "42" },
+    { id: "registry-blocked", side: "computer", setting_name: "Blocked", path: "RegistrySetting/Blocked", category: "RegistrySetting", value_display: "false" },
     { id: "theme", side: "user", setting_name: "Theme", category: "Desktop", value_display: "Enabled" },
   ],
   links: [{ id: "link", scope_name: "Workstations", order: 1, enabled: true, enforced: false }],
@@ -73,13 +80,13 @@ beforeEach(() => {
       return Response.json({ error: "missing" }, { status: 404 });
     }
     const observedAt = (exact ?? latestSnapshot) === inventorySnapshot ? older : newer;
-    const selected = exact === nextSnapshot ? {
+    const selected = (exact ?? latestSnapshot) === nextSnapshot ? {
       ...details, settings: [{ ...details.settings[0], value_display: "1200 seconds" }],
       links: [{ ...details.links[0], scope_name: "New Workstations" }],
       versions: [{ ...snapshot, computer_directory_version: 12, computer_sysvol_version: 11 }],
     } : { ...details, versions: [{ ...snapshot, observed_at: older }] };
     const data = { contract_id: "sli.report-result.v2", report_key: "ad.gpo.v2", state: "partial",
-      items: exact ? policies.filter((row) => row.id === id) : id ? [] : inventoryPolicies,
+      items: id ? policies.filter((row) => row.id === id || row.guid === id) : inventoryPolicies,
       collections: !id ? {} : history ? { changes } :
         snapshotList ? { snapshots: id === "linked" ? snapshots : snapshots.slice(0, 1) } :
           before ? { snapshot_comparison: before === "snapshot-2" ? [] : comparison } : selected,
@@ -112,8 +119,8 @@ function openDetails(id = "linked", tab = "settings", selected?: string) {
 }
 
 it.each([
-  ["en", "Logon", "Success and failure", "Advanced Audit Policy Configuration"],
-  ["ru", "Вход в систему", "Успех и отказ", "Расширенная конфигурация политики аудита"],
+  ["en", "Audit Logon", "Success and failure", "Advanced Audit Policy Configuration"],
+  ["ru", "Аудит входа в систему", "Успех и отказ", "Расширенная конфигурация политики аудита"],
 ] as const)("shows readable audit settings for %s", async (locale, name, value, path) => {
   setLocale(locale);
   const { container } = openDetails("linked", "settings", "audit-subcategory");
@@ -123,18 +130,23 @@ it.each([
   expect(screen.getAllByText(value).length).toBeGreaterThan(0);
   expect(screen.getAllByText(new RegExp(path)).length).toBeGreaterThan(0);
   expect(screen.queryByText(/^(PolicyTarget|SettingValue|SubcategoryGuid|AuditSetting)$/i)).toBeNull();
+  expect(screen.queryByText(/SubcategoryName|Extension|RegistrySetting|KeyPath|Blocked|Audit mode|Режим аудита/)).toBeNull();
+  expect(within(screen.getByRole("table")).getAllByText(locale === "en" ? "Advanced auditing" : "Расширенный аудит")).toHaveLength(1);
+  expect(screen.getByText("Software\\Example")).toBeTruthy();
+  expect(screen.getByText("42")).toBeTruthy();
   expect(container.textContent).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
 });
 
-it("links the inventory name to the identified snapshot and keeps its filtered list address", async () => {
+it("links the inventory name by GUID and keeps its filtered list address", async () => {
   renderReport();
   const search = await screen.findByRole("searchbox", { name: "Policy name" });
   fireEvent.change(search, { target: { value: "Updated" } });
   const policy = await screen.findByRole("link", { name: "Updated policy" }, { timeout: 1000 });
   const detail = new URL(policy.getAttribute("href")!, window.location.origin);
   expect(detail.searchParams.get("domain")).toBe("7");
-  expect(detail.searchParams.get("policy_id")).toBe("updated");
-  expect(detail.searchParams.get("snapshot")).toBe(inventorySnapshot);
+  expect(detail.searchParams.get("policy")).toBe(policies[1].guid);
+  expect(detail.searchParams.has("policy_id")).toBe(false);
+  expect(detail.searchParams.has("snapshot")).toBe(false);
   const back = new URL(detail.searchParams.get("return_to")!, window.location.origin);
   expect(back.searchParams.get("q")).toBe("Updated");
   expect(requests.filter((request) => request.searchParams.has("policy_id"))).toHaveLength(0);
@@ -158,28 +170,31 @@ it("sorts recent changes first and combines search with counted filters", async 
   expect(within(table).queryByText("Unobserved links")).toBeNull();
 });
 
-it("opens the older snapshot on its own page after a new one is published", async () => {
+it("opens the latest policy by GUID and pins its history request to the returned revision", async () => {
   renderReport();
   const link = await screen.findByRole("link", { name: "Linked policy: 2 links" });
   const address = link.getAttribute("href")!;
   latestSnapshot = nextSnapshot;
   openAddress(address);
   await screen.findByRole("heading", { name: "Linked policy" });
-  expect(await screen.findByText("Workstations")).toBeTruthy();
-  expect(screen.queryByText("New Workstations")).toBeNull();
-  expect(document.querySelector("time")?.dateTime).toBe(older);
+  expect(await screen.findByText("New Workstations")).toBeTruthy();
+  expect(screen.queryByText("Workstations")).toBeNull();
+  expect(document.querySelector("time")?.dateTime).toBe(newer);
+  expect(window.location.search).not.toContain("snapshot=");
   fireEvent.click(screen.getByRole("tab", { name: "Permissions" }));
   expect(screen.getByText("Edit, delete, and modify permissions")).toBeTruthy();
   fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
-  expect(within(screen.getByRole("table", { name: "Version history" })).getAllByText("7 / 7").length).toBeGreaterThan(0);
+  expect(within(screen.getByRole("table", { name: "Version history" })).getAllByText("12 / 11").length).toBeGreaterThan(0);
   fireEvent.click(await screen.findByRole("tab", { name: "Changes 1" }));
   expect(screen.getByText("900 seconds →", { exact: false })).toBeTruthy();
   expect(screen.getByText("600 seconds")).toBeTruthy();
   fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
-  expect(screen.getByText("600 seconds")).toBeTruthy();
-  expect(screen.queryByText("1200 seconds")).toBeNull();
+  expect(screen.getByText("1200 seconds")).toBeTruthy();
+  expect(screen.queryByText("600 seconds")).toBeNull();
   expect(screen.queryByRole("table", { name: "Group Policies" })).toBeNull();
-  expect(requests.filter((url) => url.searchParams.has("snapshot")).every((url) => url.searchParams.get("snapshot") === inventorySnapshot)).toBe(true);
+  const historyRequests = requests.filter((url) => url.searchParams.has("snapshot"));
+  expect(historyRequests).toHaveLength(1);
+  expect(historyRequests[0].searchParams.get("snapshot")).toBe(nextSnapshot);
   const back = screen.getByRole("link", { name: "Back to policies" });
   openAddress(back.getAttribute("href")!);
   expect(await screen.findByRole("link", { name: "Linked policy" })).toBe(document.activeElement);
@@ -198,7 +213,7 @@ it("finds settings by path and value, expands history inline, and renders host v
   expect(within(card).getByText("<img src=x>")).toBeTruthy();
   expect(card.querySelector("img")).toBeNull();
   fireEvent.change(search, { target: { value: "" } });
-  await chooseOption(within(card).getByLabelText("Category", { selector: "button" }), "Logging");
+  await chooseOption(within(card).getByLabelText("Section", { selector: "button" }), "Logging");
   expect(within(card).queryByText("Timeout")).toBeNull();
   fireEvent.click(within(card).getByRole("button", { name: "User 1" }));
   expect(within(card).getByRole("button", { name: "Theme" })).toBeTruthy();

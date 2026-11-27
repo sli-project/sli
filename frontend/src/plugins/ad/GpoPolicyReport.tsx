@@ -21,7 +21,7 @@ function backAddress(params: URLSearchParams, domain: string) {
   const saved = params.get("return_to");
   if (saved?.startsWith(reportPath + "?")) {
     const address = new URL(saved, window.location.origin);
-    if (address.pathname === reportPath && !address.searchParams.has("policy_id") && !address.searchParams.has("snapshot")) return saved;
+    if (address.pathname === reportPath && !["policy", "policy_id", "snapshot"].some((key) => address.searchParams.has(key))) return saved;
   }
   return reportAddress(domain ? new URLSearchParams({ domain }) : new URLSearchParams());
 }
@@ -31,8 +31,8 @@ export function GpoPolicyReport({ definition, search }: { definition: ReportDefi
   const domain = params.get("domain") ?? params.get("domain_id") ?? "";
   const denied = definition.access?.allowed === false || definition.views.find((view) => view.key === "gpos")?.access?.allowed === false;
   if (denied) return <ReportDenied reportKey={definition.key} page/>;
-  if (params.has("policy_id") || params.has("snapshot")) return <GpoPolicyCard
-    key={[domain, params.get("policy_id"), params.get("snapshot")].join(":")} definition={definition} domain={domain}
+  if (params.has("policy") || params.has("policy_id") || params.has("snapshot")) return <GpoPolicyCard
+    key={[domain, params.get("policy") ?? params.get("policy_id"), params.get("snapshot")].join(":")} definition={definition} domain={domain}
     initial={params} backHref={backAddress(params, domain)}/>;
   return <PolicyInventory key={domain} definition={definition} domain={domain} initial={params}/>;
 }
@@ -81,7 +81,7 @@ function PolicyInventory({ definition, domain, initial }: { definition: ReportDe
 
   const view = mismatch ? unlinked ? "unlinked_version_mismatch" : "version_mismatch" : unlinked ? "unlinked" : "all";
   const detailHref = (row: PolicyRow, tab: PolicyTab, captureScroll = false) => {
-    const back = new URLSearchParams({ view, direction, page: String(currentPage), page_size: String(pageSize), focus: row.id });
+    const back = new URLSearchParams({ view, direction, page: String(currentPage), page_size: String(pageSize), focus: row.guid! });
     if (effectiveDomain) back.set("domain", effectiveDomain);
     if (search.trim()) back.set("q", search);
     if (captureScroll) {
@@ -89,20 +89,20 @@ function PolicyInventory({ definition, domain, initial }: { definition: ReportDe
       back.set("table_scroll", String(scrollBox()?.scrollTop ?? 0));
     }
     return withReturnTo(reportAddress(new URLSearchParams({
-      domain: effectiveDomain, snapshot: String(snapshot), policy_id: row.id, detail_tab: tab,
+      domain: effectiveDomain, policy: row.guid!, detail_tab: tab,
     })), reportAddress(back));
   };
-  const canOpen = Boolean(effectiveDomain && typeof snapshot === "string" && snapshot);
+  const canOpen = (row: PolicyRow) => Boolean(effectiveDomain && row.guid);
   const capturedLink = (row: PolicyRow, tab: PolicyTab, element: HTMLAnchorElement) => {
     element.setAttribute("href", detailHref(row, tab, true));
   };
   const jump = (row: PolicyRow, target: PolicyTab, count?: number | null) => count == null ? "—" : count === 0 ? count :
-    !canOpen ? count : <a className="sli-ds-text-button" href={detailHref(row, target)}
+    !canOpen(row) ? count : <a className="sli-ds-text-button" href={detailHref(row, target)}
       aria-label={t(target === "settings" ? "reports.gpo.open_settings" : "reports.gpo.open_links", { name: row.display_name, count })}
       onClick={(event) => capturedLink(row, target, event.currentTarget)}>{count}</a>;
   const columns: TableColumn<PolicyRow>[] = [
     { key: "display_name", label: t("reports.gpo.policy"), render: (row) => <span className="sli-ds-cell-with-icon"><Icon name="report"/>
-      {canOpen ? <a ref={row.id === focusId ? restoreLink : undefined} href={detailHref(row, "settings")}
+      {canOpen(row) ? <a ref={row.guid === focusId || row.id === focusId ? restoreLink : undefined} href={detailHref(row, "settings")}
         onClick={(event) => capturedLink(row, "settings", event.currentTarget)}>{row.display_name ?? "—"}</a> : row.display_name ?? "—"}
     </span> },
     { key: "setting_count", label: t("reports.gpo.setting_count"), kind: "number", width: "8rem", render: (row) => jump(row, "settings", row.setting_count) },
@@ -141,7 +141,7 @@ function PolicyInventory({ definition, domain, initial }: { definition: ReportDe
             onClick={() => { setUnlinked(!unlinked); setPage(1); }}>{t("reports.gpo.unlinked")}</FilterChip>
         </div>
         <DataTable columns={columns} rows={rows.slice(start, start + pageSize)} columnSample={rows} rowKey={(row) => row.id} caption={caption()}
-          selectedKey={focusId} emptyContent={firstAdSource ? <FirstAdSource/> : "—"} sort={{ field: "modification_time", direction }}
+          selectedKey={rows.find((row) => row.guid === focusId)?.id ?? focusId} emptyContent={firstAdSource ? <FirstAdSource/> : "—"} sort={{ field: "modification_time", direction }}
           onSort={() => { setDirection(direction === "desc" ? "asc" : "desc"); setPage(1); }}
           total={rows.length} pageSize={{ value: pageSize, options: pageSizes, onChange: (size) => { setPageSize(size); setPage(1); } }}
           pagination={{ start: start + 1, onPrevious: currentPage > 1 ? () => setPage(currentPage - 1) : undefined,
