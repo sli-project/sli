@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
 using Npgsql;
+using Sli.Server.Agents.FileAudit;
 
 namespace Sli.Server.InstallationSetup;
 
@@ -26,22 +27,48 @@ public sealed partial class InstallationService
         if (modules.Length == 0) return new JsonArray();
         try
         {
-            return await database.ReadAsync(s => s.QueryAsync("""
+            var rows = await database.ReadAsync(s => s.QueryAsync("""
                 select module, a.id as agent_id, a.collection_policy->>'interval_seconds' as interval_seconds,
                        m->'config'->'schedule'->'hours' as snapshot_hours,
                        m->'config'->>'capture_seconds' as capture_seconds,
-                       case when module='sli.file-audit' and a.file_audit->>'state' in ('blocked','failed')
+                       case when module='sli.file-audit' and not check_only and a.file_audit->>'state' in ('blocked','failed')
                             then a.file_audit->>'reported_at' end as failure_at,
                        left(coalesce(nullif(btrim(a.registration_host_name), ''), nullif(btrim(m->'config'->>'source_name'), '')), 253) as source_name,
-                       (module <> 'sli.file-audit' or (jsonb_typeof(m->'config'->'roots')='array'
+                       (not check_only and (module <> 'sli.file-audit' or (jsonb_typeof(m->'config'->'roots')='array'
                          and m->'config'->'roots' <> '[]'::jsonb)
-                         or exists (select 1 from sli_agent_module_bindings b where b.agent_id=a.id and b.module_id=module)) is true as collects
+                         or exists (select 1 from sli_agent_module_bindings b where b.agent_id=a.id and b.module_id=module))) is true as collects,
+                       check_only, check_version, a.rights_probe->>'agent_version' as current_version
                 from sli_agents a
-                cross join lateral jsonb_array_elements(a.assigned_modules) m
+                cross join lateral (
+                    select m, false as check_only, null::text as check_version
+                    from jsonb_array_elements(a.assigned_modules) m
+                    union all
+                    select jsonb_build_object('module_id','sli.file-audit','enabled',true,'config',a.file_audit#>'{request,config}'),
+                           true, scope.value->>'agent_version'
+                    from jsonb_each(case when jsonb_typeof(a.file_audit->'scopes')='object'
+                                         then a.file_audit->'scopes' else '{}'::jsonb end) scope
+                    where 'sli.file-audit'=any(@p0)
+                      and a.file_audit#>>'{request,command,action}'='check'
+                      and a.file_audit#>>'{request,config,source_kind}'='server'
+                      and scope.value->>'state'='failed' and scope.value->>'reason_code'='native_unavailable'
+                ) sources
                 cross join lateral (select coalesce(m->>'module_id',m#>>'{}') as module) assigned
                 where a.status='active' and module=any(@p0)
                   and (jsonb_typeof(m)='string' or m->'enabled'='true'::jsonb)
                 """, ct, (object)modules), ct);
+            // A server can send a check result before an audit collection assignment exists.
+            for (int index = rows.Count - 1; index >= 0; index--)
+            {
+                if (rows[index] is not JsonObject row || !Bool(row["check_only"])) continue;
+                var current = FileAuditResult.ReportedAgentVersion(Text(row["current_version"]));
+                var checkedWith = FileAuditResult.ReportedAgentVersion(Text(row["check_version"])) ?? current;
+                var requirement = FileAuditResult.CheckAgentRequirement(checkedWith);
+                if (current >= FileAuditResult.MinimumNativeCheckVersion || requirement is null)
+                    rows.RemoveAt(index);
+                else
+                    row["check_agent_requirement"] = requirement;
+            }
+            return rows;
         }
         catch (Exception e) when (e is NpgsqlException or TimeoutException or InvalidOperationException)
         { return null; }
@@ -130,6 +157,22 @@ public sealed partial class InstallationService
         var failure = StatusTime(failed?["failure_at"], now) ?? (hasSource ? StatusTime(telemetry?["failure_at"], now) : null)
             ?? (unavailable ? now : (DateTimeOffset?)null);
         var status = DerivePluginStatus(enabled, hasSource, observation.At, observation.Interval, failure, now);
+
+        var outdated = enabled && id == "sli.file-audit" ? assigned
+            .Where(row => row["check_agent_requirement"] is JsonObject)
+            .OrderBy(row => Text(row["source_name"]), StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault() : null;
+        if (outdated is not null)
+            return new JsonObject
+            {
+                ["state"] = "error",
+                ["reason"] = "outdated_agent",
+                ["next_action"] = null,
+                ["last_data_at"] = status.LastDataAt?.ToString("O", CultureInfo.InvariantCulture),
+                ["error_at"] = null,
+                ["error_object"] = outdated["source_name"]?.DeepClone(),
+                ["check_agent_requirement"] = outdated["check_agent_requirement"]?.DeepClone()
+            };
 
         if (status.State == "error" && failure is null && collecting.Select(row => Text(row["agent_id"])).Distinct().Count() == 1)
             failed = collecting.FirstOrDefault(row => Text(row["source_name"]).Length > 0);

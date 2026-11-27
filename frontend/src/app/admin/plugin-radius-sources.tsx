@@ -29,7 +29,7 @@ export function PluginRadiusSources() {
     </tr></thead>
     <tbody>{Array.from(sources, ([id, states]) => <tr key={id}>
       <td>{id}</td>
-      <td>{Array.from(states, (state) => t(Object.hasOwn(sourceStates, state) ? sourceStates[state] : "pluginPage.coverageUnavailable")).join(" · ")}</td>
+      <td>{Array.from(states, (state) => t(Object.hasOwn(sourceStates, state) ? sourceStates[state] : "pluginPage.radius.stateUnavailable")).join(" · ")}</td>
     </tr>)}</tbody>
   </table></div></div>;
 }

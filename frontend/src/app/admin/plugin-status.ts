@@ -17,6 +17,10 @@ export const moduleRows = (items: PluginState[]) => Object.keys(moduleNames)
 export const moduleName = (item: PluginState) => t(moduleNames[item.plugin_id as keyof typeof moduleNames]);
 export const moduleStatusId = (item: PluginState) => `module-${item.plugin_id}`;
 export function pluginNextAction(status: PluginState["status"]) {
+  const requirement = status?.check_agent_requirement;
+  if (status?.reason === "outdated_agent" && requirement) {
+    return t("file-audit.screen.update_agent", { version: requirement.agent_version, minimum: requirement.minimum_version });
+  }
   return status?.next_action ? t(`plugins.next.${status.next_action}`) : undefined;
 }
 export function moduleStatusText(item: PluginState, timeZone: string) {
@@ -28,17 +32,27 @@ export function moduleStatusText(item: PluginState, timeZone: string) {
     : item.plugin_id === "sli.workstations" ? "computers" : "sources";
   const form = plural(count ?? 0, { one: "one", few: "few", many: "many", other: "many" }) as "one" | "few" | "many";
   const connected = count && count > 0 ? t(`plugins.connected.${noun}.${form}`, { count: formatNumber(count) }) : null;
-  let detail: string;
+  let detail: string | null;
   switch (status.state) {
     case "no_sources": detail = status.reason === "no_folders"
       ? [connected, t("plugins.status.noFolders")].filter(Boolean).join(" · ")
       : t("plugins.status.noSources");
       break;
     case "waiting": detail = [connected, t("plugins.status.waiting")].filter(Boolean).join(" · "); break;
-    case "working": detail = connected ?? t("plugins.status.working", { time: formatDateTime(status.last_data_at, timeZone) }); break;
-    case "error": detail = status.reason === "status_unavailable" ? t("plugins.unavailable")
-      : [t(status.reason === "collection_delayed" ? "plugins.status.delayed" : "plugins.status.failed"),
-        status.error_object, status.error_at && formatDateTime(status.error_at, timeZone)].filter(Boolean).join(" · ");
+    case "working": detail = connected; break;
+    case "error":
+      if (status.reason === "outdated_agent") {
+        detail = status.error_object
+          ? t("plugins.status.outdatedServer", { name: status.error_object })
+          : [connected, t("plugins.status.outdatedAgent")].filter(Boolean).join(" · ");
+      } else if (status.reason === "collection_delayed") {
+        if (item.plugin_id === "sli.sigma") return t("plugins.enabled");
+        detail = connected;
+      } else {
+        detail = status.reason === "status_unavailable" ? t("plugins.unavailable")
+          : [t("plugins.status.failed"), status.error_object,
+            status.error_at && formatDateTime(status.error_at, timeZone)].filter(Boolean).join(" · ");
+      }
       break;
   }
   return [t("plugins.enabled"), detail, pluginNextAction(status)].filter(Boolean).join(" · ");

@@ -4,7 +4,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import ad from "../../../../config/plugin_settings_schema/sli.ad.settings.json";
+import fileAudit from "../../../../config/plugin_settings_schema/sli.file-audit.settings.json";
+import gpo from "../../../../config/plugin_settings_schema/sli.gpo.settings.json";
+import remoteAccess from "../../../../config/plugin_settings_schema/sli.remote-access.settings.json";
+import sigma from "../../../../config/plugin_settings_schema/sli.sigma.settings.json";
 import workstations from "../../../../config/plugin_settings_schema/sli.workstations.settings.json";
+import type { PluginState } from "../../api/client";
 import type { PluginSettings, SettingsSchema } from "../../api/plugin-settings-types";
 import { localeRuntime, setLocale, t } from "../../i18n";
 import { PluginPage } from "./plugin-page";
@@ -24,15 +29,18 @@ let sigmaRulesAvailable = true;
 let sigmaReadFailed = false;
 let radiusSources: Array<{ source_instance_id: string; source_state: string }>;
 let client: QueryClient;
+let pluginStates: Record<string, Partial<PluginState>>;
+let setupSources: Array<{ pack_id: string; enabled: boolean; data_state: string }>;
 const plugin = (plugin_id: string) => ({ plugin_id, installed: true, configured: true, enabled: plugin_id !== "sli.remote-access",
   component_runtime: "running", revision: 7, last_data_at_utc: null,
   status: { state: plugin_id === "sli.remote-access" ? "disabled" : plugin_id === "sli.sigma" ? "no_sources" : "waiting",
     reason: plugin_id === "sli.sigma" ? "no_sources" : undefined,
     next_action: plugin_id === "sli.sigma" ? "connect_sigma_events" : undefined,
-    last_data_at: null, error_at: null, error_object: null } });
+    last_data_at: null, error_at: null, error_object: null }, ...pluginStates[plugin_id] });
 
 beforeEach(() => {
   settings = original(); requests = []; rejectKey = ""; denySettings = false; radiusSources = []; sigmaEnabled = true;
+  pluginStates = {}; setupSources = [];
   sigmaRulesAvailable = true; sigmaReadFailed = false;
   access.subject.coarse_role = "admin"; access.platform_owner = true;
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
@@ -47,18 +55,22 @@ beforeEach(() => {
         if (body.key === rejectKey) return json({ error: "invalid_plugin_setting_value", detail: "private-error-marker" }, 400);
         return json({ plugin_id: settings.plugin_id, key: body.key, value: body.value });
       }
-      return json(settings);
+      if (path === `/api/plugins/${settings.plugin_id}/settings`) return json(settings);
+      const declaration = [gpo, workstations, fileAudit, remoteAccess, sigma].find((item) => path === `/api/plugins/${item.plugin_id}/settings`);
+      return declaration ? json({ plugin_id: declaration.plugin_id, schema: declaration.settings, rules: declaration.rules, values: {}, sources: {} })
+        : json({ error: "plugin_not_found" }, 404);
     }
     if (path === "/api/v1/plugins") return json({ items: ["sli.ad", "sli.gpo", "sli.workstations", "sli.file-audit", "sli.remote-access", "sli.sigma"].map(plugin), can_manage: true });
     if (path === "/api/v1/plugins/sli.ad") return json({ item: { ...plugin("sli.ad"), enabled: false } });
     if (path === "/api/v1/operations/plugins/sli.remote-access") return json({ item: { observed: { status: "ok", sources: radiusSources } } });
-    if (path === "/api/v1/setup/status") return json({ sources: [], domains: [
+    if (path === "/api/v1/setup/status") return json({ sources: setupSources, domains: [
       { fqdn: "one.example.invalid", observed_at_utc: "2026-10-29T01:00:00Z" }, { fqdn: "two.example.invalid", observed_at_utc: null },
     ], domain_controllers: [{ hostname: "DC-01", domain: "one.example.invalid", enabled: true }, { hostname: "DC-02", domain: "two.example.invalid", enabled: true }] });
     if (path === "/api/v1/admin/agents") return json({ items: [] });
     if (path === "/api/v2/reports") return json({ contract_id: "sli.report-catalog.v2", items: [
       { key: "ad.infrastructure", title: "Состояние домена", description: "Каталог", section: "active-directory", section_title: "AD", owner_id: "sli.ad" },
       { key: "ad.gpo.v2", title: "Политики", description: "GPO", section: "active-directory", section_title: "AD", owner_id: "sli.gpo" },
+      { key: "workstations.protection", title: "Защита", description: "Время снимка показывает его свежесть; неизвестные флаги не подтверждают защиту.", section: "workstations", section_title: "Workstations", owner_id: "sli.workstations" },
     ] });
     if (path === "/api/v1/semantic/sigma-live-rules") {
       if (sigmaReadFailed) return json({ error: "unexpected_error" }, 503);
@@ -77,7 +89,7 @@ function mount(pluginId = "sli.ad") {
   render(<QueryClientProvider client={client}><PluginPage pluginId={pluginId} title={pluginId === "sli.ad" ? "Active Directory" : pluginId}/></QueryClientProvider>);
 }
 async function openSettings() {
-  fireEvent.click(screen.getByRole("tab", { name: t("pluginPage.tab.settings") }));
+  fireEvent.click(await screen.findByRole("tab", { name: t("pluginPage.tab.settings") }));
   return screen.findByRole("spinbutton", { name: t("plugins.sli.ad.settings.ad.inactivity_days.label") });
 }
 const writes = () => requests.filter((request) => request.method === "PUT");
@@ -95,33 +107,85 @@ it("opens Sigma on the rules table and applies the authoritative switch response
   }]);
 });
 
-it.each(["sli.ad", "sli.gpo", "sli.workstations", "sli.file-audit", "sli.sigma"])("renders five working tabs for %s", async (id) => {
+it.each(["sli.ad", "sli.gpo"])("retains domain setup in Connection for %s", async (id) => {
   mount(id);
-  expect(screen.getAllByRole("tab")).toHaveLength(5);
   expect(await screen.findByRole("switch", { name: t("plugins.toggle"), checked: true })).toHaveProperty("disabled", false);
-  expect(screen.queryByText("В разработке")).toBeNull();
   fireEvent.click(screen.getByRole("tab", { name: "Подключение" }));
-  expect(await screen.findByRole("link", { name: id === "sli.ad" || id === "sli.gpo" ? /Домены и контроллеры/ : /Установите агент|Подключите контроллер/ })).toBeTruthy();
+  expect(await screen.findByRole("link", { name: /Домены и контроллеры/ })).toBeTruthy();
+  if (id === "sli.gpo") {
+    await waitFor(() => expect(client.getQueryState(["plugin-settings", id])?.status).toBe("success"));
+    expect(screen.queryByRole("tab", { name: "Настройки" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Правила" })).toBeNull();
+    expect(await screen.findByRole("tab", { name: "Отчёты" })).toBeTruthy();
+  }
 });
 
 it("uses the server status in the file audit header and reads management controls only from the connection tab", async () => {
   mount("sli.file-audit");
   expect(await screen.findByText(/Включён · Ожидаются первые данные/)).toBeTruthy();
-  expect(screen.queryByText(t("pluginPage.noData"))).toBeNull();
   expect(screen.queryByText(t("plugins.disabled"))).toBeNull();
   expect(requests.some((request) => request.path === "/api/v1/admin/agents")).toBe(false);
 });
 
-it("shows one disabled VPN state and gives VPN setup steps in empty tabs", async () => {
-  settings = { ...original(), plugin_id: "sli.remote-access", schema: { type: "object" }, rules: [], values: {} };
+it("shows the workstation state consistently even when the legacy source pack is disabled", async () => {
+  setupSources = [{ pack_id: "sli.windows.workstations", enabled: false, data_state: "unavailable" }];
+  pluginStates["sli.workstations"] = { source_count: 0, source_names: [], status: {
+    state: "no_sources", reason: "no_sources", next_action: "install_workstation_agent",
+    last_data_at: null, error_at: null, error_object: null,
+  } };
+  mount("sli.workstations");
+  const expected = "Включён · Нет подключённых источников · Установите агент SLI на рабочую станцию";
+  const header = await screen.findByText(expected, { selector: "header p" });
+  fireEvent.click(screen.getByRole("tab", { name: "Подключение" }));
+  const panel = screen.getByRole("tabpanel");
+  expect(within(panel).getByRole("link", { name: header.textContent! }).getAttribute("href")).toBe("/app/agents");
+  expect(panel.textContent).not.toMatch(/Плагин выключен|Сведения о последних данных недоступны/);
+});
+
+it("identifies the connected file server and gives the same versioned upgrade action in Connection", async () => {
+  pluginStates["sli.file-audit"] = { source_count: 1, source_names: ["FS01"], status: {
+    state: "error", reason: "outdated_agent", next_action: null,
+    last_data_at: null, error_at: null, error_object: "FS01",
+    check_agent_requirement: { agent_version: "26.0.136", minimum_version: "26.0.154" },
+  } };
+  mount("sli.file-audit");
+  const expected = "Включён · FS01 подключён, агент устарел · Агент 26.0.136 не может проверить файловый аудит. Обновите его до версии 26.0.154 или новее.";
+  const header = await screen.findByText(expected, { selector: "header p" });
+  fireEvent.click(screen.getByRole("tab", { name: "Подключение" }));
+  const panel = screen.getByRole("tabpanel");
+  expect(within(panel).getByText(header.textContent!)).toBeTruthy();
+  expect(document.body.textContent).not.toMatch(/Нет подключённых источников|Установите агент SLI на файловый сервер/);
+});
+
+it("keeps VPN setup and declared rules available while hiding empty Settings and Reports", async () => {
   mount("sli.remote-access");
   expect(await screen.findByRole("switch", { name: t("plugins.toggle"), checked: false })).toBeTruthy();
   expect(screen.getByText(t("plugins.status.disabled"))).toBeTruthy();
   expect(screen.queryByText(t("plugins.enabled"))).toBeNull();
   expect(await screen.findByText(t("pluginPage.radius.missing"))).toBeTruthy();
-  fireEvent.click(screen.getByRole("tab", { name: t("pluginPage.tab.rules") }));
-  fireEvent.click(await screen.findByRole("button", { name: t("pluginPage.openConnection") }));
+  fireEvent.click(await screen.findByRole("tab", { name: t("pluginPage.tab.rules") }));
+  expect(screen.getByText(t("plugins.sli.remote-access.rules.qw.nps-denials.name"))).toBeTruthy();
+  await waitFor(() => expect(client.getQueryState(["reports-v2-catalog"])?.status).toBe("success"));
+  expect(screen.queryByRole("tab", { name: t("pluginPage.tab.settings") })).toBeNull();
+  expect(screen.queryByRole("tab", { name: t("pluginPage.tab.reports") })).toBeNull();
+  fireEvent.click(screen.getByRole("tab", { name: t("pluginPage.tab.connection") }));
   expect(await screen.findByText(t("pluginPage.radius.missing"))).toBeTruthy();
+});
+
+it("keeps the workstation protection report link without the technical paragraph", async () => {
+  mount("sli.workstations");
+  fireEvent.click(await screen.findByRole("tab", { name: t("pluginPage.tab.reports") }));
+  const panel = screen.getByRole("tabpanel");
+  expect(within(panel).getByRole("link", { name: "Защита" }).getAttribute("href")).toBe("/app/report/workstations.protection");
+  expect(panel.textContent).not.toMatch(/Время снимка|неизвестные флаги/);
+});
+
+it("keeps the file audit working-hours link without an empty-settings message", async () => {
+  mount("sli.file-audit");
+  fireEvent.click(await screen.findByRole("tab", { name: t("pluginPage.tab.settings") }));
+  const panel = screen.getByRole("tabpanel");
+  expect(within(panel).getByRole("link", { name: t("pluginPage.coreSettings") }).getAttribute("href")).toBe("/app/platform-settings");
+  expect(panel.textContent).not.toMatch(/На этой вкладке нет настроек|Откройте «Подключение»/);
 });
 
 it("gives a connection action when Sigma rules and sources are absent", async () => {
@@ -200,7 +264,7 @@ it("retains a settings draft while reading another tab", async () => {
 it("renders nested workstation policy controls without a JSON editor", async () => {
   settings = { plugin_id: "sli.workstations", schema: workstations.settings as unknown as SettingsSchema,
     rules: workstations.rules, sources: {}, values: { "workstations.evidence_retention_days": 90, "workstations.logon_policy": null } };
-  mount("sli.workstations"); fireEvent.click(screen.getByRole("tab", { name: "Настройки" }));
+  mount("sli.workstations"); fireEvent.click(await screen.findByRole("tab", { name: "Настройки" }));
   fireEvent.click(await screen.findByRole("button", { name: "Настроить" }));
   fireEvent.click(screen.getByRole("button", { name: "Добавить запись" }));
   expect(screen.getByRole("textbox", { name: "Идентификатор станции" })).toBeTruthy();
@@ -233,7 +297,7 @@ it("retains confirmed writes on partial failure and retries only the remaining k
 it("never renders current secret/default, sends only replacements, then clears the field", async () => {
   settings.schema = { type: "object", properties: { credential: { type: "string", minLength: 3, "x-label": "pluginPage.secretReplacement", "x-secret": true, default: "private-default-marker" } } };
   settings.values = { credential: "private-current-marker" };
-  mount(); fireEvent.click(screen.getByRole("tab", { name: "Настройки" }));
+  mount(); fireEvent.click(await screen.findByRole("tab", { name: "Настройки" }));
   const secret = await screen.findByLabelText(t("pluginPage.secretReplacement"), { selector: "input" }) as HTMLInputElement;
   expect(secret.type).toBe("password"); expect(secret.value).toBe("");
   expect(document.body.innerHTML).not.toContain("private-default-marker");
@@ -258,7 +322,7 @@ it("keeps an observer with read capability from saving or toggling", async () =>
 });
 
 it("shows denied settings distinctly", async () => {
-  denySettings = true; mount(); fireEvent.click(screen.getByRole("tab", { name: "Настройки" }));
+  denySettings = true; mount(); fireEvent.click(await screen.findByRole("tab", { name: "Настройки" }));
   expect(await screen.findByText(t("state.denied.title"))).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Сохранить" })).toBeNull();
 });
@@ -271,7 +335,7 @@ it("lists and filters multiple domains without discarding their controllers", as
 });
 
 it("reads rule declarations and uses registry ownership for reports in the same section", async () => {
-  mount(); fireEvent.click(screen.getByRole("tab", { name: "Правила" }));
+  mount(); fireEvent.click(await screen.findByRole("tab", { name: "Правила" }));
   expect(await screen.findByText("Возраст пароля")).toBeTruthy();
   fireEvent.click(screen.getByRole("tab", { name: "Отчёты" }));
   expect((await screen.findByRole("link", { name: "Состояние домена" })).getAttribute("href")).toBe("/app/report/ad.infrastructure");
