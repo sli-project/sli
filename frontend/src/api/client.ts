@@ -1258,7 +1258,7 @@ export type AgentCollectionHealth = {
     windows_audit?: AgentWindowsAudit | null;
     eventlog_diagnostics?: AgentItem["eventlog_diagnostics"];
     collection_interval_seconds?: number;
-    data_gaps?: Array<{ from_utc: string; to_utc: string }>;
+    data_gaps?: Array<{ module_id?: string; from_utc: string; to_utc: string }>;
     completeness?: AgentCollectionCompleteness & { last_accepted_gap_at: string | null };
     state: "current" | "error" | "waiting" | "lagging" | "unknown" | "paused" | "disabled";
     connection: "online" | "offline" | "never_seen" | "unknown";
