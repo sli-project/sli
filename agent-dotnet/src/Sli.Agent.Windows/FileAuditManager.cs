@@ -32,6 +32,7 @@ public sealed record FileAuditReconcileResult(JsonObject? Audit, JsonObject? Rep
 /// <summary>Durable ownership and inventory. Every mutation has a saved intent and exact native readback.</summary>
 public sealed class FileAuditManager(string directory, IDurableFiles files, IFileAuditApi api, Func<TimeSpan>? clock = null)
 {
+    private static readonly string AgentVersion = typeof(FileAuditManager).Assembly.GetName().Version!.ToString(3);
     private string StatePath => Path.Combine(directory,"state.json");
     private static string Hash(JsonNode value) => Convert.ToHexStringLower(SHA256.HashData(CanonicalJson.ToBytes(value)));
     private static string Text(JsonNode node,string name) => node[name]!.GetValue<string>();
@@ -96,14 +97,26 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
         Dictionary<string,int> OwnedMasks() => state["masks"]!.AsObject().ToDictionary(x => x.Key,x => x.Value!.GetValue<int>());
         JsonObject? Shared(bool manage = false) => audit?.Reconcile(policy with { FileAuditMasks=OwnedMasks(),FileAuditManage=manage },now);
         if (parsed is null) return new(Shared(),null);
-        if (state["pending_report"] is JsonObject pending) return new(Shared(),(JsonObject)pending.DeepClone());
         var config = FileAuditPolicy.Parse(parsed["config"]!.AsObject()); var cmd = parsed["command"]!.AsObject();
         var key = Text(cmd,"command_id"); var action = Text(cmd,"action");
+        var walks = state["walks"]!.AsObject();
+        var terminalVersion = walks.Select(walk => walk.Value?["terminal_check_version"]?.ToString())
+            .FirstOrDefault(version => version is not null);
+        bool sameCommand = state["scan_command"]?.ToString() == key;
+        if (state["pending_report"] is JsonObject pending)
+        {
+            if (terminalVersion is null || sameCommand && terminalVersion == AgentVersion)
+                return new(Shared(), (JsonObject)pending.DeepClone());
+            // A new command or agent version supersedes a pending terminal check.
+            // An apply or restore receipt still has to be delivered in order.
+            state["pending_report"] = null;
+        }
         var commands = state["commands"]!.AsObject(); var digest = Hash(parsed);
         if (commands[key] is not null && commands[key]!.ToString() != digest) throw new AgentException("file_audit_command_reused");
         if (!commands.ContainsKey(key) && commands.Count >= 4096) throw new AgentException("file_audit_command_limit");
         commands[key]=digest;
-        if (state["scan_command"]?.ToString() != key || state["completed_at"] is not null && now - Iso8601.ParseUtc(state["completed_at"]!.ToString()) >= TimeSpan.FromDays(1))
+        if (sameCommand && terminalVersion == AgentVersion) return new(Shared(), null);
+        if (!sameCommand || terminalVersion is not null || state["completed_at"] is not null && now - Iso8601.ParseUtc(state["completed_at"]!.ToString()) >= TimeSpan.FromDays(1))
         { state["scan_command"]=key; state["walks"]=new JsonObject(); state["completed_at"]=null; }
         if (state["completed_at"] is not null) return new(Shared(),null);
         Save(state);
@@ -120,7 +133,9 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
         try
         {
             reason = action == "check" ? api.CheckPreflight(selected, describeReads) : api.Preflight(selected, describeReads);
-            if (describeReads && reason is ("unknown" or "global_sacl_unknown"))
+            if (action == "check" && reason == "native_unavailable")
+                preflightFailure = reason;
+            else if (describeReads && reason is ("unknown" or "global_sacl_unknown"))
             {
                 preflightFailure = reason;
                 readError = new("audit_policy");
@@ -243,6 +258,15 @@ public sealed class FileAuditManager(string directory, IDurableFiles files, IFil
         }
         report["ownership_remaining"]=state["objects"]!.AsObject().Count > 0 || state["masks"]!.AsObject().Count > 0;
         state["pending_report"]=report.DeepClone();
+        if (action == "check" && report["scopes"]!.AsArray().Count == cmd["collection_scope_ids"]!.AsArray().Count
+            && report["scopes"]!.AsArray().All(scope => scope?["state"]?.ToString() == "failed"
+                && scope["reason_code"]?.ToString() == "native_unavailable"))
+        {
+            foreach (var id in cmd["collection_scope_ids"]!.AsArray())
+                state["walks"]![id!.ToString()] = new JsonObject {
+                    ["stack"] = new JsonArray(), ["page"] = 0, ["gaps"] = 0, ["done"] = true, ["terminal_check_version"] = AgentVersion
+                };
+        }
         if (cmd["collection_scope_ids"]!.AsArray().All(id => state["walks"]![id!.ToString()]?["done"]?.GetValue<bool>() == true)) state["completed_at"]=Iso8601.Format(now);
         Save(state); return new(auditReport,report);
     }

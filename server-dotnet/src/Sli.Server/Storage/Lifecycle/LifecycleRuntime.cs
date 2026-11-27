@@ -120,6 +120,7 @@ internal sealed class LifecycleRuntime : ILifecycleSession
             ["last_successful_watermark"] = result["last_successful_watermark"]?.DeepClone(), ["watermark_updated_at"] = result["watermark_updated_at"]?.DeepClone(),
             ["active_phase"] = result["active_phase"]?.DeepClone(),
             ["file_audit_retention"] = result["file_audit_retention"]?.DeepClone(),
+            ["file_audit_check_receipts_deleted_count"] = result["file_audit_check_receipts_deleted_count"]?.DeepClone(),
             ["file_audit_observations_selected_count"] = result["file_audit_observations_selected_count"]?.DeepClone(),
             ["file_audit_observations_copied_count"] = result["file_audit_observations_copied_count"]?.DeepClone(),
             ["file_audit_observations_deleted_count"] = result["file_audit_observations_deleted_count"]?.DeepClone(),
@@ -194,6 +195,16 @@ internal sealed class LifecycleRuntime : ILifecycleSession
         new InboxRetention(Maintenance(), files, WaitingForLock).RunAsync(cutoff, after, limit, ct, afterReceivedAt);
     public Task<JsonObject> RetainReceiptsAsync(DateTime cutoff, Guid after, int limit, CancellationToken ct) =>
         new ReceiptRetention(Maintenance(), files, WaitingForLock).RunAsync(cutoff, after, limit, ct);
+    public async Task<long?> PruneFileAuditCheckReceiptsAsync(int limit, CancellationToken ct)
+    {
+        await using var db = await Maintenance().OpenConnectionAsync(ct);
+        await using var ready = new NpgsqlCommand("select to_regprocedure('public.prune_file_audit_check_receipts431(integer)') is not null", db);
+        if (await ready.ExecuteScalarAsync(ct) is not true)
+            return null;
+        await using var prune = new NpgsqlCommand("select public.prune_file_audit_check_receipts431(@limit)", db);
+        prune.Parameters.AddWithValue("limit", limit);
+        return (long)(await prune.ExecuteScalarAsync(ct))!;
+    }
     public Task<JsonObject> RetainOutboxAsync(DateTime cutoff, Guid after, int limit, CancellationToken ct) =>
         new SemanticOutboxRetention(Maintenance(), files, get("ADLOG_SEMANTIC_RUNTIME_MODE")?.Trim() is { Length: > 0 } mode ? mode : Sli.Server.Semantic.SemanticRuntimeSettings.FindingsMode, WaitingForLock).RunAsync(cutoff, after, limit, ct);
     public async ValueTask DisposeAsync()
