@@ -621,7 +621,11 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
       : { ...column, hiddenByDefault: false });
   const computerEmptyView = computerLogons && ready && first?.state === "empty" ?
     <DataTable caption={definition.title} columns={computerTable} rows={[]} rowKey={rowKey} compact
-      emptyContent={t("reports.states.empty.text")} showFooter={false}/> : computerReport ? computerEmpty() : null;
+      emptyContent={t("reports.states.empty.text")} showFooter={false}/> : computerReport && view.key === "changes" && ready
+    ? state === "empty" || state === "ok"
+      ? <StateView state="empty" titleMessage={{ code: "reports.computers.changes_empty", params: {} }} detail={<></>}/>
+      : state === "not_collected" ? <p role="status">{t("reports.states.not_collected.title")}</p> : null
+    : computerReport ? computerEmpty() : null;
   const detailParams = new URLSearchParams(baseParams);
   for (const key of ["limit", "sort", "direction"]) detailParams.delete(key);
   if (first?.window.from_utc && first.window.to_utc_exclusive) {
