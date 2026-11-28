@@ -29,6 +29,7 @@ export function adminNavigationPath(pathname: string): string {
 
 export function AdminRelatedLinks({ pathname, access }: { pathname: string; access: NavAccess }) {
   const parent = legacyEntries.find((entry) => entry.path === pathname)?.parent ?? pathname;
+  if (parent === "/access") return null;
   const links = legacyEntries.filter((entry) => entry.parent === parent && entry.path !== pathname && navigationEntryAllowed(entry, access));
   if (!links.length) return null;
   return <details className="sli-ds-filters__additional">

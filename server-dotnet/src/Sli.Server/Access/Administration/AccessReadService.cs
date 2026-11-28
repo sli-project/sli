@@ -59,14 +59,29 @@ public sealed class AccessReadService(IPostgresConnectionFactory connections)
         return new { users, groups, packages, assignments, package_assignments = packageAssignments, limits = new { subjects = 500, assignments = 200 } };
     }
 
-    public async Task<object> GetAuditAsync(int limit, CancellationToken ct)
+    public async Task<object> GetAuditAsync(int limit, CancellationToken ct, bool collapse = false)
     {
         limit = Math.Clamp(limit, 1, 500);
         await using var connection = await connections.OpenAsync(ct);
-        var items = await ReadAsync(connection, """
+        const string recent = """
             select id,actor_type,actor_id,action,subject_type,subject_id,target_type,target_key,reason,outcome,
               details_json,remote_address,created_at from access_audit_v4 order by created_at desc,id desc limit @limit
-            """, ct, new NpgsqlParameter("limit", limit));
+            """;
+        string sql = collapse ? "with recent as (" + recent + """
+            ), grouped as (
+              select r.*,row_number() over series as position,
+                case when count(*) over series>1 then jsonb_agg(to_jsonb(r)) over series end as occurrences
+              from recent r
+              window series as (partition by actor_type,actor_id,action,subject_type,subject_id,target_type,target_key,
+                reason,outcome,remote_address,
+                case when action<>'notification_channel_update' then details_json end,
+                case when subject_id is null and target_key is null then id end
+                order by created_at desc,id desc rows between unbounded preceding and unbounded following)
+            )
+            select id,actor_type,actor_id,action,subject_type,subject_id,target_type,target_key,reason,outcome,
+              details_json,remote_address,created_at,occurrences from grouped where position=1 order by created_at desc,id desc
+            """ : recent;
+        var items = await ReadAsync(connection, sql, ct, new NpgsqlParameter("limit", limit));
         return new { items, limit, total_count = "not_calculated" };
     }
 

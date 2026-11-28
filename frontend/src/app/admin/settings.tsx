@@ -7,7 +7,7 @@ import { PageHeader, StateView } from "../../design-system";
 import { useTimeZone } from "../../shared/time-zone";
 import { roleLabel } from "../report-labels";
 import { getLocale, LOCALES, setLocale, t, type Locale } from "../../i18n";
-import { formatDateTime } from "../../shared/date-time";
+import { formatClockWithOffset, formatDateTime } from "../../shared/date-time";
 
 const serverTimeZoneKey = "server.timezone";
 
@@ -24,8 +24,8 @@ const russianCities: Record<string, string> = {
 function zoneLabel(id: string, now: Date, locale: Locale) {
   if (id === "UTC") return id;
   try {
-    const offset = new Intl.DateTimeFormat("en", { timeZone: id, timeZoneName: "shortOffset" })
-      .formatToParts(now).find((part) => part.type === "timeZoneName")!.value.replace("GMT", "UTC");
+    const { zone } = formatClockWithOffset(now, id);
+    const offset = zone === "UTC+0" ? "UTC" : zone;
     const city = id.split("/").at(-1) ?? id;
     return `${offset}, ${(locale === "ru" ? russianCities[city] : undefined) ?? city.replaceAll("_", " ")}`;
   } catch {

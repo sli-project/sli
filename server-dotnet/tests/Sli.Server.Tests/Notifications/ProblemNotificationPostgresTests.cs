@@ -167,6 +167,14 @@ public sealed class ProblemNotificationPostgresTests(ITestOutputHelper output)
         Assert.DoesNotContain("synthetic-user", redacted);
         Assert.DoesNotContain("192.0.2.1", redacted);
 
+        var grouped = (await journal.WorkspaceAsync(principal, workspace with { Collapse = true }, access, true, "en", ct))["items"]!;
+        Assert.Equal(new long[] { 2, 1 }, grouped.AsArray().Select(item => item!["occurrence_count"]!.GetValue<long>()));
+        Assert.NotEqual(grouped[0]!["created_at"]!.GetValue<string>(), grouped[0]!["first_at"]!.GetValue<string>());
+        var groupId = Guid.Parse(grouped[0]!["id"]!.GetValue<string>());
+        var originals = (await journal.WorkspaceAsync(principal, workspace with { GroupId = groupId }, access, true, "en", ct))["items"]!.AsArray();
+        Assert.Equal(2, originals.Count);
+        Assert.All(originals, item => Assert.Equal("critical", item!["object_severity"]!.GetValue<string>()));
+
         await PostCollectionPostgres.Sql(owner, """
             update notification_outbox set state='accepted',result_code='accepted';
             update notification_outbox set state='sending',result_code=null,attempts=1,

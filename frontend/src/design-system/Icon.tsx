@@ -37,6 +37,7 @@ const symbols: Array<[string, ReactNode]> = [
   ["logout", <><path d="M10 5H5v14h5"/><path d="M13 8l4 4-4 4M8 12h9"/></>],
   ["edit", <><path d="m4 17-.8 3.8L7 20l11-11-3-3L4 17Z"/><path d="m13.5 7.5 3 3"/></>],
   ["mail", <><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></>],
+  ["send", <path d="m3 10 18-7-7 18-3-8-8-3Zm8 3 10-10"/>],
   ["phone", <path d="M6.5 3h3l1.5 5-2.2 1.5c1.2 2.5 3.2 4.5 5.7 5.7L16 13l5 1.5v3c0 1.9-1.6 3.5-3.5 3.5C9.5 21 3 14.5 3 6.5 3 4.6 4.6 3 6.5 3Z"/>],
   ["building", <path d="M4 21V3h11v18M15 9h5v12M8 7h3M8 11h3M8 15h3M7 21v-3h5v3"/>],
   ["map", <><path d="M12 21s7-5.2 7-12a7 7 0 1 0-14 0c0 6.8 7 12 7 12Z"/><circle cx="12" cy="9" r="2.3"/></>],

@@ -2,14 +2,16 @@ import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import type { ReportColumnDto } from "../../api/report-v2-types";
-import { Chart, DataTable, DetailDrawer, FactList, SeverityBadge, Tabs, TabList, TabPanel } from "../../design-system";
+import { Chart, Checkbox, DataTable, DetailDrawer, FactList, SeverityBadge, Tabs, TabList, TabPanel, periodBounds } from "../../design-system";
 import { useDateFormatters } from "../../design-system/useDateFormatters";
 import { eventEvidenceHref, exactNavigationId } from "../../app/event-presentation";
 import { CopyFactsButton, rowFactsText } from "../../app/report-v2/DetailSection";
 import { withReturnTo } from "../../app/report-v2/legacy";
 import { t } from "../../i18n";
+import { browserTimeZone } from "../../shared/date-time";
 import { formatNumber } from "../../shared/format";
 import { userDeviations, UserStateMark, userObject as object, userObjects as objects, userText as text } from "./UserChecks";
+import { useEntityOpenProblems } from "./EntityCardReports";
 
 type Row = Record<string, unknown>;
 type UserLabel<Section extends "card" | "event"> =
@@ -74,7 +76,7 @@ function Timeline({ rows, returnTo }: { rows: Row[]; returnTo: string }) {
   };
   if (!rows.length) return null;
   return <>
-    <label><input type="checkbox" checked={collapse} onChange={(event) => setCollapse(event.target.checked)}/> {cardText("collapse")}</label>
+    <Checkbox checked={collapse} onChange={(event) => setCollapse(event.target.checked)}>{cardText("collapse")}</Checkbox>
     <ul className="sli-ds-path">{groups.map((group, index) => {
       const count = group.reduce((sum, row) => sum + (typeof row.event_count === "number" ? row.event_count : 1), 0);
       return group.length === 1 ? entry(group[0], index) : <li key={index}><details>
@@ -94,14 +96,33 @@ function LogonStrip({ row }: { row: Row }) {
     <FactList facts={[
       { label: cardText("successes"), value: text(String(totals.successes ?? "")) },
       { label: cardText("failures"), value: text(String(totals.failures ?? "")) },
-      { label: cardText("typical"), value: text(String(totals.typical ?? "")) },
     ]}/>
-    <Chart height={160} title={cardText("daily_logons")} spec={{ kind: "timeseries", series: [
+    <Chart height={190} title={cardText("daily_logons")} spec={{ kind: "timeseries", unit: cardText("logons_per_day"), series: [
       { name: cardText("failures"), style: "bar", points: points("failures") },
       { name: cardText("successes"), style: "line", points: points("successes") },
-      { name: cardText("typical"), style: "dashed", points: days.map((day) => ({ x: String(day.day), y: typeof totals.typical === "number" ? totals.typical : null })) },
     ] }}/>
   </Section>;
+}
+
+export function userActivitySource(value: unknown): string | null {
+  if (value === "windows_event") return cardText("source_event");
+  if (value === "domain_controllers" || text(value)?.includes("lastLogon across")) return cardText("source_dc");
+  return text(value) ? cardText("source_ad") : null;
+}
+
+export function useUserCardDetail(id: string | null, domain: string | null, timeZone: string, enabled: boolean,
+  bounds: { from: string; to: string }) {
+  const zone = timeZone === "browser" ? browserTimeZone() : timeZone;
+  const params = new URLSearchParams({ tab: "all", tz: zone, period: "custom", ...bounds });
+  if (domain) params.set("domain", domain);
+  return useQuery({ queryKey: ["ad-user-card", id, params.toString()], enabled: !!id && enabled,
+    queryFn: async () => (await api.reportV2Detail("ad.users.v2", id!, params)).items[0] ?? null,
+    retry: false, staleTime: 60_000, refetchOnWindowFocus: false });
+}
+
+export function UserLogonActivity({ row, returnTo }: { row: Row; returnTo: string }) {
+  const events = objects(row.timeline).filter((event) => [4624, 4625].includes(Number(event.event_id)));
+  return <><LogonStrip row={row}/><Timeline rows={events} returnTo={returnTo}/></>;
 }
 
 export function UserCard({ selected, columns, timeZone, initialTab, historical, allowJournal, allowProblems, allowChanges, onClose }: {
@@ -112,12 +133,8 @@ export function UserCard({ selected, columns, timeZone, initialTab, historical, 
   const [tab, setTab] = useState(initialTab);
   const id = exactNavigationId(selected.entity_id, "entity_id");
   const domain = exactNavigationId(selected.domain_id, "entity_id");
-  const query = useQuery({ queryKey: ["ad-user-card", domain, id, timeZone], enabled: !!id && !historical,
-    queryFn: async () => {
-      const params = new URLSearchParams({ tab: "all", tz: timeZone });
-      if (domain) params.set("domain", domain);
-      return (await api.reportV2Detail("ad.users.v2", id!, params)).items[0] ?? null;
-    }, retry: false, staleTime: 60_000, refetchOnWindowFocus: false });
+  const [bounds] = useState(() => periodBounds({ preset: "30d" })!);
+  const query = useUserCardDetail(id, domain, timeZone, !historical, bounds);
   const row = { ...selected, ...query.data };
   const sam = text(row.sam);
   const account = sam && text(row.domain_name) && !sam.includes("\\") ? `${row.domain_name}\\${sam}` : sam;
@@ -126,15 +143,7 @@ export function UserCard({ selected, columns, timeZone, initialTab, historical, 
   const journalParams = new URLSearchParams({ q: text(row.sid) ?? sam ?? "", period: "30d" });
   if (domain) journalParams.set("domain", domain);
   const scope = id && domain ? { entity_id: id, domain } : null;
-  const problemsParams = new URLSearchParams({ ...scope, population: "open" });
-  const problems = useQuery({
-    queryKey: ["report-v2", "user-open-problems", domain, id],
-    enabled: allowProblems && scope !== null,
-    queryFn: () => api.reportV2Data("security.problems", new URLSearchParams({ ...scope, population: "open", queue_view: "all", limit: "1" })),
-    retry: false,
-  });
-  const counts = problems.data?.coverage.open_by_severity;
-  const openCount = counts && !problems.isError ? Object.values(counts).reduce((total, count) => total + count, 0) : null;
+  const { count: openCount, params: problemsParams } = useEntityOpenProblems(scope, allowProblems);
   const canSee = (key: string) => columns.some((column) => column.key === key);
   const events = objects(row.timeline).filter((event) => [4624, 4625].includes(Number(event.event_id)));
   const computers = objects(row.computers);
@@ -146,8 +155,7 @@ export function UserCard({ selected, columns, timeZone, initialTab, historical, 
     { key: "ou", label: "OU", value: text(row.ou) },
     { key: "password_last_set", label: cardText("password_last_set"), value: formatCell(row.password_last_set, "date") },
     { key: "activity", label: cardText("last_activity"), value: formatDateTime(text(row.activity_at)) },
-    { key: "activity_source", label: cardText("activity_source"), value: text(row.activity_source)?.includes("lastLogon across all")
-      ? cardText("source_dc") : text(row.activity_source) ? cardText("source_ad") : null },
+    { key: "activity_source", label: cardText("activity_source"), value: userActivitySource(row.activity_source) },
   ].filter((fact) => canSee(fact.key) && (fact.key !== "department" || fact.value !== null));
   return <DetailDrawer open responsive title={name} subtitle={account !== name ? account : undefined} onClose={onClose} footer={<>
     {allowJournal && sam ? <a className="sli-ds-button" data-variant="primary" href={withReturnTo(`/app/report/events.journal?${journalParams}`, returnTo)}>{cardText("journal")}</a> : null}
@@ -184,8 +192,7 @@ export function UserCard({ selected, columns, timeZone, initialTab, historical, 
           </Section> : null}
         </> : tab === "rights" ? <Privileges row={row}/>
           : <>
-            <LogonStrip row={row}/>
-            <Timeline rows={events} returnTo={returnTo}/>
+            <UserLogonActivity row={row} returnTo={returnTo}/>
             {!query.isFetching && !query.isError && !events.length ? <p>{missing()}</p> : null}
           </>}
       </TabPanel>
