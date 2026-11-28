@@ -28,7 +28,7 @@ public sealed class WorkstationWorkspaceReader(IPostgresConnectionFactory connec
             select coalesce(a.source_agent_id,a.id)::text as agent_key,a.id::text as transport_agent_id,
                    coalesce(a.source_host_id,a.host_id)::text as source_instance_id,
                    a.status as agent_status,a.last_seen,a.policy_revision,a.applied_policy_revision,
-                   a.registration_host_name,assignment.module,b.entity_id,
+                   a.registration_host_name,assignment.module,b.entity_id,a.rights_probe->'windows_product' as windows_product,
                    (a.rights_probe->>'windows_product_type'='WinNT') is true as reported_workstation,
                    coalesce(nullif(a.rights_probe->>'agent_version',''),version.version,
                             (select v.details->>'agent_version' from sli_agent_audit v
@@ -51,8 +51,7 @@ public sealed class WorkstationWorkspaceReader(IPostgresConnectionFactory connec
                 and not exists(select 1 from sli_agent_removals r where r.agent_id=a.id and r.state='state_cleaned')
         ), agents as materialized (
             select a.*,binding.server_id,binding.domain_id,binding.computer,
-                   server.hostname as host_name,server.os_name as operating_system,
-                   server.os_version as operating_system_version,server.updated_at as metadata_observed_at,
+                   server.hostname as host_name,server.updated_at as metadata_observed_at,
                    nullif(domain.fqdn,'workstations.invalid') as domain_name,
                    coalesce(binding.computer,a.registration_host_name) as display_name,
                    case when a.module is null then 'unbound'
@@ -82,16 +81,18 @@ public sealed class WorkstationWorkspaceReader(IPostgresConnectionFactory connec
                    i.metadata->>'display_name' as display_name,
                    case when lower(a.computer)=lower(i.metadata->>'dns_host_name') then a.host_name
                         else i.metadata->>'dns_host_name' end as host_name,
-                   i.metadata->>'operating_system' as operating_system,i.metadata->>'operating_system_version' as operating_system_version,
+                   coalesce(a.windows_product->>'name',i.metadata->>'operating_system') as operating_system,
+                   case when a.windows_product is not null then a.windows_product->>'version'
+                        else i.metadata->>'operating_system_version' end as operating_system_version,
                    (i.metadata->>'observed_at')::timestamptz as metadata_observed_at,
-                   i.metadata->>'last_logon_utc' as last_logon_utc,i.metadata->>'ou_path' as ou_path
+                   i.metadata->>'ou_path' as ou_path
             from directory i join domains d on d.id=i.domain_id
             left join matched m using(station_id) left join agents a using(agent_key)
             union all
             select a.agent_key,null,a.domain_id,a.domain_name,
                    a.agent_key,a.transport_agent_id,a.source_instance_id,a.server_id,a.module,a.agent_version,
                    a.agent_status,a.last_seen,a.policy_revision,a.applied_policy_revision,a.collection_state,
-                   a.display_name,a.host_name,a.operating_system,a.operating_system_version,a.metadata_observed_at,null,null
+                   a.display_name,a.host_name,a.windows_product->>'name',a.windows_product->>'version',a.metadata_observed_at,null
             from agents a
             where not exists(select 1 from matched m where m.agent_key=a.agent_key)
                 and (a.reported_workstation or a.module is not null and not exists(
@@ -104,6 +105,24 @@ public sealed class WorkstationWorkspaceReader(IPostgresConnectionFactory connec
                    a.ou_path
             from bound a
         )
+        """;
+
+    private const string StationLogon = """
+        select p.*,greatest(
+            (select h.time_created_utc from event_hot h
+             where h.event_kind=4624 and h.domain_id=p.domain_id and h.method->>'$server_id'=p.server_id::text
+               and h.method#>>'{$origin,source_instance_id}'=p.source_instance_id
+               and h.method#>>'{$origin,plugin_id}'='sli.workstations'
+               and h.method->>'$channel'='Security' and h.method->>'$provider'='Microsoft-Windows-Security-Auditing'
+               and coalesce(h.outcome->>'LogonType',h.method->>'LogonType',h.fields->>'LogonType') in ('2','10','11')
+             order by h.time_created_utc desc limit 1),
+            (select max(d.last_seen_utc) from event_cold_daily d
+             where d.event_kind=4624 and d.domain_id=p.domain_id and d.method->>'$server_id'=p.server_id::text
+               and d.method#>>'{$origin,source_instance_id}'=p.source_instance_id
+               and d.method#>>'{$origin,plugin_id}'='sli.workstations'
+               and d.method->>'$channel'='Security' and d.method->>'$provider'='Microsoft-Windows-Security-Auditing'
+               and coalesce(d.outcome->>'LogonType',d.method->>'LogonType') in ('2','10','11'))
+        ) as last_logon_utc from page p order by p.station_id
         """;
 
     public Task<JsonObject> QueryAsync(ReportQueryContext context, CancellationToken ct) => ReadAsync(context, null, ct);
@@ -137,7 +156,8 @@ public sealed class WorkstationWorkspaceReader(IPostgresConnectionFactory connec
             await Ws.Exec(db, "set transaction read only; set local statement_timeout='5000ms'; set local jit=off", ct);
             string basis = Population + ", selected as materialized (select a.* from bound a where " + selected.Sql + ") ";
             var total = (await Query(db, basis + "select count(*) as total,count(*) filter(where station_id<=@p0::text) as preceding from selected", selected, ct, cursor)).Single();
-            var rows = await Query(db, basis + "select * from selected where @p0::text is null or station_id>@p0 order by station_id limit @p1", selected, ct, cursor, rowId is null ? c.Paging.Limit + 1 : 2);
+            var rows = await Query(db, basis + ", page as materialized (select * from selected where @p0::text is null or station_id>@p0 order by station_id limit @p1) "
+                + StationLogon, selected, ct, cursor, rowId is null ? c.Paging.Limit + 1 : 2);
             if (rowId is not null && rows.Count != 1) throw new ReportRequestException("workstation_not_found", 404);
             bool more = rowId is null && rows.Count > c.Paging.Limit;
             rows = rows.Take(c.Paging.Limit).Select(row => Present(row, access)).ToList();

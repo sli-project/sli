@@ -25,6 +25,7 @@ const station = (index = 0) => ({ station_id: index ? `00000000-0000-4000-8000-$
   display_name: `WS-WORKSPACE-${String(index + 1).padStart(3, "0")}`, host_name: `WS-WORKSPACE-${String(index + 1).padStart(3, "0")}`,
   domain_id: 11, domain_name: "synthetic.invalid", server_id: 5, operating_system: "Windows 11", operating_system_version: "26100",
   metadata_observed_at: "2026-11-25T08:00:00Z", agent_status: "active", last_seen: "2026-11-25T09:05:00Z",
+  last_logon_utc: index === 0 ? "2026-11-25T09:03:00Z" : null,
   policy_revision: 4, applied_policy_revision: 4, collection_state: "enabled", journal_available: true,
   profile: { state: "supported", event_ids: [4624, 4625, 1102, 4698, 4732, 4733, 5001, 5010, 5012, 7036, 7040, 7045], channels: ["Security", "System", "Microsoft-Windows-Windows Defender/Operational"] },
 });
@@ -38,11 +39,19 @@ const events = [
   { id: 102, event_id: 1102, title_text: "Synthetic audit cleared", participant: "SYNTHETIC\\operator", channel: "Security",
     time_created_utc: "2026-11-25T10:10:00Z", event_count: 1, journal_expandable: false, journal_evidence_available: true,
     journal_finding_id: 7, journal_severity: "high" },
+  { id: 103, event_id: 4688, channel: "Security", journal_result: "success", event_count: 3, journal_expandable: true,
+    time_created_utc: "2026-11-25T10:11:00Z", participant: "S-1-5-21-100000001-200000002-300000003-1001",
+    workstation_event: { account: "WS-WORKSPACE-001\\alice", image_path: "C:\\Tools\\notepad.exe",
+      parent_image_path: "C:\\Windows\\explorer.exe", command_line: 'notepad.exe "<draft>.txt"' } },
+  { id: 104, event_id: 6416, channel: "Security", event_count: 1, time_created_utc: "2026-11-25T10:12:00Z",
+    workstation_event: { device_class: "DiskDrive", device_name: "Example USB drive" } },
+  { id: 105, event_id: 4688, channel: "Security", event_count: 1, time_created_utc: "2026-11-25T10:13:00Z",
+    workstation_event: { image_path: "C:\\Tools\\calc.exe" } },
 ];
 const detailResult = (): StationDetailResult => ({ ...result({ items: [station()], filtered_count: 1,
   ...(detailMode === "denied" ? { access: { allowed: false } } : {}) }), detail: {
   station: detailMode === "malformed" ? { station_id: stationId } : station(),
-  events: { state: detailMode === "events_denied" ? "denied" : "ok", items: events, filtered_count: 2, journal_event_count: 40, has_more: true,
+  events: { state: detailMode === "events_denied" ? "denied" : "ok", items: events, filtered_count: 5, journal_event_count: 45, has_more: true,
     next_cursor: "bound-next-event-page", window: { from_utc: from, to_utc_exclusive: to } },
   related: { journal: { allowed: detailMode !== "events_denied", params: { domain: 11, server: "WS-WORKSPACE-001", source_instance_id: source,
     source_plugin: "sli.workstations", period: "custom", from, to, tz: "UTC", collapse: "on" } }, problems: { allowed: true } },
@@ -72,7 +81,7 @@ beforeEach(() => {
     if (directoryOnly) {
       const items = Array.from({ length: 3 }, (_, index) => ({
         station_id: `ws:ad:${index + 1}`, display_name: `WS-AD-${index + 1}`, operating_system: "Windows 11",
-        last_logon_utc: "2026-11-25T10:00:00Z", agent_key: null, agent_version: null,
+        last_logon_utc: null, agent_key: null, agent_version: null,
         collection_state: "unbound", profile: { state: "unbound" },
       }));
       return new Response(JSON.stringify(result({ items, filtered_count: 3 })));
@@ -116,7 +125,7 @@ it("shows all three AD workstations before an agent is installed", async () => {
     const cells = within(row).getAllByRole("cell");
     expect(cells[0].textContent).toBe(`WS-AD-${index + 1}`);
     expect(cells[1].textContent).toBe("Windows 11");
-    expect(cells[2].textContent).toMatch(/10:00/);
+    expect(cells[2].textContent).toBe("—");
     expect(cells[3].textContent).toBe("—");
   });
   expect(screen.queryByText(t("state.partial.title"))).toBeNull();
@@ -142,7 +151,7 @@ it.each(["ru", "en"] as const)("uses the real registry for fleet → full statio
   const facts = await screen.findByRole("region", { name: t("workstations.workspace.event_facts") });
   expect(within(facts).getByRole("heading", { name: t("workstations.workspace.event_4624") }).getAttribute("title")).toBe("Synthetic grouped sign-ins");
   expect(within(facts).getByText("39")).toBeTruthy();
-  expect(within(facts).getByText(t("workstations.workspace.saved_group"))).toBeTruthy();
+  expect(within(facts).queryByText(/Saved event|Сохранённ/)).toBeNull();
   expect(within(facts).getByText(t("workstations.workspace.group_boundary"))).toBeTruthy();
   expect(within(facts).queryByRole("link", { name: t("workstations.workspace.original") })).toBeNull();
   const groupLink = new URL(within(facts).getByRole("link", { name: t("workstations.workspace.group_journal") }).getAttribute("href")!, window.location.origin);
@@ -156,7 +165,6 @@ it.each(["ru", "en"] as const)("uses the real registry for fleet → full statio
   fireEvent.click(screen.getByRole("tab", { name: t("workstations.workspace.collection_tab") }));
   expect(await screen.findByRole("table", { name: t("workstations.workspace.profile_events") })).toBeTruthy();
   expect(screen.getByText(source)).toBeTruthy();
-  expect(screen.getByText(t("workstations.workspace.profile_scope"))).toBeTruthy();
   fireEvent.click(screen.getByRole("link", { name: t("workstations.workspace.back_fleet") }));
   await screen.findByRole("table", { name: t("workstations.overview.stations") });
   const returned = new URLSearchParams(window.location.search);
@@ -171,6 +179,36 @@ it.each(["ru", "en"] as const)("uses the real registry for fleet → full statio
     expect(url.searchParams.get("from")).toBe(from); expect(url.searchParams.get("to")).toBe(to);
     expect(url.searchParams.has("search")).toBe(false); expect(url.searchParams.has("collection")).toBe(false);
   }
+});
+
+it.each(["en", "ru"] as const)("shows the program, parent, account, device and collected command line (%s)", async locale => {
+  setLocale(locale); mount();
+  const firstStation = await screen.findByRole("link", { name: "WS-WORKSPACE-001" });
+  const fleetRow = firstStation.closest("tr")!;
+  expect(within(fleetRow).getByText("Windows 11")).toBeTruthy();
+  expect(within(fleetRow).getByText("26100")).toBeTruthy();
+  expect(within(fleetRow).getByText(/\b0?9:03\b/)).toBeTruthy();
+  const missingLogon = (await screen.findByRole("link", { name: "WS-WORKSPACE-002" })).closest("tr")!;
+  expect(within(missingLogon).getAllByRole("cell")[2].textContent).toBe("—");
+  fireEvent.click(firstStation);
+  const process = await screen.findByRole("link", { name: /notepad\.exe/ });
+  const row = within(process.closest("tr")!);
+  expect(row.getByText(/explorer\.exe/)).toBeTruthy();
+  expect(row.getByText("WS-WORKSPACE-001\\alice")).toBeTruthy();
+  expect(row.getByText("3")).toBeTruthy();
+  expect(row.getByText('notepad.exe "<draft>.txt"')).toBeTruthy();
+  expect(row.queryByText(/Saved event|Сохранённ/)).toBeNull();
+  expect(screen.getByText(/DiskDrive/)).toBeTruthy();
+  expect(screen.getByRole("link", { name: /Example USB drive/ })).toBeTruthy();
+  fireEvent.click(process);
+  const facts = await screen.findByRole("region", { name: t("workstations.workspace.event_facts") });
+  expect(within(facts).getByText("C:\\Tools\\notepad.exe")).toBeTruthy();
+  expect(within(facts).getByText('notepad.exe "<draft>.txt"')).toBeTruthy();
+  expect(facts.querySelector("draft")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: t("workstations.workspace.back_events") }));
+  fireEvent.click(await screen.findByRole("link", { name: /calc\.exe/ }));
+  const noCommand = await screen.findByRole("region", { name: t("workstations.workspace.event_facts") });
+  expect(within(noCommand).queryByText(t("workstations.workspace.command_line"))).toBeNull();
 });
 
 it("opens a direct station URL independently of the fleet page and resets only event paging when its size changes", async () => {

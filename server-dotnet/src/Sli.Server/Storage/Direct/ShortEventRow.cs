@@ -15,8 +15,9 @@ internal sealed record ShortEventRow(long EventId, DateTime Time, int Kind, stri
     private static readonly EventStorageDefinition WorkstationDevice = new(6416, "Security",
         "Microsoft-Windows-Security-Auditing", "External device recognized", "fact", [
             new("DeviceId", ["DeviceId"], WorkstationsModule.DeviceFieldMaxBytes),
-            new("DeviceDescription", ["DeviceDescription"], WorkstationsModule.DeviceFieldMaxBytes),
-            new("ClassId", ["ClassId", "ClassName"], WorkstationsModule.DeviceFieldMaxBytes),
+            new("DeviceDescription", ["DeviceDescription", "DeviceName"], WorkstationsModule.DeviceFieldMaxBytes),
+            new("ClassName", ["ClassName"], WorkstationsModule.DeviceFieldMaxBytes),
+            new("ClassId", ["ClassId", "ClassGuid", "ClassName"], WorkstationsModule.DeviceFieldMaxBytes),
             new("LocationInformation", ["LocationInformation"], WorkstationsModule.DeviceFieldMaxBytes),
         ]);
 
@@ -74,6 +75,8 @@ internal sealed record ShortEventRow(long EventId, DateTime Time, int Kind, stri
             return JsonSerializer.Serialize(values);
         }
         var fields = meaning.Fields.ToDictionary(f => f.Name, f => Pick(f.Sources, f.MaxLength), StringComparer.Ordinal);
+        if (workstation && projection.EventKind == 4688)
+            fields["ParentProcessName"] = Pick(["ParentProcessName", "CreatorProcessName"], 256);
         // Keep the admitted source identity with the short row. Readers must not
         // infer a provider from a numeric event kind or a server from host text.
         var method = JsonNode.Parse(Dimensions(catalog.Common.MethodFields))!.AsObject();

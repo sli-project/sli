@@ -108,8 +108,7 @@ export function WorkstationsReport({ definition, initialSearch: providedSearch }
     { key: "os", label: t("workstations.overview.os"), render: row => <span className="sli-workstations__cell"><span>{row.operating_system ?? "—"}</span>
       {row.operating_system_version ? <small>{row.operating_system_version}</small> : null}</span>, hiddenByDefault: false },
     { key: "last_logon_utc", label: t("reports.v2.ad.computers.v6.columns.last_logon_utc.label"), kind: "datetime",
-      render: row => row.last_logon_utc ? formatDateTime(row.last_logon_utc) : t(row.station_id.startsWith("ws:ad:")
-        ? "workstations.overview.last_logon_missing" : "reports.v2.ad.computers.v6.quality.not_collected") },
+      render: row => <span>{row.last_logon_utc ? formatDateTime(row.last_logon_utc) : "—"}</span> },
     { key: "agent_version", label: t("workstations.overview.agent"), render: row => <span>{row.agent_version ?? "—"}</span> },
   ];
   const page = paging(result?.collections?.paging);

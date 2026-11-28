@@ -16,6 +16,21 @@ public sealed class AgentClientPolicyTests
         Assert.Throws<AgentControlException>(()=>AgentClientPolicy.Report(agent,new JsonObject { ["applied_policy_revision"]=4,["collection_state"]="paused",["agent_version"]="<invalid>" },Now));
     }
 
+    [Fact]
+    public void Windows_product_report_is_bounded_and_survives_legacy_reports()
+    {
+        var agent = Agent();
+        var report = new JsonObject { ["applied_policy_revision"] = 4, ["collection_state"] = "paused",
+            ["windows_product"] = new JsonObject { ["name"] = "Windows 11 Pro", ["version"] = "10.0.26100" } };
+        var result = AgentClientPolicy.Report(agent, report, Now);
+        Assert.True(JsonNode.DeepEquals(report["windows_product"], result.Probe["windows_product"]));
+        agent["rights_probe"] = result.Probe;
+        report["windows_product"]!["name"] = new string('x', 129);
+        Assert.Throws<AgentControlException>(() => AgentClientPolicy.Report(agent, report, Now));
+        report.Remove("windows_product");
+        Assert.Equal("Windows 11 Pro", AgentClientPolicy.Report(agent, report, Now).Probe["windows_product"]?["name"]?.ToString());
+    }
+
     private static JsonObject Agent() => JsonNode.Parse("""
         {"id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","host_id":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
         "assigned_modules":[],"policy_revision":4,"applied_policy_revision":2,"applied_collection_state":"active",
