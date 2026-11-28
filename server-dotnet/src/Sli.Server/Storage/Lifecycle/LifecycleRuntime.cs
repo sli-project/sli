@@ -208,6 +208,23 @@ internal sealed class LifecycleRuntime : ILifecycleSession
             } while (count == batch);
             result["account_detection_pending_deleted"] = deleted;
         }
+        await using var hardwareReady = new NpgsqlCommand(
+            "select to_regprocedure('public.prune_workstation_hardware465(timestamptz,integer)') is not null", db);
+        if (await hardwareReady.ExecuteScalarAsync(ct) is true)
+        {
+            await using var prune = new NpgsqlCommand("select public.prune_workstation_hardware465(@cold,@batch)", db);
+            int pageSize = Math.Clamp(batch, 1, 1000);
+            prune.Parameters.AddWithValue("cold", day.AddDays(-cold));
+            prune.Parameters.AddWithValue("batch", pageSize);
+            long count, deleted = 0;
+            do
+            {
+                await EnsureLocksAsync(ct);
+                count = (long)(await prune.ExecuteScalarAsync(ct))!;
+                deleted += count;
+            } while (count == pageSize);
+            result["workstation_hardware_changes_deleted"] = deleted;
+        }
         return result;
     }
 

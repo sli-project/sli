@@ -9,13 +9,13 @@ namespace Sli.Server.Agents.Ingress;
 /// <summary>Source workstation packet cursor, rotation, rate and evidence admission.</summary>
 public static class AgentWorkstationValidator
 {
-    public static JsonArray Validate(Envelope envelope,JsonObject packet,WorkstationPolicy policy,Guid host)
+    public static JsonArray Validate(Envelope envelope,JsonObject packet,WorkstationPolicy policy,Guid host,bool transportGap=false)
     {
-        try { return ValidateCore(envelope,packet,policy,host); }
+        try { return ValidateCore(envelope,packet,policy,host,transportGap); }
         catch (Exception e) when (e is AgentException or ProtocolException or JsonException or ArgumentException or InvalidOperationException or NullReferenceException or FormatException or OverflowException)
         { throw new ProtocolException("agent_workstations_packet_invalid"); }
     }
-    private static JsonArray ValidateCore(Envelope e,JsonObject packet,WorkstationPolicy p,Guid host)
+    private static JsonArray ValidateCore(Envelope e,JsonObject packet,WorkstationPolicy p,Guid host,bool transportGap)
     {
         static void Require(bool value) { if (!value) throw new ArgumentException(); }
         var rows=AgentCollectionRows.ExtractEvents(packet); var header=packet["header"]!.AsObject(); string hostId=host.ToString("D");
@@ -52,7 +52,7 @@ public static class AgentWorkstationValidator
             && context["channel_reset"]!.GetValue<bool>()==reset && PythonMetadataEquality.Equal(context["rate_window_seconds"],JsonValue.Create(p.RateWindowSeconds))
             && readError is null or "agent_workstations_read_failed" && (!recovered || !reset && readError is null && start is not null && old["bookmark"]!.GetValue<string>().Length>0)
             && e.FilteredCount==filtered && (readError is not null || reset || recovered ? e.LostCount is null : e.LostCount==dropped)
-            && e.ContinuityState==(dropped>0 || reset || readError is not null || recovered ? "gap" : filtered>0 ? "filtered" : "not_proven")
+            && e.ContinuityState==(transportGap || dropped>0 || reset || readError is not null || recovered ? "gap" : filtered>0 ? "filtered" : "not_proven")
             && packet["continuity"]!["status"]!.GetValue<string>()=="not_proven"
             && (readError is null || rows.Count==0 && filtered==0 && dropped==0 && JsonNode.DeepEquals(progress,old)));
         AgentWorkstationEvidence.Validate(rows,context,p,channel,e.ModuleVersion,header["observed_at_utc"]!.GetValue<string>());
