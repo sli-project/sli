@@ -907,6 +907,147 @@ def test_reuse_failed_acceptance_restores_checkpoint_and_previous_release(reuse_
         upgrade.reuse_existing('new')
 
 
+def test_rollback_waits_for_worker_backend_after_units_stop(reuse_transaction, monkeypatch, capsys):
+    events = reuse_transaction.events
+    clock = [0]
+    stopped_at = [None]
+    polls = []
+    monkeypatch.setattr(install, 'wait_health', lambda: None)
+    upgrade.prepare_package(VERSION)
+    monkeypatch.setattr(install, 'setup_deadline', nullcontext)
+    monkeypatch.setattr(upgrade, 'fence', FENCE)
+    monkeypatch.setattr(upgrade, 'stop_application', STOP_APPLICATION)
+    monkeypatch.setattr(upgrade, 'wait_restore_databases', lambda: None)
+    monkeypatch.setattr(upgrade.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(upgrade.time, 'sleep', lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+    monkeypatch.setattr(native, 'settings', dict)
+    monkeypatch.setattr(native, 'environment', lambda values: nullcontext())
+    monkeypatch.setattr(backup, 'pg_passfile', lambda: nullcontext(Path('/unused')))
+
+    def query(sql, parameters=()):
+        if not parameters:
+            return SimpleNamespace(fetchone=lambda: (1,))  # Legacy one-shot query fails the rollback.
+        assert stopped_at[0] is not None
+        elapsed = clock[0] - stopped_at[0]
+        polls.append(elapsed)
+        worker = [('adlog_user', 'fixture-worker')] if 'switch-new' in events and elapsed < 20 else []
+        roles = parameters[0] if parameters else ()
+        return SimpleNamespace(fetchone=lambda: (1,), fetchall=lambda: [
+            row for row in [*worker, ('postgres', 'fixture-maintenance')] if row[0] in roles])
+
+    monkeypatch.setattr(backup, 'pg_connect', lambda *a, **k: nullcontext(SimpleNamespace(execute=query)))
+
+    def stop_writers():
+        stopped_at[0] = clock[0]
+        events.append('writers-stopped')
+
+    monkeypatch.setattr(runtime, 'stop_writers', stop_writers)
+    monkeypatch.setattr(runtime, 'stop_services', lambda *a, **k: None)
+    monkeypatch.setattr(upgrade.subprocess, 'run', lambda *a, **k: SimpleNamespace(
+        returncode=0, stdout='LoadState=loaded\nActiveState=inactive\nMainPID=0\nControlGroup=\n'))
+
+    def check_runtime(*args):
+        if 'switch-old' not in events:
+            raise RuntimeError('native_install_api_unready')
+
+    monkeypatch.setattr(upgrade, 'start_checked', check_runtime)
+    with pytest.raises(RuntimeError, match='^native_install_api_unready$'):
+        upgrade.configure_package('new', VERSION)
+    journal = upgrade.package_transaction(VERSION)
+    result = json.loads((journal.path / 'result.json').read_text())
+    assert result['status'] == 'rolled_back' and result['services_restored'] is True
+    assert 0 in polls and max(polls) >= 20
+    assert events.index(['systemctl', 'stop', 'sli-backup.service', 'sli-backup-drill.service']) < events.index('writers-stopped')
+    assert 'native_upgrade_pg_drain' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize('problem', [None, 'not-restored', 'receipt-changed', 'terminal-interrupted', 'reopening-failed'])
+def test_new_package_finishes_verified_previous_recovery_before_install(reuse_transaction, monkeypatch, problem):
+    new_version = '3.0-1~deb13'
+    events = reuse_transaction.events
+    monkeypatch.setattr(install, 'wait_health', lambda: None)
+    upgrade.prepare_package(VERSION)
+    journal = upgrade.package_transaction(VERSION)
+    recovery_root = journal.path.parent.parent / 'recovery'
+    old_seal = recovery_root / 'old/recovery.json'
+    old_seal.write_text(json.dumps({'python': '/accepted/python', 'manifest_sha256': 'old-digest'}))
+    journal.value.update(status='candidate_testing', step='before', candidate='new', testing_release='old',
+                         schema_changed=True, recovery_in_progress=True, checkpoint_restored=problem != 'not-restored',
+                         failure_reason_code='native_upgrade_pg_busy', dotnet_coordinator=True,
+                         recovery_sha256=upgrade.digest(old_seal))
+    if problem == 'terminal-interrupted':
+        journal.value.update(status='rolled_back', step='after', accepted_release='old')
+    journal.write()
+    if problem == 'terminal-interrupted':
+        upgrade.publish(journal, 'rolled_back')
+    else:
+        upgrade.publish(journal, 'failed', terminal=False, reason_code='native_upgrade_recovery_pending')
+    if problem == 'receipt-changed':
+        path = upgrade.checkpoint_root(journal) / 'integrity-verified.json'
+        path.write_text('{}')
+    monkeypatch.setattr(preinstall, 'recovery_required', lambda: True)
+    monkeypatch.setattr(upgrade, 'RECOVERY', recovery_root)
+    monkeypatch.setattr(upgrade, 'check_checkpoint_space', lambda: events.append('space-checked'))
+    monkeypatch.setattr(upgrade, 'restore_checkpoint', lambda *a: pytest.fail('recovery must not replay a restore'))
+    monkeypatch.setattr(install, 'trusted_path', lambda path: path)
+    old_package_metadata = upgrade.package_metadata
+    monkeypatch.setattr(upgrade, 'package_metadata', lambda root: (
+        old_package_metadata(root) if root.name == 'old' else {'version': new_version}))
+
+    def subprocess_run(argv, **kwargs):
+        if argv[0] == '/usr/bin/dpkg':
+            assert argv[1:] == ['--compare-versions', new_version, 'gt', VERSION]
+        elif argv[0] == '/usr/bin/dpkg-deb':
+            if argv[1] != '--extract':
+                assert argv[-1] == 'candidate.deb'
+                return SimpleNamespace(stdout=f'sli-release-next\n{new_version}\n')
+            root = Path(argv[-1]) / 'opt/sli/releases/next/deploy/linux'
+            root.mkdir(parents=True)
+            (root / 'native_upgrade.py').write_text('# new kit coordinator')
+        else:
+            assert argv[:3] == ['/accepted/python', '-I', '-B']
+            assert Path(argv[3]).read_text() == '# new kit coordinator'
+            assert argv[4:] == ['finish-package-recovery', new_version, journal.path.name]
+            events.append('candidate-coordinator')
+            upgrade.finish_package_recovery(new_version, journal.path.name)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(upgrade.subprocess, 'run', subprocess_run)
+    if problem == 'not-restored':
+        upgrade.check_package_space(new_version, 'candidate.deb')
+        with pytest.raises(RuntimeError, match='native_transaction_pending'):
+            upgrade.prepare_package(new_version)
+        assert 'candidate-coordinator' not in events
+        return
+    if problem == 'receipt-changed':
+        with pytest.raises(RuntimeError, match='native_upgrade_checkpoint_unverified'):
+            upgrade.check_package_space(new_version, 'candidate.deb')
+        assert 'switch-old' not in events
+        return
+    if problem == 'reopening-failed':
+        def fail_schedule(schedule):
+            raise RuntimeError('native_install_command_failed')
+
+        with monkeypatch.context() as interrupted:
+            interrupted.setattr(install, 'start_backup_schedule', fail_schedule)
+            with pytest.raises(RuntimeError, match='native_install_command_failed'):
+                upgrade.check_package_space(new_version, 'candidate.deb')
+        result = json.loads((journal.path / 'result.json').read_text())
+        assert result['terminal'] is False and result['writers_fenced'] is True
+        assert result['reason_code'] == 'native_upgrade_recovery_pending'
+    upgrade.check_package_space(new_version, 'candidate.deb')
+    result = json.loads((journal.path / 'result.json').read_text())
+    assert result['status'] == 'rolled_back' and result['terminal'] is True and result['services_restored'] is True
+    assert result['accepted_release'] == 'old'
+    assert events.index('candidate-coordinator') < events.index('acceptance') < events.index('space-checked')
+
+    monkeypatch.setattr(install, 'setup_deadline', nullcontext)
+    upgrade.prepare_package(new_version)
+    upgrade.configure_package('new', new_version)
+    assert upgrade.package_transaction(new_version).value['status'] == 'committed'
+    assert upgrade.package_transaction(VERSION).value['status'] == 'rolled_back'
+
+
 @pytest.mark.parametrize(('api_starts', 'rollback_query'), [(True, False), (False, False), (False, True)])
 def test_package_upgrade_api_readiness_controls_checkpoint_restore(
         reuse_transaction, monkeypatch, capsys, api_starts, rollback_query):
@@ -968,7 +1109,7 @@ def test_package_upgrade_api_readiness_controls_checkpoint_restore(
 
         monkeypatch.setattr(upgrade, 'fence', FENCE)
         monkeypatch.setattr(upgrade, 'stop_application', STOP_APPLICATION)
-        monkeypatch.setattr(upgrade, 'unit_absent', lambda unit: False)
+        monkeypatch.setattr(upgrade, 'unit_state', lambda unit: {'LoadState': 'loaded', 'ActiveState': 'inactive'})
         monkeypatch.setattr(runtime, 'stop_services', lambda *args, **kwargs: None)
         monkeypatch.setattr(runtime, 'stop_writers', stop_writers)
         monkeypatch.setattr(upgrade, 'wait_restore_databases', lambda: None)

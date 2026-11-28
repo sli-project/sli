@@ -1,5 +1,6 @@
 """Exercise the package migration on a previous native install in CI."""
 
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 import os
 from pathlib import Path
@@ -7,10 +8,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
+from unittest.mock import patch
 
 import psycopg
 
-from deploy.linux import native_pg_inventory, native_pg_migrate
+from deploy.linux import native_backup, native_pg_inventory, native_pg_migrate, native_upgrade
 
 
 PG_BIN = Path("/usr/lib/postgresql/18/bin")
@@ -115,6 +118,28 @@ def verify_workstation_inventory(connection):
         assert connection.execute("select public.advance_workstation_ad_inventory436()").fetchone() == (None,)
 
 
+def verify_postgres_drain(maintenance, credentials):
+    password = (credentials / 'runtime_password').read_text(encoding='ascii').strip()
+    with maintenance.transaction(), psycopg.connect(host='127.0.0.1', dbname='sli', user='adlog_user',
+                                                    password=password, application_name='fixture-worker',
+                                                    autocommit=True) as worker:
+        maintenance.execute('select 1')  # Keep a postgres maintenance transaction open throughout.
+        worker.execute('begin')
+
+        def finish_worker():
+            worker.execute('select pg_sleep(20)')
+            worker.execute('commit')
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            started = time.monotonic()
+            pending = executor.submit(finish_worker)
+            settings = native_backup.settings() | {'SLI_HELPER_RUNTIME_ROOT': str(credentials.parent / 'drain-helpers')}
+            with patch.object(native_backup, 'settings', return_value=settings):
+                native_upgrade.database_quiet()
+            assert time.monotonic() - started >= 20
+            pending.result()
+
+
 def exercise(previous, work, previous_version):
     # Match the installer and package runner's endpoints inside the private namespaces.
     subprocess.run(["ip", "link", "set", "lo", "up"], check=True)
@@ -195,6 +220,8 @@ os.execve(sys.executable, [sys.executable, '-B', '-m', 'deploy.linux.entrypoint'
             )
             verify_ledger(connection, previous)
             verify_acl(connection)
+            if previous_version == 442:
+                verify_postgres_drain(connection, credentials)
             exercise_backfill = previous_version < 421
             seed(connection, exercise_backfill=exercise_backfill)
             native_pg_migrate.migrate(ROOT)
