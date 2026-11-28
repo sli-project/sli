@@ -86,6 +86,9 @@ public static class NotificationInput
 
 public sealed record NotificationWorkspaceQuery(int Days, string? Channel, string? Status, long? Finding, DateTimeOffset? Before, Guid? BeforeId)
 {
+    public bool Collapse { get; init; }
+    public Guid? GroupId { get; init; }
+
     public static readonly IReadOnlyDictionary<string, string[]> States = new Dictionary<string, string[]>
     {
         ["accepted"] = ["accepted"], ["errors"] = ["failed", "blocked", "delivery_unknown"],
@@ -103,7 +106,11 @@ public sealed record NotificationWorkspaceQuery(int Days, string? Channel, strin
             if (!Integer(value, out var id) || id <= 0 || id > long.MaxValue) throw new NotificationException("invalid_notification_request");
             finding = (long)id;
         }
-        var result = new NotificationWorkspaceQuery(days, channel, status, finding, null, null);
+        var collapse = First("collapse");
+        if (collapse is not (null or "0" or "1")) throw new NotificationException("invalid_notification_request");
+        Guid? group = First("group_id") is { } groupId ? NotificationInput.Id(groupId) : null;
+        if (collapse == "1" && group is not null) throw new NotificationException("invalid_notification_request");
+        var result = new NotificationWorkspaceQuery(days, channel, status, finding, null, null) { Collapse = collapse == "1", GroupId = group };
         if (First("cursor") is not { } token) return result;
         try
         {
@@ -134,6 +141,7 @@ public sealed record NotificationWorkspaceQuery(int Days, string? Channel, strin
     {
         // Python json.dumps(context, sort_keys=True) includes spaces after commas.
         string raw = $"[{Days}, {(Channel is null ? "null" : JsonSerializer.Serialize(Channel))}, {(Status is null ? "null" : JsonSerializer.Serialize(Status))}, {(Finding?.ToString(CultureInfo.InvariantCulture) ?? "null")}]";
+        if (Collapse || GroupId is not null) raw += $":{Collapse}:{GroupId:D}";
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(raw)));
     }
     public string Cursor(JsonObject item) => Convert.ToBase64String(JsonSerializer.SerializeToUtf8Bytes(new

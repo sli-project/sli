@@ -375,7 +375,7 @@ public sealed partial class HomeSummaryEndpointTests
         Assert.DoesNotContain("linked_case", body.ToJsonString());
         var problem = Assert.Single(body["action_queue"]!["items"]!.AsArray(), item => (string?)item?["id"] == "problem:7")!;
         Assert.Equal("password_brute", (string?)problem["presentation_code"]);
-        Assert.Equal("Подбирают пароль к учётной записи", (string?)problem["title"]);
+        Assert.Equal("Подбор пароля к учётной записи", (string?)problem["title"]);
         Assert.Contains("12", (string?)problem["what"]);
         var read = rows.Calls.First(c => c.Sql.Contains("select findings.id"));
         Assert.Equal(new long[] { 7 }, read.Parameters["ids"]);

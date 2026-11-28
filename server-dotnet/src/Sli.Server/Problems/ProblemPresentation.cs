@@ -234,12 +234,7 @@ public static class ProblemPresentation
             if (parameters["attempts"] is { } attempts &&
                 (spray ? (campaign || parameters["source"] is not null) && parameters["account_count"] is not null : parameters["account"] is not null))
             {
-                string key = campaign ? "spray_campaign_title" : (queueTitle, spray) switch {
-                    (true, true) => "queue_spray_title",
-                    (true, false) => "queue_brute_title",
-                    (false, true) => "spray_threshold_title",
-                    _ => "brute_threshold_title"
-                };
+                string key = campaign ? "spray_campaign_title" : spray ? "spray_threshold_title" : "brute_threshold_title";
                 if (!spray && ProblemJson.Long(parameters["address_count"]) <= 0) key += "_account";
                 var titleParameters = parameters.DeepClone().AsObject();
                 titleParameters["attempt_quantity"] = PasswordQuantity("attempt", attempts, language, queueTitle);

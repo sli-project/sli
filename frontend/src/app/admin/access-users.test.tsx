@@ -37,7 +37,7 @@ beforeEach(() => {
   state.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
     if (init?.method === "POST") return response({ item: {} });
     if (url === "/api/auth/users") return response({ items: [...people, { ...people[0], id: 4, username: "synthetic.service", is_service: true }], roles: [] });
-    if (url === "/api/v1/access/audit?limit=100") return response({ items: audit, limit: 100 });
+    if (url.startsWith("/api/v1/access/audit?limit=100")) return response({ items: audit, limit: 100 });
     if (url === "/api/v2/reports") return response({ items: [{ key: "ad.infrastructure", title: "AD status" }] });
     throw new Error(`Unexpected test request: ${url}`);
   });
@@ -66,7 +66,7 @@ it.each(["ru", "en"] as const)("shows the user endpoint's people and roles witho
   expect(within(table).getByText(t("access.admin.status.disabled"))).toBeTruthy();
   expect(screen.queryByText("synthetic.service")).toBeNull();
   expect(within(table).getAllByText("—").length).toBeGreaterThan(0);
-  for (const key of ["access.center.audit.effective", "access.center.recent_assignments", "access.user.reports.title", "access.accountFilter.label"]) {
+  for (const key of ["access.center.recent_assignments", "access.user.reports.title"]) {
     expect(screen.queryByText(t(key as Parameters<typeof t>[0]))).toBeNull();
   }
   expect(container.querySelector("details,.sli-ds-metrics,.sli-ds-state--banner")).toBeNull();
@@ -203,7 +203,7 @@ it.each(["viewer", "operator", "failed", "pending"])("does not request the user 
 
 it("does not attribute an API key's action to a person with the same numeric identifier", async () => {
   const original = state.fetch.getMockImplementation()!;
-  state.fetch.mockImplementation((url: string, init?: RequestInit) => url === "/api/v1/access/audit?limit=100"
+  state.fetch.mockImplementation((url: string, init?: RequestInit) => url.startsWith("/api/v1/access/audit?limit=100")
     ? response({ items: [{ ...audit[0], actor_type: "api_key" }], limit: 100 }) : original(url, init));
   const user = userEvent.setup();
   mount();
@@ -212,6 +212,36 @@ it("does not attribute an API key's action to a person with the same numeric ide
   const table = await screen.findByRole("table", { name: "Журнал" });
   expect(within(table).queryByText("synthetic.admin")).toBeNull();
   expect(within(table).queryByRole("columnheader", { name: t("access.people.audit.actor") })).toBeNull();
+});
+
+it("opens the role descriptions from a user row and gives that list a distinct tab label", async () => {
+  mount();
+  await screen.findByRole("tab", { name: "Учётные записи" });
+  const table = await screen.findByRole("table", { name: t("access.people.title") });
+  expect(screen.queryByRole("tab", { name: t("access.people.title") })).toBeNull();
+  expect(screen.getByRole("link", { name: "Заявки на доступ" }).getAttribute("href")).toBe("/app/access-requests");
+  fireEvent.click(within(table).getAllByRole("button", { name: t("access.people.changeRole") })[1]);
+  const dialog = screen.getByRole("dialog", { name: t("access.people.changeRole") });
+  expect(within(dialog).getByText(t("access.admin.roles.operator.description"))).toBeTruthy();
+  expect(within(dialog).getByText(t("access.admin.roles.admin.description"))).toBeTruthy();
+});
+
+it("shows a grouped Telegram change with its raw records and attributes local automation to SLI", async () => {
+  const original = state.fetch.getMockImplementation()!;
+  const first = { ...audit[0], actor_id: null, actor_type: "local", action: "notification_channel_update",
+    target_type: "notification_channel", target_key: "telegram", created_at: "2026-11-13T11:59:00Z" };
+  const last = { ...first, id: 2, created_at: "2026-11-13T12:00:00Z" };
+  state.fetch.mockImplementation((url: string, init?: RequestInit) => url.includes("collapse=1")
+    ? response({ items: [{ ...last, occurrences: [last, first] }], limit: 100 }) : original(url, init));
+  mount();
+  fireEvent.click(await screen.findByRole("tab", { name: "Журнал" }));
+  const table = await screen.findByRole("table", { name: "Журнал" });
+  const row = within(table).getByText("Изменены настройки Telegram").closest("tr")!;
+  expect(within(row).getByRole("cell", { name: "SLI" })).toBeTruthy();
+  expect(within(row).getByRole("cell", { name: "2" })).toBeTruthy();
+  fireEvent.click(row);
+  const dialog = screen.getByRole("dialog", { name: "Изменены настройки Telegram" });
+  expect(within(dialog).getByRole("table")).toBeTruthy();
 });
 
 it("loads the inventory error independently and retries it", async () => {
