@@ -2,6 +2,7 @@ using System.Data;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using Npgsql;
+using Sli.Server.Agents.FileAudit;
 using Sli.Server.Storage.Direct;
 
 namespace Sli.Server.Problems;
@@ -425,6 +426,7 @@ public sealed partial class ProblemRepository
             if (!query.QueueList) await AttachCases(tx, rows, access, ct);
         }
         await AttachKerberosFacts(tx, rows.OfType<JsonObject>().ToArray(), ct);
+        if (!query.Compact) await AttachFileRansomFacts(tx, rows, query.Domains, ct);
         await tx.CommitAsync(ct);
         var result = new JsonObject { ["generated_at_utc"] = ProblemJson.Iso(generated), ["status"] = "ok", ["source"] = "semantic_production_findings",
             ["state"] = runtimeState == "stale" ? "stale" : runtimeState is "inactive" or "unknown" ? "partial" : rows.Count > 0 ? "available" : "empty",
@@ -480,6 +482,25 @@ public sealed partial class ProblemRepository
                     ["source"] = Unique(e => ProblemJson.Text(e["ip_address"])) };
             }
         }
+    }
+
+    private static async Task AttachFileRansomFacts(NpgsqlTransaction tx, JsonArray rows, long[]? domains, CancellationToken ct)
+    {
+        var fileRows = rows.OfType<JsonObject>().Where(row => ProblemJson.Text(row["rule_code"]) == "semantic.qw.file-ransom")
+            .ToDictionary(row => ProblemJson.Long(row["id"]));
+        if (fileRows.Count == 0 || !ProblemJson.Bool((await One(tx,
+            "select to_regprocedure('public.file_ransom_problem_facts462(bigint[],bigint[])') is not null as available",
+            null, ct))?["available"])) return;
+        var facts = await Rows(tx, $"""
+            select p.finding_id,(p.facts - 'subject_sid' - 'account_at')||jsonb_build_object('actor',left(name.account,256)) as facts
+            from public.file_ransom_problem_facts462(@ids,@domains::bigint[]) p
+            cross join lateral (select p.facts->>'subject_sid' as sid,
+                (p.facts->>'account_at')::timestamptz as observed_at) a
+            cross join lateral ({FileAuditAdEnrichment.AccountAtSql}) name
+            """,
+            new() { ["ids"] = fileRows.Keys.ToArray(), ["domains"] = domains }, ct);
+        foreach (var fact in facts.OfType<JsonObject>())
+            fileRows[ProblemJson.Long(fact["finding_id"])]["file_ransom_facts"] = fact["facts"]?.DeepClone();
     }
 
     internal static async Task AttachKerberosFacts(NpgsqlTransaction tx, IReadOnlyList<JsonObject> rows, CancellationToken ct)

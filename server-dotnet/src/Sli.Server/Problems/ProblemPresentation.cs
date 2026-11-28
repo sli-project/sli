@@ -180,6 +180,35 @@ public static class ProblemPresentation
     internal static JsonObject RuleMessage(JsonObject finding, string suffix, string language, ProblemAccess? access = null, bool queueTitle = false)
     {
         string rule = ProblemJson.Text(finding["rule_code"]);
+        if (rule == "semantic.qw.file-ransom")
+        {
+            var facts = finding["file_ransom_facts"];
+            bool identity = access is null || access.Fields("identity_basic");
+            bool technical = access is null || access.Fields("technical");
+            const string prefix = "security.problems.presentation.";
+            JsonObject fileMessage;
+            if (suffix == "title")
+            {
+                fileMessage = Message(prefix + "qw.file-ransom.title", language);
+                var quantity = facts?["files"] is { } files && facts["minutes"] is { } minutes
+                    ? Message(prefix + "file_ransom_quantity", language, new() { ["files"] = files.DeepClone(), ["minutes"] = minutes.DeepClone() })
+                    : null;
+                fileMessage["text"] = string.Join(" · ", new[]
+                {
+                    ProblemJson.Text(fileMessage["text"]), technical ? ProblemJson.Text(facts?["share"]) : "",
+                    ProblemJson.Text(quantity?["text"]), identity ? ProblemJson.Text(facts?["actor"]) : ""
+                }.Where(text => text.Length > 0));
+            }
+            else if (suffix == "next")
+            {
+                fileMessage = identity && technical && facts?["actor"] is { } actor && facts["folder"] is { } folder
+                    ? Message(prefix + "file_ransom_next_named", language, new() { ["actor"] = actor.DeepClone(), ["folder"] = folder.DeepClone() })
+                    : Message(prefix + "qw.file-ransom.next", language);
+            }
+            else return new();
+            fileMessage["rendered"] = true;
+            return fileMessage;
+        }
         if (rule.StartsWith("semantic.sigma.", StringComparison.Ordinal) && Guid.TryParseExact(rule[15..], "D", out _))
         {
             var facts = RuleParameters(finding, access, language);
@@ -340,6 +369,9 @@ public static class ProblemPresentation
             ["title_text"] = RuleMessage(finding, "title", language, access, queueTitle: queue && !includeDescription),
             ["actor_text"] = actor is not null ? M("security.problems.identity.name", new() { ["name"] = actor["label"]?.DeepClone() }) : Principal(actorRaw, hideSid: true) ?? RuleParameters(finding, access)["actor"]?.DeepClone(),
             ["wording_limitation"] = null };
+        if (rule == "semantic.qw.file-ransom" && access.Fields("identity_basic") &&
+            finding["file_ransom_facts"]?["actor"] is { } fileActor)
+            fields["actor_text"] = fileActor.DeepClone();
         if (!queue || includeDescription) {
             var what = RuleMessage(finding, "what", language, access);
             if (IsPasswordFinding(rule) && access.Fields("technical", "raw_evidence") &&

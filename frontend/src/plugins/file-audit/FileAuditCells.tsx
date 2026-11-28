@@ -54,7 +54,8 @@ export function evidenceRecordNumbers(row: FileAuditRow) {
 
 export function fileAuditOperation(row: FileAuditRow, column?: ReportColumnDto) {
   if (row.operation === "permissions") return t("file-audit.screen.permission_change");
-  if (row.operation === "access_denied" || !column && row.outcome === "failure") return t("file-audit.screen.access_denied");
+  if (row.operation === "access_denied" || row.outcome === "failure" && (!column || row.operation === "access_check"))
+    return t("file-audit.screen.access_denied");
   const known = ["read", "write", "delete", "rename", "delete_right", "share_change", "audit_change", "access_check", "unknown"] as const;
   const operation = known.find(value => value === row.operation);
   return operation ? t("reports.v2.file-audit.actions.columns.operation.labels." + operation as "reports.v2.file-audit.actions.columns.operation.labels.read")
@@ -70,9 +71,14 @@ export function fileServerColumns(view: FileServerView, declared: ReportColumnDt
     const columns: TableColumn<FileAuditRow>[] = [
       { ...when("observed_at"), label: t("file-audit.screen.time"), render: row => <FileAuditInterval row={row}/> },
       { key: "operation", label: t("file-audit.operation"), value: row => fileAuditOperation(row, operation) },
-      { key: "path", label: t("file-audit.screen.path"), wrap: true, width: "35%", render: row =>
-        <button type="button" className="sli-ds-table__link" onClick={event => { event.stopPropagation(); open(row); }}>{hostText(row.path) ?? "—"}</button> },
-      { key: "account", label: t("file-audit.screen.who"), value: row => hostText(row.subject_name, 256) || hostText(row.subject_sid, 256) },
+      { key: "path", label: t("file-audit.screen.path"), wrap: true, width: "35%", render: row => {
+        const path = hostText(row.path);
+        const previous = row.operation === "rename" ? hostText(row.old_path) : undefined;
+        return <button type="button" className="sli-ds-table__link" onClick={event => { event.stopPropagation(); open(row); }}>
+          {path && previous ? previous + " → " + path : path ?? "—"}
+        </button>;
+      } },
+      { key: "account", label: t("file-audit.screen.who"), width: "20%", value: row => hostText(row.subject_name, 256) || hostText(row.subject_sid, 256) },
       { key: "client_ip", label: t("file-audit.screen.from"), value: row => hostText(row.client_ip, 64) },
       { key: "source_name", label: t("file-audit.workspace.server"), value: row => hostText(row.source_name, 256) },
       { key: "problem", label: t("file-audit.screen.problem"), render: row => {

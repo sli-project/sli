@@ -9,6 +9,21 @@ namespace Sli.Server.Agents.FileAudit;
 // Source sli.ad/file_audit_enrichment.py; reads retained observations only.
 internal sealed class FileAuditAdEnrichment(FileAuditHookAdmission admission)
 {
+    // The caller supplies the SID and observation time in alias a.
+    internal const string AccountAtSql = """
+        select case when count(distinct concat(d.fqdn,chr(92),v.attributes_json#>>'{attributes,sam_account_name}'))=1
+            then min(concat(d.fqdn,chr(92),v.attributes_json#>>'{attributes,sam_account_name}')) end as account
+        from public.domains d
+        join public.ad_context_entity_aliases alias on alias.domain_id=d.id and alias.alias_type='object_sid'
+            and alias.normalized_value=lower(a.sid)
+        join public.ad_context_entity_versions v on v.entity_id=alias.entity_id
+        join public.ad_context_runs run on run.run_id=v.source_run_id and run.status='completed'
+        where lower(d.domain_sid)=lower(regexp_replace(a.sid,'-[0-9]+$',''))
+          and nullif(d.fqdn,'') is not null and v.source_section='directory_accounts'
+          and v.valid_from_utc<=a.observed_at and (v.valid_to_utc is null or v.valid_to_utc>a.observed_at)
+          and nullif(v.attributes_json#>>'{attributes,sam_account_name}','') is not null
+        """;
+
     internal static async Task<System.Text.Json.JsonElement> SearchAccounts(NpgsqlConnection db, NpgsqlTransaction tx,
         JsonObject? body, Principal principal, CapabilityDecisionSet access, CancellationToken ct)
     {

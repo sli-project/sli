@@ -470,10 +470,32 @@ public class FileAuditConsumerDatabaseTests
         const string sid = "S-1-5-21-100000001-200000002-300000003-1001";
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new SqlPostgresFixture();
-        await fixture.StartAsync(ct,throughVersion:458);
+        await fixture.StartAsync(ct,throughVersion:461);
+        await fixture.Pg.ApplyFileAsync(Path.Combine(PostCollectionPostgres.Repository(),
+            "config/postgres_migrations/462_file_actions_and_problems.sql"), null, ct);
         await using var owner = await fixture.Pg.OpenAsync(ct);
         await Register(owner, ct, root);
         await PostCollectionPostgres.Sql(owner, "update sli_agents set collection_policy=jsonb_set(collection_policy,'{manage_windows_audit}','true')", ct);
+        await PostCollectionPostgres.Sql(owner, """
+            update domains set domain_sid='S-1-5-21-100000001-200000002-300000003' where id=1;
+            update servers set fqdn='FILES.example.test' where id=900227;
+            insert into storage_v2_entity_type(value) values('ad_user') on conflict do nothing;
+            insert into entities_v2(id,entity_type_id,natural_key,display_name,domain_id,source_core_sha256)
+                select 500,id,'fixture-admin','Fixture administrator',1,sha256('file-account'::bytea)
+                from storage_v2_entity_type where value='ad_user';
+            insert into ad_context_runs(run_id,source_pack_id,source_pack_version,domain_id,mode,observed_at_utc,bundle_sha256,status)
+                values(md5('file-account-snapshot')::uuid,'synthetic','1',1,'full',now()-interval '1 day',sha256('file-account-snapshot'::bytea),'importing');
+            insert into ad_context_sections(run_id,section_name,status,record_count)
+                values(md5('file-account-snapshot')::uuid,'directory_accounts','complete',1);
+            insert into ad_context_entity_versions(entity_id,source_section,valid_from_utc,last_observed_at_utc,content_sha256,attributes_json,source_run_id)
+                values(500,'directory_accounts',now()-interval '1 day',now()-interval '1 day',sha256('file-account'::bytea),
+                    '{"identity":{"kind":"ad_user","object_sid":"S-1-5-21-100000001-200000002-300000003-1001"},"attributes":{"sam_account_name":"FixtureAdmin"}}',
+                    md5('file-account-snapshot')::uuid);
+            insert into ad_context_entity_aliases(entity_id,domain_id,alias_type,alias_value,normalized_value,first_seen_utc,last_seen_utc,source_run_id)
+                values(500,1,'object_sid','S-1-5-21-100000001-200000002-300000003-1001','s-1-5-21-100000001-200000002-300000003-1001',
+                    now()-interval '1 day',now()-interval '1 day',md5('file-account-snapshot')::uuid);
+            update ad_context_runs set status='completed' where run_id=md5('file-account-snapshot')::uuid;
+            """,ct);
         var (_, _, policy) = AgentFileAuditValidatorTests.ActionPacket();
         policy.Roots[0]!["path"] = root;
         var now = Iso8601.Truncate(DateTimeOffset.UtcNow);
@@ -548,14 +570,14 @@ public class FileAuditConsumerDatabaseTests
             await tx.CommitAsync(ct);
         }
 
-        PacketRecord Row(int record, int eventId, string fields, bool failure = false)
+        PacketRecord Row(int record, int eventId, string fields, bool failure = false, int? handle = null, string subject = sid)
         {
             string xml = $$"""
                 <Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event"><System>
                 <Provider Name="{{FileAuditPolicy.Provider}}"/><EventID>{{eventId}}</EventID><Keywords>{{(failure ? "0x8010000000000000" : "0x8020000000000000")}}</Keywords>
                 <EventRecordID>{{record}}</EventRecordID><TimeCreated SystemTime="{{observed.UtcDateTime:O}}"/><Channel>Security</Channel></System>
-                <EventData><Data Name="SubjectUserSid">{{sid}}</Data><Data Name="SubjectLogonId">0x12</Data>
-                <Data Name="ProcessId">0x10</Data><Data Name="HandleId">0x{{(eventId == 4660 ? record - 1 : record):x}}</Data>{{fields}}</EventData></Event>
+                <EventData><Data Name="SubjectUserSid">{{subject}}</Data><Data Name="SubjectLogonId">0x12</Data>
+                <Data Name="ProcessId">0x10</Data><Data Name="HandleId">0x{{(handle ?? (eventId == 4660 ? record - 1 : record)):x}}</Data>{{fields}}</EventData></Event>
                 """;
             return new PacketRecord("event_xml", record, EventXml.Parse(xml,source,"localhost","Security"));
         }
@@ -564,6 +586,13 @@ public class FileAuditConsumerDatabaseTests
         rows.Add(Row(140,4660,""));
         rows.Add(Row(141,5145,$"<Data Name=\"ShareLocalPath\">{root}</Data><Data Name=\"RelativeTargetName\">item-0.txt</Data>", failure:true));
         rows.Add(Row(142,4670,$"<Data Name=\"ObjectName\">{PathOf(0)}</Data><Data Name=\"ObjectType\">File</Data>"));
+        string Access(string path, string mask) =>
+            $"<Data Name=\"ObjectName\">{path}</Data><Data Name=\"ObjectType\">File</Data><Data Name=\"AccessMask\">{mask}</Data>";
+        const string system = "S-1-5-18";
+        rows.Add(Row(143,4656,Access(PathOf(1),"0x10000"),handle:143,subject:system));
+        rows.Add(Row(144,4663,Access(PathOf(1),"0x10000"),handle:143,subject:system));
+        rows.Add(Row(145,4663,Access(PathOf(1)+".moved","0x80"),handle:143,subject:system));
+        rows.Add(Row(146,4656,Access(PathOf(2),"0x2"),failure:true,subject:system));
         Cursor Bookmark(long last) => new("bookmark",CanonicalJson.Serialize(new JsonObject
             { ["record_id"] = last, ["bookmark"] = $"fixture-{last}", ["generation"] = generation }));
         JsonObject Context() => new() { ["policy_revision"] = "2", ["filtered_count"] = 0, ["lost_count"] = 0, ["read_error"] = null };
@@ -649,13 +678,12 @@ public class FileAuditConsumerDatabaseTests
         }
         Assert.Equal(4, await Number(owner,"select count(distinct event_id) from sli_plugin_file_audit.observations where event_id in (4663,4660,5145,4670)",ct));
         Assert.Equal(110, await Number(owner,"select count(*) from sli_plugin_file_audit.actions where operation='write'",ct));
-        Assert.Equal(3, await Number(owner,"select count(*) from sli_plugin_file_audit.actions where operation in ('delete','permissions') or outcome='failure'",ct));
+        Assert.Equal(4, await Number(owner,"select count(*) from sli_plugin_file_audit.actions where operation in ('delete','permissions') or outcome='failure'",ct));
         Assert.Equal(1, await Number(owner,"""
             select count(*) from sli_plugin_file_audit.rule_results where rule_code='file-audit.mass-write'
               and result#>>'{details,distinct_files}'='110' and result#>>'{details,threshold}'='100'
               and result#>>'{details,window_seconds}'='300' and finding_id is not null
             """,ct));
-        await FileAuditReportTests.CheckActivity(fixture,now,ct);
         await using (var worker = new NpgsqlConnection(fixture.Dsn("sli_semantic_login")))
         {
             await worker.OpenAsync(ct);
@@ -677,13 +705,35 @@ public class FileAuditConsumerDatabaseTests
             await tx.CommitAsync(ct);
         }
         Assert.Equal(1, await Number(owner,"select count(*) from semantic_file_ransom_episodes",ct));
+        await using (var worker = new NpgsqlConnection(fixture.Dsn("sli_semantic_login")))
+        {
+            await worker.OpenAsync(ct);
+            await PostCollectionPostgres.Sql(worker,"set role adlog_semantic_worker",ct);
+            var production = new SemanticProduction(null!, new(true, true, false, true, false, false),
+                SemanticRuntimeSettings.FindingsMode, 1);
+            var risk = await production.ProcessRisk(worker, ct, fileEpisodesOnly: true);
+            Assert.True(risk.Number("published") == 1, risk.ToJsonString() + " " +
+                (await fixture.Pg.DiagnosticsAsync(ct)).Split('\n').LastOrDefault(line => line.Contains("ERROR:")));
+        }
+        Assert.Equal(1, await Number(owner,"""
+            select count(*) from public.findings_active
+            where rule_code='semantic.qw.file-ransom' and public.is_semantic_finding_published_v1(id)
+            """,ct));
+        long problem = await Number(owner,"select id from public.findings_active where rule_code='semantic.qw.file-ransom'",ct);
+        await PostCollectionPostgres.Sql(owner, """
+            insert into sli_plugin_file_audit.actions(action_id,contract_version,agent_id,source_instance_id,
+                collection_scope_id,observed_at,subject_sid,path,operation,outcome,projection_version)
+            select repeat('c',64),1,agent_id,source_instance_id,collection_scope_id,observed_at,subject_sid,path,
+                'access_check','success',1 from sli_plugin_file_audit.actions where operation='rename'
+            """,ct);
+        await FileAuditReportTests.CheckActivity(fixture,now,problem,root,ct);
 
         // The preceding schema accepts the migration and rollback preserves
         // the imported projection and its evidence.
         await fixture.RollbackAfterAsync(457,ct);
         await using (var tx = await app.BeginTransactionAsync(ct))
             Assert.False(await AgentPolicyAssignments.FileActivityAvailableAsync(app,tx,ct));
-        Assert.Equal(113, await Number(owner,"select count(*) from sli_plugin_file_audit.actions",ct));
+        Assert.Equal(117, await Number(owner,"select count(*) from sli_plugin_file_audit.actions",ct));
     }
 
     [Fact]
