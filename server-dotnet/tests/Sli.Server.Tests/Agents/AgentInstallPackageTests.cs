@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Net;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
@@ -18,6 +19,31 @@ namespace Sli.Server.Tests.Agents;
 
 public sealed class AgentInstallPackageTests
 {
+    [Theory]
+    [InlineData("sli.example.test:8443", "192.0.2.40", "https://sli.example.test:8443/")]
+    [InlineData("sli.example.test", "192.0.2.41", null)]
+    [InlineData("sli.example.test", "::1", null)]
+    [InlineData("sli.example.test", null, null)]
+    [InlineData("other.example.test", "192.0.2.40", null)]
+    [InlineData("192.0.2.40", "192.0.2.40", null)]
+    public async Task Installer_prefers_the_requested_tls_name_only_if_it_resolves_to_the_server(
+        string host, string? resolution, string? expected)
+    {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var request = new CertificateRequest("CN=sli.example.test", key, HashAlgorithmName.SHA256);
+        var san = new SubjectAlternativeNameBuilder();
+        san.AddDnsName("sli.example.test");
+        san.AddIpAddress(IPAddress.Parse("192.0.2.40"));
+        request.CertificateExtensions.Add(san.Build());
+        using var certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
+        var fallback = new Uri("https://192.0.2.40/");
+        var result = await AgentInstallPackages.PreferredOriginAsync(new("192.0.2.60", "https", host), fallback, null,
+            certificate, (_, _) => resolution is null ? throw new SocketException((int)SocketError.HostNotFound)
+                : Task.FromResult(new[] { IPAddress.Parse(resolution) }), TestContext.Current.CancellationToken);
+
+        Assert.Equal(expected, result);
+    }
+
     [Fact]
     public async Task Personalizes_a_verified_msi_and_refuses_a_different_source_digest()
     {

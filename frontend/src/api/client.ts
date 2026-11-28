@@ -63,7 +63,7 @@ export type AgentDeliveryDiagnostic = {
 export type AgentDeliveryDiagnostics = { reported_at: string; items: AgentDeliveryDiagnostic[] };
 export type AgentMachineRole = "domain_controller" | "file_server" | "workstation";
 export type AgentEnrollmentRejection = { id: string; reported_hostname: string | null; occurred_at: string; reason: string };
-export type AgentInstallPackage = { server_url: string | null; package_url: string | null; sha256?: string; host_limit?: number | null; expires_at?: string | null };
+export type AgentInstallPackage = { server_url: string | null; preferred_server_url?: string; package_url: string | null; sha256?: string; host_limit?: number | null; expires_at?: string | null };
 export type AgentInstallPackageSettings = { server_url: string; host_limit?: number | null; expires_at?: string | null };
 
 export type AgentItem = {
@@ -1215,6 +1215,7 @@ export type AgentCollectionCompleteness = {
 
 export type AgentCollectionHealth = {
   connected_domain_controllers?: number;
+  has_domain_controller_agent?: boolean;
   replaced_agents?: Array<{ id: string; name: string; agent_version?: string | null; replacement_version?: string | null; certificate_reissue_required?: boolean }>;
   diagnostics?: { state: "unavailable"; reason: "timeout" | "read_failed" };
   completeness?: AgentCollectionCompleteness;

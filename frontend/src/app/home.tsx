@@ -9,7 +9,7 @@ import { getLocale, t, type MessageKey } from "../i18n";
 import { browserTimeZone, formatDateTime, formatTableTime } from "../shared/date-time";
 import { EMPTY_VALUE, formatNumber } from "../shared/format";
 import { useAccessStatus, useEffectiveAccess, useTimeZone } from "./App";
-import { FirstAdSource, useFirstAdSource } from "./first-ad-source";
+import { firstAdAgentHref } from "./first-ad-source";
 import "./home.css";
 
 
@@ -242,8 +242,13 @@ export function HomePage() {
     staleTime: 30_000, retry: false, enabled: accessStatus === "получены",
   });
   const data = summary.data;
-  const firstAdSource = useFirstAdSource(search, summary.isSuccess && data?.domains.length === 0);
-  const retry = () => void summary.refetch();
+  const canRegister = accessStatus === "получены" && !access?.preview
+    && (access?.platform_owner || access?.capabilities.includes("access.manage"));
+  const setup = useQuery({ queryKey: ["setup-status"], queryFn: api.setupStatus, retry: false, enabled: Boolean(canRegister),
+    refetchInterval: (query) => query.state.data?.agent_collection?.has_domain_controller_agent === true ? false : 30_000 });
+  const needsController = canRegister && setup.isSuccess && setup.data.agent_collection?.has_domain_controller_agent === false;
+  const onboarding = needsController && <p>{t("systemStatus.step.agent")} → <a href={firstAdAgentHref}>{t("agents.addComputer")}</a></p>;
+  const retry = () => { void summary.refetch(); if (canRegister) void setup.refetch(); };
   const togglePrevious = () => {
     if (previous) setPrevious(null);
     else if (data) {
@@ -265,9 +270,9 @@ export function HomePage() {
     {data ? <span data-home-updated>{t("home.updated", { time: clock(data.updated_at, actualZone) })}</span> : null}
     <Button disabled={accessStatus !== "получены" || summary.isFetching} onClick={retry}>{t("home.refresh")}</Button>
   </>;
-  if (firstAdSource) return <section className="sli-ds-report sli-ds-home">
+  if (needsController && data?.domains.length === 0 && !data.problems && !data.weak_spots && !data.changes) return <section className="sli-ds-report sli-ds-home">
     <PageHeader title={t("home.title")}/>
-    <FirstAdSource/>
+    {onboarding}
   </section>;
   const delta = data?.since_previous_login;
   return <section className="sli-ds-report sli-ds-home">
@@ -275,11 +280,12 @@ export function HomePage() {
       {t("home.sincePreviousLogin")} {link(delta.new_href, t("home.sincePreviousLogin.new", { count: formatNumber(delta.new_count) }))}
       {" · "}{t("home.sincePreviousLogin.closed", { count: formatNumber(delta.closed_count) })}
     </>}/>
-    {accessStatus === "загружается" || summary.isLoading || firstAdSource === undefined ? <StateView state="loading" compact skeleton="table"/> : null}
+    {onboarding}
+    {accessStatus === "загружается" || summary.isLoading ? <StateView state="loading" compact skeleton="table"/> : null}
     {accessStatus === "отказ" ? <p role="alert">{t("home.loadFailed")}</p> : null}
     {accessStatus === "получены" && <>
       {summary.isError ? <LoadError message={t("home.loadFailed")} fetching={summary.isFetching} retry={retry}/> : null}
-      {data && firstAdSource !== undefined ? <HomeComposition data={data} zone={actualZone} fetching={summary.isFetching} retry={retry}
+      {data ? <HomeComposition data={data} zone={actualZone} fetching={summary.isFetching} retry={retry}
         queue={queue} setQueue={selectQueue} pending={summary.isPlaceholderData}/> : null}
     </>}
   </section>;
