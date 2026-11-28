@@ -79,7 +79,9 @@ export function auditSubcategory(value?: string): string {
   const id = guid?.match(/^0cce([0-9a-f]{4})-69ae-11d9-bed3-505054503030$/)?.[1];
   const name = id && Object.hasOwn(subcategories, id) ? subcategories[id as keyof typeof subcategories]
     : namedSubcategories.get(guid?.replace(/^audit /, "") ?? "");
-  return name === "logon" ? t("reports.gpo.audit.logon") : name ? t(`agents.auditSubcategory.${name}`) : t("reports.gpo.audit.unknown_subcategory");
+  if (name === "logon") return t("reports.gpo.audit.logon");
+  if (name) return t(`agents.auditSubcategory.${name}`);
+  return value && guid && !/^[0-9a-f-]{36}$/.test(guid) ? value.trim() : t("reports.gpo.audit.subcategory");
 }
 
 export function auditMode(value?: string): string | undefined {

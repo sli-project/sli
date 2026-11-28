@@ -28,13 +28,10 @@ internal static class GpoPolicyCard
         if (policy is null) return exact is null ? GpoReport.Result("empty") : SnapshotUnavailable();
         string policyId = policy.Text("id");
 
-        var settings = Select("settings", "side", "setting_name", "category", "extension", "path", "value_display", "audit_mode");
-        foreach (var setting in settings.OfType<JsonObject>())
-            if (setting.TryGetPropertyValue("audit_mode", out var mode)
-                && (mode is not JsonValue value || !value.TryGetValue<string>(out var mask) || mask is not ("0" or "1" or "2" or "3" or "4")))
-                setting.Remove("audit_mode");
+        var rawSettings = snapshot.Rows("settings").Where(row => row.Text("gpo_id") == policyId).ToArray();
+        var settings = Array(GpoSettings.RowsFor(rawSettings));
         var links = Select("links", "scope_name", "order", "enabled", "enforced");
-        var permissions = Select("permissions", "trustee_name", "permission");
+        var permissions = Select("permissions", "trustee_name", "trustee_sid", "permission", "denied");
         var current = Observation(snapshot, policy);
         if (exact is not null) current["observed_at"] = Iso(exact.ObservedAt);
         var versions = new JsonArray(current);
@@ -49,6 +46,11 @@ internal static class GpoPolicyCard
             new JsonObject { ["settings"] = settings, ["links"] = links, ["permissions"] = permissions, ["versions"] = versions };
         var coverage = new JsonObject { ["observed_at_utc"] = snapshot["observed_at"]?.DeepClone() };
         var items = historyRequested && exact is null ? null : new JsonArray(Project(policy, "id", "display_name", "guid", "gpo_status"));
+        if (items?[0] is JsonObject item)
+        {
+            item["unlinked"] = GpoInventory.Reasons(policy, snapshot).OfType<JsonObject>().Any(reason => reason.Text("code") == "unlinked");
+            item["setting_count"] = GpoSettings.HasCount(policy, snapshot, settings.Count) ? JsonValue.Create(settings.Count) : null;
+        }
         coverage["domain_id"] = domain;
         coverage["snapshot_id"] = exact is null ? pair["snapshot_id"]?.DeepClone() : JsonValue.Create(exact.Id.ToString("D"));
         if (exact is not null) coverage["observed_at_utc"] = Iso(exact.ObservedAt);
@@ -67,7 +69,7 @@ internal static class GpoPolicyCard
             var from = exact is null ? request.From : to - (request.To - request.From);
             var history = await store.PolicyHistoryAsync([domain], from, to, policyId, policy.Text("guid"), ct);
             coverage["policy_history_state"] = history["state"]?.DeepClone();
-            var names = settings.OfType<JsonObject>().ToDictionary(row => row.Text("id"), row => row.Text("setting_name"));
+            var names = rawSettings.ToDictionary(row => row.Text("id"), row => row.Text("setting_name"));
             var targets = links.OfType<JsonObject>().ToDictionary(row => row.Text("id"), row => row.Text("scope_name"));
             data["changes"] = Array(history.Rows("items").Where(Displayable).Select(change => {
                 var row = Project(change, "id", "object_id", "object_type", "kind", "field", "observed_at", "before_value", "after_value");

@@ -119,11 +119,11 @@ public sealed class EntityReadEndpointTests
         }
         public Task<JsonObject> RelationsAsync(long id, Func<long, CancellationToken, Task<bool>> admitted, CancellationToken ct) => throw new NotSupportedException();
     }
-    static async Task<IHost> Host(Store store, AccessFacts? facts = null, string role = "viewer", bool authenticated = true, EventReads? eventReads = null)
+    static async Task<IHost> Host(Store store, AccessFacts? facts = null, string role = "viewer", bool authenticated = true, EventReads? eventReads = null, string? contentRoot = null)
     {
         // Resource checks are exercised here; real SQL/ACLs are covered by EntityShortReadsPostgresTests.
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Sli:AuthRequired"] = "true", ["Sli:Storage:ShortEventReads"] = "false" }).Build();
-        return await new HostBuilder().ConfigureWebHost(web => web.UseTestServer().UseContentRoot(RepositoryRoot()).ConfigureServices(services =>
+        return await new HostBuilder().ConfigureWebHost(web => web.UseTestServer().UseContentRoot(contentRoot ?? RepositoryRoot()).ConfigureServices(services =>
         {
             services.AddRouting(); services.AddLogging(); services.AddSingleton<IConfiguration>(config); services.AddSingleton(new AuthRequestPolicy(config)); services.AddSingleton(new TransportGate(config));
             services.AddSingleton<IPrincipalAuthenticator>(new Auth(role, authenticated)); services.AddSingleton<IAccessFactsRepository>(new FactsReader(facts ?? Facts(role: role)));
@@ -244,6 +244,28 @@ public sealed class EntityReadEndpointTests
         var body = JsonNode.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))!; Assert.Equal(error, body["error"]!.ToString());
         if (error == "unknown_entity_type") { Assert.Equal("missing", Assert.Single(body["unknown_types"]!.AsArray())!.ToString()); Assert.Single(store.Reads); }
         if (error is "entity_time_context_requires_both_bounds" or "entity_time_context_period_too_wide") Assert.Empty(store.Reads);
+    }
+    [Theory]
+    [InlineData("time_from=2026-01-01&time_to=2026-01-02&limit=101", "entity_vpn_limit_invalid")]
+    [InlineData("time_from=2026-01-01&time_to=2026-03-01", "entity_vpn_period_too_wide")]
+    public async Task InvalidVpnInputReturnsBadRequestWithoutAnInstalledPlugin(string query, string error)
+    {
+        var root = Directory.CreateTempSubdirectory("sli-entity-vpn-");
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root.FullName, "config", "plugin_packages", "v3"));
+            using var host = await Host(new Store(), contentRoot: root.FullName);
+            using var client = host.GetTestClient();
+            using var response = await client.GetAsync("https://localhost/api/v1/entities/1/vpn-sessions?" + query, TestContext.Current.CancellationToken);
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            var body = JsonNode.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))!;
+            Assert.Equal(error, body["error"]!.ToString());
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
     }
     [Theory] [InlineData("/api/v1/objects/account/99")] [InlineData("/api/v1/entities/99")] [InlineData("/api/v1/entities/99/vpn-sessions?time_from=2026-01-01&time_to=2026-01-02")]
     public async Task MissingIdentityIs404WithoutHydration(string path)

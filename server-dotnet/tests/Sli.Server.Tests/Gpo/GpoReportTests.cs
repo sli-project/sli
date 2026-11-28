@@ -23,15 +23,20 @@ public sealed class GpoReportTests
             Reads++;Domains=domains;
             return Task.FromResult(PolicyHistory?.Copy()??new JsonObject { ["state"]="unavailable",["items"]=new JsonArray() });
         }
-        public Task<IReadOnlyList<GpoPolicySnapshot>> PolicySnapshotsAsync(long domain, string policyId,
-            (Guid Before, Guid After)? comparison, CancellationToken ct)
+        public async IAsyncEnumerable<GpoPolicySnapshot> PolicySnapshotsAsync(long domain, string policyId,
+            (Guid Before, Guid After)? comparison, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
         {
+            await Task.CompletedTask;
             Reads++;
             Domains = [domain];
-            IReadOnlyList<GpoPolicySnapshot> rows = Snapshots.Where(entry => entry.Domain == domain && entry.PolicyId == policyId)
+            var rows = Snapshots.Where(entry => entry.Domain == domain && entry.PolicyId == policyId)
                 .Select(entry => entry.Snapshot).Where(snapshot => comparison is not { } pair || snapshot.Id == pair.Before || snapshot.Id == pair.After)
-                .OrderByDescending(snapshot => snapshot.ObservedAt).ToArray();
-            return Task.FromResult(rows);
+                .OrderByDescending(snapshot => snapshot.ObservedAt);
+            foreach (var row in rows)
+            {
+                ct.ThrowIfCancellationRequested();
+                yield return row;
+            }
         }
         public Task<GpoPolicySnapshot?> ExactSnapshotAsync(long domain, Guid snapshot, CancellationToken ct)
         {
@@ -82,6 +87,38 @@ public sealed class GpoReportTests
     {
         var snapshot=ReviewSnapshot();var policy=Assert.Single(snapshot.Rows("gpos"));policy["computer"]!.AsObject().Remove("settings_count");
         Assert.DoesNotContain(GpoInventory.Reasons(policy,snapshot).OfType<JsonObject>(),r=>r.Text("code")=="empty_enabled_side");
+    }
+    [Fact]
+    public async Task Inventory_and_card_count_the_same_settings_and_keep_permission_principals()
+    {
+        var snapshot = ReviewSnapshot();
+        snapshot["settings"] = JsonNode.Parse("""
+            [
+              {"id":"name","gpo_id":"synthetic-policy","side":"computer","category":"UserRightsAssignment","path":"UserRightsAssignment/Name","setting_name":"Name","value_display":"SeServiceLogonRight"},
+              {"id":"member1","gpo_id":"synthetic-policy","side":"computer","category":"Member","path":"UserRightsAssignment/Member/Name","setting_name":"Name","value_display":"LOCAL SERVICE"},
+              {"id":"member2","gpo_id":"synthetic-policy","side":"computer","category":"Member","path":"UserRightsAssignment/Member/Name","setting_name":"Name","value_display":"NETWORK SERVICE"},
+              {"id":"display","gpo_id":"synthetic-policy","side":"computer","category":"Display","path":"Display/Boolean","setting_name":"Boolean","value_display":"true"},
+              {"id":"theme","gpo_id":"synthetic-policy","side":"user","path":"Desktop/Theme","setting_name":"Theme","value_display":"Blue"},
+              {"id":"other","gpo_id":"another-policy","side":"computer","setting_name":"Other","value_display":"true"}
+            ]
+            """);
+        snapshot["permissions"] = JsonNode.Parse("""
+            [{"id":"edit","gpo_id":"synthetic-policy","trustee_sid":"S-1-5-21-100000001-200000002-300000003-1001","permission":"GpoEdit"}]
+            """);
+        var store = new Store { Pair = new JsonObject { ["state"] = "available", ["current"] = snapshot, ["domain_id"] = 1 } };
+        var request = Request(tab: "gpos");
+        var ct = TestContext.Current.CancellationToken;
+        var inventory = Assert.Single((await GpoReport.QueryAsync(store, [1], request, ct)).Rows("items"));
+        var card = await GpoReport.QueryAsync(store, [1], request with { PolicyId = "synthetic-policy" }, ct);
+        var settings = card["collections"].Rows("settings").ToArray();
+        Assert.Equal(2, settings.Length);
+        Assert.Equal(settings.Length, inventory.Number("setting_count"));
+        Assert.Equal(1, inventory.Number("computer_setting_count"));
+        var right = Assert.Single(settings, row => row.Text("side") == "computer");
+        Assert.Equal("SeServiceLogonRight", right.Text("setting_name"));
+        Assert.Equal("LOCAL SERVICE\nNETWORK SERVICE", right.Text("value_display"));
+        var permission = Assert.Single(card["collections"].Rows("permissions"));
+        Assert.Equal("S-1-5-21-100000001-200000002-300000003-1001", permission.Text("trustee_sid"));
     }
     [Fact] public void Partial_report_is_unverified_information_and_not_a_confirmed_deviation()
     {
