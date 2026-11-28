@@ -43,10 +43,10 @@ public sealed partial class SecurityProblemsV2Tests
     }
 
     [Theory]
-    [InlineData("en", "Sign-ins from 192.0.2.28 · 18 accounts · 2,002 attempts",
-        "Password guessing · test-user · 21 addresses · 111,890 attempts")]
-    [InlineData("ru", "Попытки входа с 192.0.2.28 · 18 учётных записей · 2\u00a0002 попытки",
-        "Подбор пароля · test-user · 21 адрес · 111\u00a0890 попыток")]
+    [InlineData("en", "Sign-in attempts from 192.0.2.28 against 18 accounts · 2,002 attempts",
+        "Password guessing against test-user · 21 addresses · 111,890 attempts")]
+    [InlineData("ru", "Попытки входа с адреса 192.0.2.28 · 18 учётных записей · 2\u00a0002 попытки",
+        "Подбор пароля к учётной записи test-user · 21 адрес · 111\u00a0890 попыток")]
     public void QueueTitlesUsePublishedTotalsInsteadOfRetainedEvidence(string language, string sprayTitle, string bruteTitle)
     {
         foreach (bool spray in new[] { true, false })
@@ -162,8 +162,8 @@ public sealed partial class SecurityProblemsV2Tests
             var raw = Assert.Single((await pg.Repository.FindingsAsync(query, Access, Ct))["items"]!.AsArray())!.AsObject();
             var view = ProblemPresentation.Finding(raw, Access, language);
             string title = success ? language == "ru" ? "После перебора паролей вход удался" : "Sign-in succeeded after password guessing"
-                : kind == "brute" ? language == "ru" ? "Подбирают пароль к учётной записи" : "Password guessing against an account"
-                : language == "ru" ? "С одного адреса пробуют входить под многими учётными записями" : "One source tries many accounts";
+                : kind == "brute" ? language == "ru" ? "Подбор пароля к учётной записи" : "Password guessing against an account"
+                : language == "ru" ? "Попытки входа с одного адреса под разными учётными записями" : "Sign-in attempts across multiple accounts";
             string what = success ? language == "ru" ? "user1 вошла с 192.0.2.10 в 2026-11-13T08:00:40+00:00 после 15 неудачных попыток с этого же адреса." : "user1 signed in from 192.0.2.10 at 2026-11-13T08:00:40+00:00 after 15 failed attempts from the same source."
                 : kind == "brute" ? language == "ru" ? $"К учётной записи user {attempts} неудачных входов с 192.0.2.10 с 2026-11-13T08:00:00+00:00." : $"{attempts} failed sign-ins to user from 192.0.2.10 since 2026-11-13T08:00:00+00:00."
                 : language == "ru" ? "С 192.0.2.10 неудачные входы в 15 учётных записей с 2026-11-13T08:00:00+00:00." : "Failed sign-ins to 15 accounts from 192.0.2.10 since 2026-11-13T08:00:00+00:00.";

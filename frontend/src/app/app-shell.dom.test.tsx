@@ -267,15 +267,20 @@ describe("AppShell", () => {
     expect(within(main).getByRole("link", { name: "Настройки платформы" }).getAttribute("href")).toBe("/platform-settings");
   });
 
-  it.each([
-    ["/access", ["/access-requests", "/admin"]],
-    ["/admin/language-time", ["/settings"]],
-  ] as const)("keeps related old pages reachable from %s", async (path, destinations) => {
+  it("removes duplicate administration links from Users and roles", async () => {
     state.access = adminAccess;
-    await renderShell(path);
+    await renderShell("/access");
+    const main = screen.getByRole("main");
+    expect(within(main).queryByText("Другие экраны")).toBeNull();
+    expect(within(main).queryByRole("link", { name: "Пользователи и доступ" })).toBeNull();
+  });
+
+  it("keeps related session settings reachable from Language and time", async () => {
+    state.access = adminAccess;
+    await renderShell("/admin/language-time");
     const main = screen.getByRole("main");
     fireEvent.click(await within(main).findByText("Другие экраны"));
-    expect(within(main).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual(destinations);
+    expect(within(main).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual(["/settings"]);
   });
 
   it.each(["error", "lagging"] as const)("keeps %s collection diagnostics out of the header", async (agentState) => {

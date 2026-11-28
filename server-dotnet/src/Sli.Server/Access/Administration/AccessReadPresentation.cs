@@ -107,7 +107,11 @@ public static class AccessReadPresentation
             foreach (string field in new[] { "assignments", "package_assignments" })
                 Each(body, field, r => Format(r, "valid_from", "valid_until", "created_at"));
         }
-        else if (leaf == "audit") Each(body, "items", r => Format(r, "created_at"));
+        else if (leaf == "audit") Each(body, "items", r =>
+        {
+            Format(r, "created_at");
+            Each(r, "occurrences", occurrence => Format(occurrence, "created_at"));
+        });
     }
     private static Dictionary<string, string>? Match(string template, string text)
     {

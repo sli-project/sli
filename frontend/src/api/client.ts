@@ -394,7 +394,7 @@ export type V4AccessSubjects = {
 
 export type V4AccessAuditItem = {
   id: number; actor_type: string; actor_id?: number | null; action: string;
-  subject_type?: string | null; subject_id?: number | null; target_key?: string | null;
+  subject_type?: string | null; subject_id?: number | null; target_type?: string | null; target_key?: string | null;
   reason?: string | null; outcome: string; details_json?: Record<string, unknown>; created_at: string;
 };
 
@@ -2441,6 +2441,9 @@ export const api = {
   v4AccessSubjectsForAccountType: (accountType: "people" | "service") => request<V4AccessSubjects>(`/api/v1/access/subjects?account_type=${accountType}`),
   v4AccessGrantOptions: () => request<{ api_version: "v4"; items: V4ReportGrantOption[]; limits: { reports: number } }>("/api/v1/access/grant-options"),
   v4AccessAudit: () => request<{ items: V4AccessAuditItem[]; limit: number }>("/api/v1/access/audit?limit=100"),
+  v4AccessJournal: (collapse: boolean) => request<{ items: (V4AccessAuditItem & { occurrences?: V4AccessAuditItem[] | null })[] }>(
+    `/api/v1/access/audit?limit=100${collapse ? "&collapse=1" : ""}`,
+  ),
   v4ReportAccessRequests: (includeAll = false) => request<{ api_version: "v4"; items: V4ReportAccessRequest[]; limit: number; review_allowed: boolean }>(`/api/v1/access/report-requests?scope=${includeAll ? "all" : "mine"}&limit=100`),
   v4CreateReportAccessRequest: (body: Record<string, unknown>) => requestMutation<{ item: V4ReportAccessRequest }>("/api/v1/access/report-requests", "POST", body),
   v4DecideReportAccessRequest: (requestId: number, body: Record<string, unknown>) => requestMutation<{ item: V4ReportAccessRequest }>(`/api/v1/access/report-requests/${requestId}/decision`, "POST", body),
