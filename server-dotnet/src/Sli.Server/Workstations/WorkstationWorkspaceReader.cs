@@ -149,6 +149,7 @@ public sealed class WorkstationWorkspaceReader(IPostgresConnectionFactory connec
         var selected = Selection(c, scope, rowId);
         JsonObject result;
         JsonObject? station = null;
+        WorkstationActivity? activity = null;
         try
         {
             await using var db = await connections.OpenAsync(ct);
@@ -185,7 +186,12 @@ public sealed class WorkstationWorkspaceReader(IPostgresConnectionFactory connec
                 var domains = await Query(db, Population + "select distinct a.domain_id as value,a.domain_name as label from bound a where " + scope.Sql + " and a.domain_id is not null order by a.domain_name,a.domain_id limit 101", scope, ct);
                 result["filter_options"]!["domain"] = Ws.Array(domains.Take(100));
             }
-            else station = rows.Single();
+            else
+            {
+                station = rows.Single();
+                if (station["journal_available"]!.GetValue<bool>())
+                    activity = await WorkstationActivityReader.ReadAsync(db, c, station, journal.ShortRetentionBoundary, ct);
+            }
             await tx.CommitAsync(ct);
         }
         catch (PostgresException error) when (error.SqlState == "57014")
@@ -195,10 +201,11 @@ public sealed class WorkstationWorkspaceReader(IPostgresConnectionFactory connec
         catch (NpgsqlException)
         { return ReportResult.Create(Key, "error", coverage: new() { ["reason"] = "source_unavailable", ["source"] = "ad_workstation_inventory" }); }
         if (station is null) return result;
-        var events = await EventsAsync(c, station, ct);
+        var events = await EventsAsync(c, station, activity, ct);
         result["detail"] = new JsonObject
         {
             ["station"] = station.DeepClone(), ["events"] = events,
+            ["activity"] = Ws.Text(events, "state") is "ok" or "empty" ? activity?.ToJson() : null,
             ["related"] = new JsonObject
             {
                 ["journal"] = new JsonObject
@@ -297,12 +304,17 @@ public sealed class WorkstationWorkspaceReader(IPostgresConnectionFactory connec
     {
         if (Ws.Number(station, "server_id") <= 0 || Ws.Number(station, "domain_id") <= 0 || !Id(Ws.Text(station, "source_instance_id"))) return false;
         // One source channel can be readable even when another is denied.
-        return new[] { "Security", "System", "Microsoft-Windows-Windows Defender/Operational" }.Any(channel =>
-        {
-            IReadOnlyList<IReadOnlyList<AccessResource>> resources = [[new("server", Ws.Number(station, "server_id")), new("domain", Ws.Number(station, "domain_id")), new("channel", Value: channel)]];
-            return ResourceAccessDecisions.ReportAction(access, "events.explorer", "view", resources, new HashSet<string> { "security", "technical" }).Allowed
-                && new[] { "field.security", "field.technical" }.All(capability => ResourceAccessDecisions.Capability(access.Capabilities, capability, resources).Allowed);
-        });
+        return new[] { "Security", "System", "Microsoft-Windows-Windows Defender/Operational" }
+            .Any(channel => CanReadChannel(access, station, channel));
+    }
+
+    internal static bool CanReadChannel(AccessDecision access, JsonObject station, string channel, bool identities = false)
+    {
+        IReadOnlyList<IReadOnlyList<AccessResource>> resources = [[new("server", Ws.Number(station, "server_id")),
+            new("domain", Ws.Number(station, "domain_id")), new("channel", Value: channel)]];
+        var fields = identities ? new HashSet<string> { "security", "technical", "identity_basic" } : ["security", "technical"];
+        return ResourceAccessDecisions.ReportAction(access, "events.explorer", "view", resources, fields).Allowed
+            && fields.All(field => ResourceAccessDecisions.Capability(access.Capabilities, "field." + field, resources).Allowed);
     }
 
     private static bool CanReadProblems(AccessDecision access, JsonObject station)
@@ -328,7 +340,7 @@ public sealed class WorkstationWorkspaceReader(IPostgresConnectionFactory connec
         return parameters;
     }
 
-    private async Task<JsonObject> EventsAsync(ReportQueryContext c, JsonObject station, CancellationToken ct)
+    private async Task<JsonObject> EventsAsync(ReportQueryContext c, JsonObject station, WorkstationActivity? activity, CancellationToken ct)
     {
         if (!station["journal_available"]!.GetValue<bool>())
             return ReportResult.Create("events.journal", station["server_id"] is null ? "not_collected" : "denied",
@@ -343,7 +355,8 @@ public sealed class WorkstationWorkspaceReader(IPostgresConnectionFactory connec
             new(cursor, limit, c.Paging.Timezone, null, "desc", null), ReportScope.None, [Ws.Number(station, "domain_id")], "view",
             projection.FieldsAllowed, c.Access.Reports.Single(r => r.ReportKey == "events.explorer").Grants)
         {
-            RequestTime = c.RequestTime, Language = c.Language, WorkstationServerId = Ws.Number(station, "server_id")
+            RequestTime = c.RequestTime, Language = c.Language, WorkstationServerId = Ws.Number(station, "server_id"),
+            StationActivity = activity, WorkstationProgram = Ws.Text(c.Params, "program"),
         };
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         deadline.CancelAfter(TimeSpan.FromSeconds(5));
@@ -367,7 +380,7 @@ public sealed class WorkstationWorkspaceReader(IPostgresConnectionFactory connec
     internal static JsonObject Binding(ReportQueryContext c, string kind, JsonObject? station = null)
     {
         var selection = new JsonObject();
-        foreach (string key in kind == "events" ? new[] { "period", "view", "event_limit" } : new[] { "period", "domain", "domain_id", "search", "source_instance_id", "collection" })
+        foreach (string key in kind == "events" ? new[] { "period", "view", "event_limit", "program" } : new[] { "period", "domain", "domain_id", "search", "source_instance_id", "collection" })
             selection[key] = c.Params[key]?.DeepClone();
         return new JsonObject
         {

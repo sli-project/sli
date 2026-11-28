@@ -18,15 +18,20 @@ export function fileAuditPageSize(value: unknown, maximum = 200): number {
   return sizes.includes(requested) ? requested : sizes.filter(size => size <= requested).at(-1) ?? sizes[0] ?? 50;
 }
 
-export const FILE_SERVER_VIEWS = ["overview", "actions", "mass-operations", "access-denials", "out-of-hours", "permissions"] as const;
+export type FileServerView = FileAuditTab;
+export const ACTION_FILTERS = ["all", "delete", "changes", "permission-changes", "access-denials", "out-of-hours"] as const;
+export type ActionFilter = typeof ACTION_FILTERS[number];
+
 export const FILE_ACTIVITY_VIEWS = ["actions", "mass-operations", "permission-changes", "access-denials", "out-of-hours"] as const;
 export type FileActivityView = typeof FILE_ACTIVITY_VIEWS[number];
-export type FileServerView = typeof FILE_SERVER_VIEWS[number] | "permission-changes";
 export const isFileActivityView = (view: FileServerView): view is FileActivityView =>
   FILE_ACTIVITY_VIEWS.some(activity => activity === view);
 
 type SelectOptions = Extract<FilterField, { kind: "select" }>["options"];
 export function fileAuditFields(view: FileServerView, servers: SelectOptions = [], shares: SelectOptions = []): FilterField[] {
+  if (view === "overview") return [
+    { key: "path_search", label: t("file-audit.overview.search"), placeholder: t("file-audit.overview.search"), kind: "text", immediate: true },
+  ];
   if (!isFileActivityView(view)) return [];
   return [
     { key: "source_instance_id", label: t("file-audit.workspace.server"), kind: "select", options: servers },
@@ -126,6 +131,8 @@ export function fileAuditShare(row: FileAuditRow): string | null {
 export function fileAuditHref(tab: FileAuditTab, params: URLSearchParams, row?: FileAuditRow, extra: Record<string, string | null> = {}): string {
   const query = new URLSearchParams(params);
   for (const key of ["cursor", "detail_row", "snapshot_id", "compare_snapshot_id", "object_path", "view", "page_index"]) query.delete(key);
+  if (tab !== "overview") query.delete("deviations_only");
+  if (tab !== "overview" && tab !== "actions") query.delete("path_search");
   query.set("tab", tab);
   const share = row ? fileAuditShare(row) : null;
   if (share) { query.delete("share"); query.append("share", share); }

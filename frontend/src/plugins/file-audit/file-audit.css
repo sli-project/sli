@@ -1,7 +1,7 @@
 .sli-file-audit { min-width: 0; }
-.sli-file-audit__resource { display: grid; gap: var(--sli-space-1); min-width: 0; }
-.sli-file-audit__interval { display: inline-flex; align-items: center; gap: var(--sli-space-1); }
-.sli-file-audit__resource small { color: var(--sli-text-muted); font-size: var(--sli-text-sm); }
+.sli-file-audit__resource { display: grid; min-width: 0; line-height: var(--sli-text-md); }
+.sli-file-audit__interval { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sli-space-1); }
+.sli-file-audit__resource small, .sli-file-audit__interval small { color: var(--sli-text-muted); font-size: var(--sli-text-sm); }
 .sli-file-audit__path { overflow-wrap: anywhere; }
 .sli-file-audit__object-grid { display: grid; grid-template-columns: minmax(13rem, 20%) minmax(0, 1fr); gap: var(--sli-space-4); align-items: start; }
 .sli-file-audit__object-grid:not(:has(.sli-file-audit__object-tree)) { grid-template-columns: minmax(0, 1fr); }

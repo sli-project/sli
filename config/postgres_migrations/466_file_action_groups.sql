@@ -1,15 +1,15 @@
 begin;
-select pg_advisory_xact_lock(hashtext('sli_file_action_groups465'));
+select pg_advisory_xact_lock(hashtext('sli_file_action_groups466'));
 do $$ begin
     if not pg_has_role(session_user,'adlog_storage_owner','MEMBER')
-       or not exists(select 1 from public.schema_migrations where version=464 and name='file_ransom_episodes')
-       or exists(select 1 from public.schema_migrations where version>=465) then
-        raise exception 'file_action_groups465_preflight' using errcode='55000';
+       or not exists(select 1 from public.schema_migrations where version=465 and name='workstation_hardware')
+       or exists(select 1 from public.schema_migrations where version>=466) then
+        raise exception 'file_action_groups466_preflight' using errcode='55000';
     end if;
 end $$;
 set local role adlog_storage_owner;
 
-create function public.file_action_group_page465(
+create function public.file_action_group_page466(
     p_roots jsonb,p_tab text,p_start timestamptz,p_end timestamptz,p_path text,p_nested boolean,
     p_employee text,p_operation text,p_after jsonb,p_limit integer)
 returns jsonb language plpgsql stable security definer set search_path=pg_catalog,pg_temp as $$
@@ -130,7 +130,7 @@ begin
 end $$;
 
 -- Bind a report row to a published scenario through its actual scoped rule result.
-create function public.file_mass_problem_links465(p_rows jsonb)
+create function public.file_mass_problem_links466(p_rows jsonb)
 returns table(row_id text,finding_id bigint)
 language sql stable security definer set search_path=pg_catalog,pg_temp as $$
     select distinct rr.result_id,published.finding_id
@@ -149,10 +149,10 @@ language sql stable security definer set search_path=pg_catalog,pg_temp as $$
         and episode.scope_json->>'collection_scope_id'=rr.collection_scope_id
 $$;
 
-revoke all on function public.file_action_group_page465(jsonb,text,timestamptz,timestamptz,text,boolean,text,text,jsonb,integer),
-    public.file_mass_problem_links465(jsonb) from public;
-grant execute on function public.file_action_group_page465(jsonb,text,timestamptz,timestamptz,text,boolean,text,text,jsonb,integer),
-    public.file_mass_problem_links465(jsonb) to adlog_user;
+revoke all on function public.file_action_group_page466(jsonb,text,timestamptz,timestamptz,text,boolean,text,text,jsonb,integer),
+    public.file_mass_problem_links466(jsonb) from public;
+grant execute on function public.file_action_group_page466(jsonb,text,timestamptz,timestamptz,text,boolean,text,text,jsonb,integer),
+    public.file_mass_problem_links466(jsonb) to adlog_user;
 
-insert into public.schema_migrations(version,name) values(465,'file_action_groups');
+insert into public.schema_migrations(version,name) values(466,'file_action_groups');
 commit;

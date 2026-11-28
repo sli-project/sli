@@ -98,11 +98,11 @@ export function WorkstationsReport({ definition, initialSearch: providedSearch }
     scroll.current = list.current?.querySelector<HTMLElement>(".sli-ds-table__scroll")?.scrollTop ?? 0;
     lastStation.current = row.station_id;
     const back = localHref(patchedSearch(activeSearch, { ...closeStation, selected_station: row.station_id }));
-    update({ station: row.station_id, selected_station: row.station_id, station_tab: "events", station_return: back, ...resetEvents });
+    update({ station: row.station_id, selected_station: row.station_id, station_tab: "important", program: null, station_return: back, ...resetEvents });
   };
   const columns: TableColumn<Station>[] = [
     { key: "station", label: t("workstations.overview.station"), width: "32%", minWidth: "20rem", render: row => <span className="sli-workstations__station-cell">{row.agent_key && <CollectionIndicator station={row}/>}<a className="sli-ds-table__link" title={row.host_name ?? row.display_name ?? undefined}
-      href={localHref(patchedSearch(activeSearch, { station: row.station_id, selected_station: row.station_id, station_tab: "events",
+      href={localHref(patchedSearch(activeSearch, { station: row.station_id, selected_station: row.station_id, station_tab: "important", program: null,
         station_return: localHref(patchedSearch(activeSearch, { ...closeStation, selected_station: row.station_id })), ...resetEvents }))}
       onClick={event => { event.stopPropagation(); if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return; event.preventDefault(); open(row); }}><StationName station={row}/></a></span> },
     { key: "os", label: t("workstations.overview.os"), render: row => <span className="sli-workstations__cell"><span>{row.operating_system ?? "—"}</span>

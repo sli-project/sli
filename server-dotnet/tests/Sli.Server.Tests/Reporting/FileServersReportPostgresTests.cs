@@ -21,8 +21,8 @@ public sealed class FileServersReportPostgresTests
     {
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new SqlPostgresFixture();
-        await fixture.StartAsync(ct, throughVersion: 464);
-        var migration = MigrationDirectory.Read(465).Single(item => item.Version == 465);
+        await fixture.StartAsync(ct, throughVersion: 465);
+        var migration = MigrationDirectory.Read(466).Single(item => item.Version == 466);
         await fixture.Pg.ApplyFileAsync(migration.Path, null, ct);
         await using var owner = await fixture.Pg.OpenAsync(ct);
         var sample = await FileServersReportFixture.SeedAsync(owner, ct);

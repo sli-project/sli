@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Sli.Server.Access;
 using Sli.Server.Auth;
 using Sli.Server.Domains;
+using Sli.Server.Workstations;
 namespace Sli.Server.Reporting.V2;
 
 public sealed record ReportQueryContext(ReportDefinition Definition, AccessDecision Access, Principal Principal,
@@ -15,6 +16,8 @@ public sealed record ReportQueryContext(ReportDefinition Definition, AccessDecis
     public string Language { get; init; } = "";
     // Set only by the current workstation binding reader, never from a URL.
     internal long? WorkstationServerId { get; init; }
+    internal string? WorkstationProgram { get; init; }
+    internal WorkstationActivity? StationActivity { get; init; }
     // Native readers must apply Scope.SqlFilter before aggregation and paging;
     // delegated readers receive the original atomic grants and enforce their legacy resource policy.
 }

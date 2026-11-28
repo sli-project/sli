@@ -1,7 +1,7 @@
 import type { ReportColumnDto } from "../../api/report-v2-types";
 import { useMutation } from "@tanstack/react-query";
 import { api } from "../../api/client";
-import { Button, type TableColumn } from "../../design-system";
+import { Button, SeverityBadge, type TableColumn } from "../../design-system";
 import { formatDateTime } from "../../shared/date-time";
 import { useTimeZone } from "../../shared/time-zone";
 import { useDateFormatters } from "../../design-system/useDateFormatters";
@@ -60,10 +60,10 @@ export function fileAuditOperation(row: FileAuditRow, column?: ReportColumnDto) 
     : column ? columnValue(column, row) : undefined;
 }
 
-export function fileServerColumns(view: Extract<FileServerView, "overview" | "permissions">, declared: ReportColumnDto[],
+export function fileServerColumns(view: Extract<FileServerView, "overview" | "permissions" | "audit-state">, declared: ReportColumnDto[],
   params: URLSearchParams | null, canPermissions: boolean, open: (row: FileAuditRow) => void,
   hrefFor: (tab: FileAuditTab, row: FileAuditRow, extra?: Record<string, string | null>) => string,
-  refresh: () => void): TableColumn<FileAuditRow>[] {
+  refresh: () => void, allowed: ReadonlySet<string>): TableColumn<FileAuditRow>[] {
   if (view === "permissions") return [
     { key: "source_name", label: t("file-audit.workspace.server"), value: row => hostText(row.source_name, 256) },
     { key: "path", label: t("file-audit.screen.path"), wrap: true, width: "32%", render: row =>
@@ -77,6 +77,23 @@ export function fileServerColumns(view: Extract<FileServerView, "overview" | "pe
     })),
     { ...when("observed_at"), label: t("file-audit.workspace.snapshot") },
   ];
+  if (view === "audit-state") return [
+    { key: "source_name", label: t("file-audit.workspace.server"), value: row => hostText(row.source_name, 256) },
+    { key: "resource", label: t("file-audit.workspace.resource_path"), width: "18%", wrap: true, render: resourceName },
+    { key: "audit_state", label: t("file-audit.screen.audit"), value: auditStatus },
+    { key: "audit_condition", label: t("file-audit.audit.condition"), width: "21%", value: row => fileAuditShare(row)
+      ? t("file-audit.audit.windows_condition") : t("file-audit.audit.not_collected") },
+    { key: "audit_observed", label: t("file-audit.audit.observed"), width: "22%", wrap: true, render: row =>
+      <div className="sli-file-audit__resource">
+        <span><FileAuditReceipt row={row}/></span>
+        {row.audit_state === "enabled" ? <ResourceBatch receivedAt={row.audit_received_at}/> : null}
+      </div> },
+    { ...when("audit_checked_at"), label: t("file-audit.audit.checked"),
+      value: row => readPath(row, "check_receipt.observed_at") ?? row.audit_checked_at ?? readPath(row, "audit_receipt.observed_at") },
+    { key: "check", label: t("file-audit.screen.check"), render: row =>
+      Number.isSafeInteger(row.check_revision) && fileAuditShare(row) ? <FileAuditCheck row={row} refresh={refresh}/>
+        : Number.isSafeInteger(row.audit_revision) ? <Button disabled>{t("file-audit.screen.check")}</Button> : null },
+  ];
   const count = (row: FileAuditRow) => row.permission_changes != null ? String(row.permission_changes)
     : row.permission_change_count_min != null && row.permission_change_count_max != null
       ? String(row.permission_change_count_min) + '–' + String(row.permission_change_count_max) : "—";
@@ -87,26 +104,84 @@ export function fileServerColumns(view: Extract<FileServerView, "overview" | "pe
         ? <a onClick={event => event.stopPropagation()} href={withDomain(fileAuditHref("overview", params, undefined,
           { source_instance_id: row.source_instance_id, share: null, path: null }), window.location.search)}>{name}</a> : name ?? "—";
     } },
-    { key: "resource", label: t("file-audit.workspace.resource_path"), width: "27%", wrap: true, render: row => {
-      const name = hostText(row.share_name, 256) || hostText(row.path) || "—";
-      return <span className="sli-file-audit__resource">
-        {canPermissions && row.snapshot_id && fileAuditShare(row) ? <button type="button" className="sli-ds-table__link"
-          onClick={event => { event.stopPropagation(); open(row); }}>{name}</button> : name}
-        {row.share_name ? <small>{hostText(row.path)}</small> : null}
-      </span>;
-    } },
-    { ...when("audit_received_at"), label: t("file-audit.screen.audit"), wrap: true, render: row =>
-      <div className="sli-file-audit__resource">
-        <span><FileAuditReceipt row={row}/></span>
-        {row.audit_state === "enabled" || row.audit_state != null && row.audit_received_at
-          ? <ResourceBatch receivedAt={row.audit_received_at}/> : null}
-        {Number.isSafeInteger(row.check_revision) && fileAuditShare(row) ? <FileAuditCheck row={row} refresh={refresh}/> : null}
-      </div> },
+    { key: "resource", label: t("file-audit.workspace.resource_path"), width: "25%", wrap: true, render: row =>
+      resourceName(row, canPermissions && row.snapshot_id && fileAuditShare(row) ? () => open(row) : undefined) },
+    { key: "top_fact", label: t("file-audit.overview.fact"), width: "27%", wrap: true, render: row =>
+      <OverviewFact row={row} hrefFor={hrefFor} allowed={allowed}/> },
     { key: "permission_changes", label: t("file-audit.workspace.permission_changes"), kind: "number", render: row =>
-      fileAuditShare(row) && Number(row.permission_change_groups) > 0
+      allowed.has("file-audit.permission-changes") && fileAuditShare(row) && Number(row.permission_change_groups) > 0
         ? <a href={hrefFor("permission-changes", row)} onClick={event => event.stopPropagation()}>{count(row)}</a> : <span>{count(row)}</span> },
-    { ...when("observed_at"), label: t("file-audit.resources.permissionsAsOf"), render: row => <ResourceSnapshot row={row}/> },
+    { ...when("latest_change_at"), label: t("file-audit.overview.latest_change"), render: row =>
+      <ResourceDate value={row.latest_change_at}
+        href={allowed.has("file-audit.permission-changes") && fileAuditShare(row) && typeof row.latest_change_id === "string"
+          && typeof row.latest_change_path === "string" ? hrefFor("permission-changes", row, {
+            detail_row: row.latest_change_id, path: row.latest_change_path, include_nested: "false",
+          }) : undefined}/> },
+    { ...when("observed_at"), label: t("file-audit.overview.snapshot"), render: row =>
+      <ResourceDate value={row.snapshot_id ? row.observed_at : undefined}
+        href={canPermissions && row.snapshot_id && fileAuditShare(row) ? hrefFor("permissions", row) : undefined}/> },
   ];
+}
+
+function resourceName(row: FileAuditRow, open?: () => void) {
+  const name = hostText(row.share_name, 256) || hostText(row.path) || "—";
+  const server = hostText(row.source_name, 256), share = hostText(row.share_name, 256);
+  return <span className="sli-file-audit__resource" title={server && share ? `\\\\${server}\\${share}` : undefined}>
+    {open ? <button type="button" className="sli-ds-table__link" onClick={open}>{name}</button> : name}
+    {share ? <small>{hostText(row.path)}</small> : null}
+  </span>;
+}
+
+const massLabels = {
+  "file-audit.mass-read": "file-audit.overview.mass_read",
+  "file-audit.mass-write": "file-audit.overview.mass_write",
+  "file-audit.mass-delete": "file-audit.overview.mass_delete",
+} as const;
+
+const aclLabels = {
+  "file-audit.broad-write": "file-audit.overview.broad_write",
+  "file-audit.direct-user-rights": "file-audit.overview.direct_access",
+  "file-audit.disabled-account-rights": "file-audit.overview.disabled_access",
+  "file-audit.acl-review": "file-audit.overview.acl_review",
+} as const;
+
+function OverviewFact({ row, hrefFor, allowed }: {
+  row: FileAuditRow;
+  hrefFor: (tab: FileAuditTab, row: FileAuditRow, extra?: Record<string, string | null>) => string;
+  allowed: ReadonlySet<string>;
+}) {
+  const fact = row.top_fact as { kind?: string; severity?: string; rule?: string; id?: string; paths?: number;
+    subject?: string; layer?: string; path?: string; snapshot?: string } | undefined;
+  if (!fact) return <>—</>;
+  let text: string;
+  let tab: FileAuditTab;
+  let extra: Record<string, string | null> = {};
+  if (fact.kind === "audit_disabled" || fact.kind === "audit_error") {
+    tab = "audit-state";
+    text = t(fact.kind === "audit_disabled" ? "file-audit.overview.audit_disabled" : "file-audit.screen.audit_failed");
+  } else if (fact.kind === "mass" && fact.rule && Object.hasOwn(massLabels, fact.rule) && typeof fact.paths === "number") {
+    tab = "mass-operations";
+    text = t(massLabels[fact.rule as keyof typeof massLabels], { count: fact.paths });
+    extra = { detail_row: fact.id ?? null, path: null, operation: null };
+  } else if (fact.kind === "acl" && fact.rule && Object.hasOwn(aclLabels, fact.rule)) {
+    tab = "permissions";
+    text = t(aclLabels[fact.rule as keyof typeof aclLabels], {
+      subject: fact.subject === "S-1-1-0" ? t("file-audit.overview.everyone") : hostText(fact.subject, 256) ?? "—",
+      layer: fact.layer === "smb" ? "SMB" : "NTFS",
+    });
+    if (fact.snapshot && fact.path) extra = { snapshot_id: fact.snapshot, object_path: fact.path, path: fact.path };
+  } else return <>—</>;
+  const label = fact.severity ? <SeverityBadge severity={fact.severity}
+    label={["critical", "high", "medium", "low"].includes(fact.severity)
+      ? t(`shell.severity.${fact.severity}` as MessageKey) + " · " + text : text}/> : text;
+  return allowed.has("file-audit." + tab) && fileAuditShare(row) ? <a href={hrefFor(tab, row, extra)}>{label}</a> : <>{label}</>;
+}
+
+function auditStatus(row: FileAuditRow) {
+  const state = row.audit_state;
+  if (state === "applying" || state === "restoring" || state === "enabled" || state === "disabled") return t(`file-audit.resources.${state}`);
+  if (state === "error") return t("file-audit.screen.audit_failed");
+  return t("file-audit.audit.not_collected");
 }
 
 function ResourceBatch({ receivedAt }: { receivedAt: FileAuditRow["audit_received_at"] }) {
@@ -115,9 +190,10 @@ function ResourceBatch({ receivedAt }: { receivedAt: FileAuditRow["audit_receive
     : t("file-audit.screen.no_batch")}</small>;
 }
 
-function ResourceSnapshot({ row }: { row: FileAuditRow }) {
+function ResourceDate({ value, href }: { value: unknown; href?: string }) {
   const { formatCell } = useDateFormatters();
-  return <span>{row.snapshot_id && row.observed_at ? formatCell(row.observed_at, "datetime") : "—"}</span>;
+  const date = formatCell(value, "datetime");
+  return href ? <a href={href}>{date}</a> : <span>{date}</span>;
 }
 
 const resourceAuditReasons: Record<string, MessageKey> = {
@@ -147,17 +223,13 @@ function FileAuditReceipt({ row }: { row: FileAuditRow }) {
   const { formatCell } = useDateFormatters();
   const receipt = (row.check_receipt ?? row.audit_receipt) as { action?: string; state?: string; reason_code?: string; observed_at?: string;
     check_agent_requirement?: { agent_version: string; minimum_version: string } } | undefined;
-  if (row.audit_state === "applying" || row.audit_state === "restoring" || row.audit_state === "enabled")
-    return <>{t(`file-audit.resources.${row.audit_state}`)}{row.audit_state === "enabled" && row.audit_checked_at
-      ? ` · ${formatCell(row.audit_checked_at, "datetime")}` : null}</>;
+  if (row.audit_state === "enabled") return <>{t("file-audit.audit.entries_verified")}</>;
   if (row.check_pending === true) return <>{t("file-audit.screen.check_pending")}</>;
   if (row.audit_state === "error") {
     const code = typeof row.audit_reason === "string" ? row.audit_reason.split(":")[0] : "";
     const reason = Object.hasOwn(resourceAuditReasons, code) ? resourceAuditReasons[code] : "file-audit.screen.audit_failed";
     return <>{t("file-audit.resources.error", { reason: t(reason) })}</>;
   }
-  if (row.audit_state === "disabled" && !row.check_receipt && receipt?.action !== "check")
-    return <>{t("file-audit.resources.disabled")}</>;
   const checkResult = row.check_receipt != null || receipt?.action === "check";
   const failure = receipt?.state === "failed" || receipt?.state === "blocked" || receipt?.state === "partial";
   if (receipt?.observed_at && (checkResult || failure &&
@@ -170,9 +242,9 @@ function FileAuditReceipt({ row }: { row: FileAuditRow }) {
       : receipt.state === "partial" ? "file-audit.screen.check_partial" : "file-audit.screen.audit_failed";
     const requirement = receipt.check_agent_requirement;
     return <>{requirement ? t("file-audit.screen.update_agent", { version: requirement.agent_version, minimum: requirement.minimum_version })
-      : t(reason)} · {formatCell(receipt.observed_at, "datetime")}</>;
+      : t(reason)}</>;
   }
-  return <>{row.audit_received_at ? formatCell(row.audit_received_at, "datetime") : t("file-audit.screen.no_batch")}</>;
+  return <>{row.audit_received_at ? formatCell(row.audit_received_at, "datetime") : t("file-audit.audit.not_collected")}</>;
 }
 
 function FileAuditCheck({ row, refresh }: { row: FileAuditRow; refresh: () => void }) {

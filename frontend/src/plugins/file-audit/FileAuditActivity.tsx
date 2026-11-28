@@ -5,6 +5,7 @@ import { withDomain } from "../../app/domain-navigation";
 import { columnValue, readPath } from "../../app/report-v2/state";
 import { Button, FactList, type TableColumn } from "../../design-system";
 import { t } from "../../i18n";
+import { formatDateTime } from "../../shared/date-time";
 import { formatNumber } from "../../shared/format";
 import { FileAuditInterval, evidenceRecordNumbers, fileAuditOperation, hostText, problemNumber } from "./FileAuditCells";
 import { fileAuditHref, fileAuditShare, type FileActivityView, type FileAuditRow as Row } from "./report";
@@ -82,7 +83,11 @@ export function fileActivityColumns(view: FileActivityView, declared: ReportColu
   ];
   if (view === "out-of-hours") return [
     time, actor, operation, scope, path,
-    { key: "local_time", label: t("file-audit.activity.local_time"), value: row => hostText(readPath(row, "details.local_time"), 64)?.replace("T", " ") },
+    { key: "local_time", label: t("file-audit.activity.local_time"), value: row => {
+      const zone = hostText(readPath(row, "details.timezone"), 128);
+      const at = hostText(row.observed_at, 64);
+      return at && zone ? formatDateTime(at, zone, { seconds: true }) : unobserved();
+    } },
     { key: "schedule", label: t("file-audit.activity.schedule"), value: schedule },
   ];
   return [
@@ -103,7 +108,7 @@ function FileAuditActionLinks({ row, params, session, canPermissions, back }: {
   const evidence = evidenceOf(row);
   const reference = (evidence.find(item => item.role === "primary") ?? evidence[0])?.reference;
   const eventId = typeof reference === "string" ? /^event_cold_facts:([1-9]\d{0,18})$/.exec(reference)?.[1] : undefined;
-  const saved = useQuery({ queryKey: ["file-audit", "saved-record", session, eventId], queryFn: () => api.event(eventId!),
+  const saved = useQuery({ queryKey: ["file-audit", "saved-record", session, eventId], queryFn: () => api.eventAvailable(eventId!),
     enabled: Boolean(eventId), retry: false });
   const share = fileAuditShare(row);
   const path = hostText(row.path);
@@ -136,9 +141,9 @@ function FileAuditActionLinks({ row, params, session, canPermissions, back }: {
   const target = (snapshot: string, prior?: string) => withDomain(fileAuditHref("permissions", scope,
     { ...row, snapshot_id: snapshot }, { object_path: path!, return_to: back,
       ...(prior ? { object_tab: "comparison", compare_snapshot_id: prior } : {}) }), window.location.search);
-  if (!saved.data?.item && !permissions.data && !problemNumber(row)) return null;
+  if (!saved.data && !permissions.data && !problemNumber(row)) return null;
   return <div className="sli-file-audit__segments">
-    {saved.data?.item ? <a href={withDomain("/app/events/" + eventId, window.location.search)}>{t("file-audit.activity.saved_record")}</a> : null}
+    {saved.data ? <a href={withDomain("/app/events/" + eventId, window.location.search)}>{t("file-audit.activity.saved_record")}</a> : null}
     {permissions.data ? <a href={target(permissions.data.snapshot)}>{t("file-audit.activity.object_permissions")}</a> : null}
     {permissions.data?.prior ? <a href={target(permissions.data.snapshot, permissions.data.prior)}>{t("file-audit.activity.compare")}</a> : null}
     <ProblemLink row={row}/>

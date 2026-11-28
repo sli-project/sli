@@ -7,6 +7,11 @@ import { localDateTimeToUtc, utcToLocalDateTimeInput } from "../../shared/date-t
 export const WORKSTATIONS_KEY = "workstations.overview";
 export const PAGE_SIZES = [25, 50, 100, 200];
 export const EVENT_VIEWS = ["all", "authentication", "groups", "audit", "tasks"] as const;
+export const ACTIVITY_TABS = ["important", "programs", "logons", "devices"] as const;
+export type ActivityTab = typeof ACTIVITY_TABS[number];
+export type StationTab = ActivityTab | "events" | "collection";
+export const STATION_SEVERITIES = ["high", "medium", "low"] as const;
+export type StationSeverity = typeof STATION_SEVERITIES[number];
 export type EventView = typeof EVENT_VIEWS[number];
 export type Row = Record<string, unknown>;
 export const record = (value: unknown): Row => value && typeof value === "object" && !Array.isArray(value) ? value as Row : {};
@@ -60,7 +65,7 @@ export type StationEvent = {
   computer: string | null; address: string | null; result: string | null; channel: string | null; logonType: string | null;
   imagePath: string | null; parentImagePath: string | null; commandLine: string | null;
   deviceName: string | null; deviceClass: string | null;
-  findingId: string | null; severity: string | null; evidenceAvailable: boolean;
+  findingId: string | null; severity: string | null; importance: StationSeverity | null; evidenceAvailable: boolean;
 };
 
 /** Keep native saved groups intact; their representative ID is never an individual source event. */
@@ -99,6 +104,7 @@ export function eventRows(items: Row[]): StationEvent[] {
       deviceClass: device ? sourceText(details.device_class) : null,
       result: sourceText(row.journal_result), channel: sourceText(row.channel), logonType: scalar(row.logon_type),
       findingId, severity: findingId && ["critical", "high", "medium", "low"].includes(String(row.journal_severity)) ? String(row.journal_severity) : null,
+      importance: STATION_SEVERITIES.find(severity => severity === row.station_importance) ?? null,
       evidenceAvailable: row.journal_evidence_available === true && !group && id !== null,
     };
   });
@@ -107,8 +113,19 @@ export function eventRows(items: Row[]): StationEvent[] {
 export type StationEvents = Pick<ReportResultDto, "state" | "items" | "has_more" | "next_cursor" | "filtered_count" | "window"> & {
   journal_event_count?: number | null; coverage?: ReportResultDto["coverage"]; limitations?: ReportResultDto["limitations"];
 };
+export type ActivityInterval = { first: string; last: string };
+export type StationFact = ActivityInterval & {
+  fact: "writable_program" | "service_outside_system" | "local_admin_added" | "audit_policy_changed"
+    | "security_log_cleared" | "new_program" | "new_usb_storage" | "logon_failure_burst" | "remote_logon"
+    | "service_installed" | "local_account_created";
+  severity: StationSeverity; object: string | null; count: number;
+};
+export type StationProgram = ActivityInterval & { name: string; path: string; writable: boolean; count: number; users: string[] };
+export type StationLogon = { account: string | null; type: string | null; last: string; count: number; failures: number };
+export type StationDevice = ActivityInterval & { class: string | null; name: string | null };
+export type StationActivity = { notable: StationFact[]; programs: StationProgram[]; logons: StationLogon[]; devices: StationDevice[] };
 export type StationDetailResult = ReportResultDto & { detail?: {
-  station: Row; events: StationEvents;
+  station: Row; events: StationEvents; activity?: StationActivity | null;
   related: { journal: { allowed: boolean; params?: Record<string, unknown> }; problems: { allowed: boolean } };
 } };
 
@@ -182,7 +199,11 @@ export function appliedFilters(values: FilterValues, current: URLSearchParams, t
 }
 
 export const eventView = (search: URLSearchParams): EventView => EVENT_VIEWS.find(view => view === search.get("view")) ?? "all";
-export const stationTab = (search: URLSearchParams) => search.get("station_tab") === "collection" ? "collection" : "events";
+export function stationTab(search: URLSearchParams): StationTab {
+  const tab = search.get("station_tab");
+  return ACTIVITY_TABS.find(key => key === tab)
+    ?? (tab === "collection" ? tab : tab === "events" || search.has("event") || search.has("event_cursor") || search.has("program") ? "events" : "important");
+}
 
 /** Browser navigation fields never enter either native API route. The registry supplies the business allowlist. */
 export function requestParams(search: URLSearchParams, timeZone: string, definition: ReportDefinitionDto, detail = false): URLSearchParams | null {
@@ -201,6 +222,7 @@ export function requestParams(search: URLSearchParams, timeZone: string, definit
     if (allowed.has("view")) params.set("view", eventView(search));
     if (allowed.has("event_limit")) params.set("event_limit", String(pageSize(search.get("event_limit") ?? search.get("limit"), definition.limits.max)));
     if (allowed.has("event_cursor") && search.get("event_cursor")) params.set("event_cursor", search.get("event_cursor")!);
+    if (allowed.has("program") && search.get("program")) params.set("program", search.get("program")!);
   } else if (search.get("cursor")) params.set("cursor", search.get("cursor")!);
   return params;
 }
@@ -216,7 +238,7 @@ export function eventPage(search: URLSearchParams): number {
   return Number.isSafeInteger(page) && page >= 0 ? page : 0;
 }
 export const resetEvents = { event_cursor: null, event_history: null, event_page: null, event: null };
-export const closeStation = { station: null, station_tab: null, station_return: null, event_limit: null, view: null, ...resetEvents };
+export const closeStation = { station: null, station_tab: null, station_return: null, event_limit: null, view: null, program: null, ...resetEvents };
 
 export function patchedSearch(search: URLSearchParams, patch: Record<string, string | null>) {
   const next = new URLSearchParams(search);

@@ -110,13 +110,24 @@ internal sealed class FileAuditControlService(IAgentControlAudit audit)
         var state = agent["file_audit"];
         var request = state?["request"];
         // Replacing an apply command would suspend file-event collection.
+        var existing = request?["config"] as JsonObject;
+        var roots = existing?["roots"] as JsonArray;
+        var assigned = AgentPolicyAssignments.FindCurrent(agent["assigned_modules"]!.AsArray(), FileAuditPolicy.ModuleId);
         if (source != currentSource || state?["retired_apply"] is not null || Flag(state?["may_own_audit"])
-            || request?["command"]?["action"]?.ToString() != "check"
-            || request["config"] is not JsonObject config || config["source_kind"]?.ToString() == "workstation"
-            || config["roots"] is not JsonArray roots || !roots.Any(root => root?["collection_scope_id"]?.ToString() == scope))
+            || assigned?["enabled"]?.GetValue<bool>() == true
+            || state?["state"]?.ToString() == "pending"
+            || request is not null && request["command"]?["action"]?.ToString() != "check"
+            || existing?["source_kind"]?.ToString() == "workstation")
             throw new AgentControlException("file_audit_check_conflict",409);
+        var config = existing?.DeepClone().AsObject() ?? new JsonObject { ["source_kind"] = "server" };
+        if (roots is null || !roots.Any(root => root?["collection_scope_id"]?.ToString() == scope))
+        {
+            var catalog = await ReadResourceCatalog(db, tx, id, source, ct);
+            if (!catalog.ContainsKey(scope)) throw new AgentControlException("file_audit_resource_conflict", 409);
+            config["roots"] = MergeResourceRoots([], new JsonArray(scope), catalog, []);
+        }
         return await Enqueue(db,tx,new JsonObject {
-            ["agent_id"] = id.ToString(), ["expected_revision"] = revision - 1, ["config"] = config.DeepClone(),
+            ["agent_id"] = id.ToString(), ["expected_revision"] = revision - 1, ["config"] = config,
             ["command"] = new JsonObject {
                 ["contract_id"] = "sli.file-audit.audit-command.v1", ["command_id"] = Guid.NewGuid().ToString("D"),
                 ["action"] = "check", ["policy_revision"] = revision.ToString(System.Globalization.CultureInfo.InvariantCulture),
@@ -168,17 +179,7 @@ internal sealed class FileAuditControlService(IAgentControlAudit audit)
         }
         RequireScopes(access, principal, agentId, source, priorRoots.OfType<JsonObject>().Select(root => S(root["collection_scope_id"])));
 
-        await using var catalog = new NpgsqlCommand("""
-            select cached_shares::text from public.sli_file_audit_smb_catalog
-            where agent_id=@agent and source_id=@source and supported_until>clock_timestamp() and cached_at is not null
-            """, db, tx);
-        catalog.Parameters.AddWithValue("agent", agentId);
-        catalog.Parameters.AddWithValue("source", source);
-        if (await catalog.ExecuteScalarAsync(ct) is not string shares)
-            throw new AgentControlException("file_audit_resource_conflict", 409);
-        var available = JsonNode.Parse(shares)!.AsArray().OfType<JsonObject>()
-            .Where(row => !FileAuditCatalog.IsAdministrativeShare(S(row["Name"]), S(row["Path"])))
-            .ToDictionary(row => FileAuditCatalog.ScopeId(source, S(row["Name"]), S(row["Path"])), StringComparer.Ordinal);
+        var available = await ReadResourceCatalog(db, tx, agentId, source, ct);
         var known = (requestConfig?["roots"] as JsonArray ?? []).OfType<JsonObject>().Concat(priorRoots.OfType<JsonObject>());
         foreach (var root in known)
         {
@@ -219,6 +220,22 @@ internal sealed class FileAuditControlService(IAgentControlAudit audit)
         };
         if (action == "apply") { request["enabled"] = true; request["activate_collection"] = true; }
         return await Enqueue(db, tx, request, principal, access, ct, new ResourceChange(remaining, retained));
+    }
+
+    private static async Task<Dictionary<string, JsonObject>> ReadResourceCatalog(NpgsqlConnection db,
+        NpgsqlTransaction tx, Guid agentId, string source, CancellationToken ct)
+    {
+        await using var catalog = new NpgsqlCommand("""
+            select cached_shares::text from public.sli_file_audit_smb_catalog
+            where agent_id=@agent and source_id=@source and supported_until>clock_timestamp() and cached_at is not null
+            """, db, tx);
+        catalog.Parameters.AddWithValue("agent", agentId);
+        catalog.Parameters.AddWithValue("source", source);
+        if (await catalog.ExecuteScalarAsync(ct) is not string shares)
+            throw new AgentControlException("file_audit_resource_conflict", 409);
+        return JsonNode.Parse(shares)!.AsArray().OfType<JsonObject>()
+            .Where(row => !FileAuditCatalog.IsAdministrativeShare(S(row["Name"]), S(row["Path"])))
+            .ToDictionary(row => FileAuditCatalog.ScopeId(source, S(row["Name"]), S(row["Path"])), StringComparer.Ordinal);
     }
 
     internal static JsonArray MergeResourceRoots(JsonArray prior, JsonArray selected,

@@ -2290,6 +2290,11 @@ async function requestMutation<T>(path: string, method: "POST" | "PATCH" | "PUT"
   return response.json() as Promise<T>;
 }
 
+function requestEventBatch(eventDbIds: readonly (number | string)[]) {
+  const params = new URLSearchParams({ event_db_id: eventDbIds.slice(0, 100).join(",") });
+  return request<EventBatchResponse>(`/api/v1/events/batch?${params.toString()}`);
+}
+
 export const api = {
   adOperationCredentials: () => request<AdCredentialList>("/api/v1/ad-operation-credentials"),
   createAdOperationCredential: (body: { domain_id: number; label: string; username: string; password: string }) =>
@@ -2486,10 +2491,8 @@ export const api = {
   v4PublishReport: (body: Record<string, unknown>) => requestMutation<{ item: Record<string, unknown> }>("/api/v1/reports/definitions", "POST", body),
   events: (params = new URLSearchParams()) => request<EventsResponse>(`/api/v1/events?${params.toString()}`),
   event: (eventDbId: string) => request<{ api_version: "v1"; item: EventDetail }>(`/api/v1/events/${encodeURIComponent(eventDbId)}`),
-  eventsBatch: (eventDbIds: readonly number[]) => {
-    const params = new URLSearchParams({ event_db_id: eventDbIds.slice(0, 100).join(",") });
-    return request<EventBatchResponse>(`/api/v1/events/batch?${params.toString()}`);
-  },
+  eventsBatch: (eventDbIds: readonly number[]) => requestEventBatch(eventDbIds),
+  eventAvailable: async (eventDbId: string) => (await requestEventBatch([eventDbId])).items.length > 0,
   eventRelations: (eventDbId: number) => request<EventRelations>(`/api/v1/events/${encodeURIComponent(String(eventDbId))}/relations`),
   eventEntities: (eventDbId: number) => request<EventEntities>(`/api/v1/events/${encodeURIComponent(String(eventDbId))}/entities`),
   operations: () => request<OperationsOverview>("/api/v1/operations/overview"),

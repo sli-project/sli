@@ -723,24 +723,46 @@ it.each(["ru", "en"] as const)("requests all accessible security domains and cat
 
 it.each(["ru", "en"] as const)("routes File Servers views to their declared data sources (%s)", async (locale) => {
   setLocale(locale);
+  const auditResource = {
+    id: "synthetic-resource", share_name: "Documents", source_name: "fs.example.test",
+    agent_id: "synthetic-agent", source_instance_id: "synthetic-source", collection_scope_id: "synthetic-scope",
+    audit_revision: 1, audit_state: "disabled",
+  };
+  const views = [
+    ["overview", "file-audit.screen.overview"],
+    ["actions", "file-audit.screen.actions"],
+    ["mass-operations", "file-audit.tabs.mass-operations"],
+    ["permission-changes", "file-audit.tabs.permission-changes"],
+    ["access-denials", "file-audit.tabs.access-denials"],
+    ["out-of-hours", "file-audit.tabs.out-of-hours"],
+    ["permissions", "file-audit.screen.permissions"],
+    ["audit-state", "file-audit.tabs.audit-state"],
+  ] as const;
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     requested.push(url);
     const key = url.match(/\/reports\/(file-audit\.[a-z-]+)/)?.[1];
     const declaration = reportDefinitions.find(item => item.key === key);
     if (!declaration) return new Response(null, { status: 404 });
+    const items = key === "file-audit.overview" || key === "file-audit.audit-state" ? [auditResource] : [];
     return Response.json(url.includes("/data?")
-      ? page({ report_key: declaration.key, items: [], filtered_count: 0 })
+      ? page({ report_key: declaration.key, items, filtered_count: items.length })
       : { ...declaration, filter_options: {} });
   }));
   renderReport("file-audit.actions");
   await screen.findByRole("table", { name: t("file-audit.screen.actions") });
-  expect(screen.getByRole("tab", { name: t("file-audit.screen.actions") }).getAttribute("aria-selected")).toBe("true");
-  for (const view of ["overview", "mass-operations", "access-denials", "out-of-hours", "permissions"] as const) {
-    const name = view === "overview" || view === "permissions" ? t(`file-audit.screen.${view}`) : t(`file-audit.tabs.${view}`);
+  expect(screen.getByRole("tab", { name: t("file-audit.screen.actions"), selected: true })).toBeTruthy();
+  expect(screen.getAllByRole("tab").map(tab => tab.textContent)).toEqual(views.map(([, title]) => t(title)));
+  for (const [view, title] of views) {
+    const name = t(title);
     await userEvent.click(screen.getByRole("tab", { name }));
     await screen.findByRole("table", { name });
-    expect(requested.some(url => url.includes("/file-audit." + view + "/data?"))).toBe(true);
+    expect(requested.some(url => url.includes(`/file-audit.${view}/data?`))).toBe(true);
+    for (const action of ["file-audit.resources.enable", "file-audit.resources.disable"] as const) {
+      const button = { name: t(action) };
+      if (view === "audit-state") expect(screen.getByRole("button", button)).toBeTruthy();
+      else expect(screen.queryByRole("button", button)).toBeNull();
+    }
   }
 });
 

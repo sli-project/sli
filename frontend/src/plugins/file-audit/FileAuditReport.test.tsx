@@ -11,7 +11,7 @@ import { OverlayProvider } from "../../design-system";
 import { TimeZoneContext } from "../../shared/time-zone";
 import reportDefinitions from "../../../../server-dotnet/src/Sli.Server/Reporting/V2/report-definitions.json";
 
-const mocks = vi.hoisted(() => ({ definition: vi.fn(), data: vi.fn(), detail: vi.fn(), event: vi.fn(), agents: vi.fn(), agentAction: vi.fn(), access: {
+const mocks = vi.hoisted(() => ({ definition: vi.fn(), data: vi.fn(), detail: vi.fn(), eventAvailable: vi.fn(), agents: vi.fn(), agentAction: vi.fn(), access: {
   platform_owner: false, preview: false,
   subject: { type: "user", id: 1, coarse_role: "viewer" }, evaluated_at_utc: "synthetic-evaluation", capabilities: ["file-audit.view", "file-audit.export"],
   reports: ["overview", "actions", "mass-operations", "permission-changes", "access-denials", "out-of-hours", "permissions", "audit-state"].map((key) => ({
@@ -20,7 +20,7 @@ const mocks = vi.hoisted(() => ({ definition: vi.fn(), data: vi.fn(), detail: vi
 } }));
 vi.mock("../../api/client", async (importOriginal) => ({ ...await importOriginal<typeof import("../../api/client")>(),
   api: { reportV2Definition: mocks.definition, reportV2Data: mocks.data, reportV2Detail: mocks.detail, agents: mocks.agents,
-    agentAction: mocks.agentAction, event: mocks.event } }));
+    agentAction: mocks.agentAction, eventAvailable: mocks.eventAvailable } }));
 vi.mock("../../app/App", () => ({ useEffectiveAccess: () => mocks.access, useTimeZone: () => ({ timeZone: "UTC" }) }));
 vi.mock("../../app/report-v2/ReportDenied", () => ({ ReportDenied: () => <div role="alert">Denied</div> }));
 
@@ -47,7 +47,7 @@ beforeEach(() => {
   mocks.definition.mockReset().mockImplementation(async (key: string) => declaration(key));
   mocks.data.mockReset().mockImplementation(async (key: string, params: URLSearchParams) => result(key, params));
   mocks.detail.mockReset();
-  mocks.event.mockReset();
+  mocks.eventAvailable.mockReset();
   mocks.access.capabilities = ["file-audit.view", "file-audit.export"];
   mocks.access.platform_owner = false;
   mocks.access.preview = false;
@@ -58,11 +58,16 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); client?.clear(); vi.useRealTimers(); });
 
-it("opens Actions by default and keeps the same period across the views", async () => {
+it("keeps the donor tab order and the same period on direct Actions links and tab switches", async () => {
   mount();
   await screen.findByRole("table", { name: t("file-audit.screen.actions") });
   const actions = screen.getByRole("tab", { name: t("file-audit.screen.actions") });
   expect(actions.getAttribute("aria-selected")).toBe("true");
+  expect(screen.getAllByRole("tab").map(tab => tab.textContent)).toEqual([
+    t("file-audit.screen.overview"), t("file-audit.screen.actions"), t("file-audit.tabs.mass-operations"),
+    t("file-audit.tabs.permission-changes"), t("file-audit.tabs.access-denials"), t("file-audit.tabs.out-of-hours"),
+    t("file-audit.screen.permissions"), t("file-audit.tabs.audit-state"),
+  ]);
   const from = mocks.data.mock.calls.at(-1)?.[1].get("from");
   await userEvent.click(screen.getByRole("tab", { name: t("file-audit.screen.overview") }));
   await screen.findByRole("table", { name: t("file-audit.screen.overview") });
@@ -72,6 +77,42 @@ it("opens Actions by default and keeps the same period across the views", async 
   expect(mocks.data.mock.calls.at(-1)?.[1].get("from")).toBe(from);
   expect(mocks.data.mock.calls.at(-1)?.[1].get("view")).not.toBe("objects");
   expect(screen.getAllByText(t("period.24h"), { selector: "summary span" })).toHaveLength(1);
+});
+
+it("shows nine resources on two servers and sends the deviations filter to the overview reader", async () => {
+  const shares = ["Finance", "Projects", "Archive", "Public", "Design", "HR", "Reports", "QA", "Transfer"];
+  const rows = shares.map((share_name, index) => ({
+    id: share_name, share_name, source_name: index < 5 ? "fs-01.example.test" : "fs-02.example.test",
+    source_instance_id: index < 5 ? "fixture-source-1" : "fixture-source-2",
+    agent_id: index < 5 ? "fixture-agent-1" : "fixture-agent-2",
+    collection_scope_id: "fixture-root-" + index, path: "C:\\Shares\\" + share_name,
+    permission_changes: index === 0 ? 7 : 0, permission_change_groups: index === 0 ? 1 : 0,
+    top_fact: index === 0 ? { kind: "mass", rule: "file-audit.mass-write", severity: "medium", paths: 110, id: "saved-result" }
+      : index === 1 ? { kind: "audit_disabled" } : undefined,
+  }));
+  mocks.data.mockImplementation(async (key, params) => {
+    const items = params.get("deviations_only") === "true" ? rows.filter(row => row.top_fact) : rows;
+    return { ...result(key, params), items, filtered_count: items.length, has_more: false, next_cursor: null };
+  });
+  mount(declaration("file-audit.overview"));
+  const table = within(await screen.findByRole("table", { name: t("file-audit.screen.overview") }));
+  expect(table.getAllByRole("columnheader").map(cell => cell.textContent)).toEqual([
+    t("file-audit.workspace.server"), t("file-audit.workspace.resource_path"), t("file-audit.overview.fact"),
+    t("file-audit.workspace.permission_changes"), t("file-audit.overview.latest_change"), t("file-audit.overview.snapshot"),
+  ]);
+  expect(table.getAllByRole("row").slice(1)).toHaveLength(9);
+  expect(table.getAllByText("fs-01.example.test")).toHaveLength(5);
+  expect(table.getAllByText("fs-02.example.test")).toHaveLength(4);
+  expect(table.getByText(new RegExp(t("file-audit.overview.mass_write", { count: 110 })))).toBeTruthy();
+  expect(table.getByText(t("file-audit.overview.audit_disabled"))).toBeTruthy();
+  expect(table.queryByRole("checkbox")).toBeNull();
+  expect(screen.getByText(t("file-audit.overview.count_many", { count: 9 }))).toBeTruthy();
+  await userEvent.click(screen.getByRole("checkbox", { name: t("file-audit.overview.deviations") }));
+  await waitFor(() => expect(mocks.data.mock.calls.at(-1)?.[1].get("deviations_only")).toBe("true"));
+  expect(await screen.findByText(t("file-audit.overview.count_few", { count: 2 }))).toBeTruthy();
+  expect(screen.getAllByRole("row").slice(1)).toHaveLength(2);
+  expect(screen.getByRole("link", { name: t("file-audit.overview.export") }).getAttribute("href")).toContain("deviations_only=true");
+  expect(mocks.data.mock.calls.at(-1)?.[1].get("cursor")).toBeNull();
 });
 
 it("gives the next action for empty Actions and Permissions tabs", async () => {
@@ -84,14 +125,14 @@ it("gives the next action for empty Actions and Permissions tabs", async () => {
   expect(screen.queryByText(t("file-audit.screen.empty_actions"))).toBeNull();
 });
 
-it("shows the server's agent upgrade requirement on Resources", async () => {
+it("shows the server's agent upgrade requirement on Audit", async () => {
   mocks.data.mockImplementation(async (key, params) => ({ ...result(key, params), items: [{
     id: "fixture-resource", share_name: "Fixture share", audit_receipt: {
       observed_at: "2026-11-26T08:00:00Z", state: "failed", reason_code: "native_unavailable",
       check_agent_requirement: { agent_version: "26.0.136", minimum_version: "26.0.154" },
     },
   }] }));
-  mount(declaration("file-audit.overview"));
+  mount(declaration("file-audit.audit-state"));
   const row = await screen.findByRole("row", { name: /Fixture share/ });
   expect(row.textContent).toContain(t("file-audit.screen.update_agent", { version: "26.0.136", minimum: "26.0.154" }));
   expect(row.textContent).not.toContain(t("file-audit.screen.audit_unreadable"));
@@ -107,7 +148,7 @@ it.each([
       action: "apply", observed_at: "2026-11-26T08:00:00Z", state: "partial", reason_code: reason,
     },
   }] }));
-  mount(declaration("file-audit.overview"));
+  mount(declaration("file-audit.audit-state"));
   const row = await screen.findByRole("row", { name: /Fixture share/ });
   expect(row.textContent).toContain(t(message));
   expect(row.textContent).not.toContain(t("file-audit.screen.no_batch"));
@@ -131,17 +172,13 @@ it("shows all catalog shares and applies audit to the two confirmed selections",
     })),
   }));
   mocks.agentAction.mockResolvedValue({ command_id: "apply-shares", policy_revision: 4, state: "pending" });
-  mount(declaration("file-audit.overview"));
-  const table = within(await screen.findByRole("table", { name: t("file-audit.screen.overview") }));
+  mount(declaration("file-audit.audit-state"));
+  const table = within(await screen.findByRole("table", { name: t("file-audit.tabs.audit-state") }));
   expect(table.getAllByRole("row").slice(1)).toHaveLength(6);
   expect(table.getByRole("row", { name: /Finance/ }).textContent).toContain(t("file-audit.resources.enabled"));
   expect(table.getByRole("row", { name: /Projects/ }).textContent).toContain(t("file-audit.resources.disabled"));
-  const headings = table.getAllByRole("columnheader");
-  const projectCells = within(table.getByRole("row", { name: /Projects/ })).getAllByRole("cell");
-  for (const heading of [t("file-audit.workspace.permission_changes"), "Права на дату"]) {
-    const columnIndex = headings.indexOf(table.getByRole("columnheader", { name: heading }));
-    expect(projectCells[columnIndex].textContent).toBe("—");
-  }
+  for (const key of ["condition", "observed", "checked"] as const)
+    expect(table.getByRole("columnheader", { name: t(`file-audit.audit.${key}`) })).toBeTruthy();
   for (const share of ["Projects", "Archive"]) await userEvent.click(within(table.getByRole("row", { name: new RegExp(share) })).getByRole("checkbox"));
   expect(table.getByRole("checkbox", { name: t("file-audit.resources.selectPage") })).toHaveProperty("indeterminate", true);
   await userEvent.click(screen.getByRole("button", { name: t("file-audit.resources.enable") }));
@@ -173,13 +210,14 @@ it("requests a check for the selected manageable resource and shows the fresh re
     audit_receipt: { command_id: "old-check", state: "failed", reason_code: "native_unavailable", observed_at: "2026-11-26T08:00:00Z" },
     check_receipt: mocks.agentAction.mock.calls.length ? { state: "verified", observed_at: observedAt } : undefined,
   }, { id: "other-resource", share_name: "Other share", ...target, collection_scope_id: "scope:other" }] }));
-  mount(declaration("file-audit.overview"));
+  mount(declaration("file-audit.audit-state"));
   const row = within(await screen.findByRole("row", { name: /Fixture share/ }));
   expect(row.getByText(new RegExp(t("file-audit.screen.audit_unreadable")))).toBeTruthy();
   expect(within(screen.getByRole("row", { name: /Other share/ })).queryByRole("button")).toBeNull();
   await userEvent.click(row.getByRole("button", { name: t("file-audit.screen.check") }));
   await waitFor(() => expect(mocks.agentAction).toHaveBeenCalledExactlyOnceWith("file-audit", { ...target, expected_revision: 3 }));
-  expect(await row.findByText(new RegExp(t("file-audit.screen.check_verified") + " · .*:03"))).toBeTruthy();
+  expect(await row.findByText(t("file-audit.screen.check_verified"))).toBeTruthy();
+  expect(row.getByText(/08:03/)).toBeTruthy();
   expect(row.queryByText(new RegExp(t("file-audit.screen.audit_unreadable")))).toBeNull();
 });
 
@@ -213,7 +251,7 @@ it("applies a custom period from the header and preserves an unchanged exact bou
 
 it("expands a grouped interval across the table and links only to available targets", async () => {
   const path = "C:\\Fixture\\<name>";
-  mocks.event.mockResolvedValue({ item: { event_db_id: 44 } });
+  mocks.eventAvailable.mockResolvedValue(true);
   mocks.data.mockImplementation(async (key, params) => ({ ...result(key, params), items: [{
     id: "group", path, operation: "permissions", source_name: "FS.example.test", event_code: 4670, journal: "Security",
     subject_name: "EXAMPLE\\operator", subject_sid: "S-1-5-21-100000001-200000002-300000003-1199",
@@ -226,7 +264,9 @@ it("expands a grouped interval across the table and links only to available targ
   expect(table.getByText(t("file-audit.activity.in_group", { count: "7" }))).toBeTruthy();
   expect(table.getByText("EXAMPLE\\operator")).toBeTruthy();
   expect(table.getByText(path)).toBeTruthy();
-  await userEvent.click(table.getByRole("button", { name: t("file-audit.activity.expand") }));
+  const group = table.getByText(path).closest("tr")!;
+  expect(group.hasAttribute("data-clickable")).toBe(true);
+  await userEvent.click(group);
   expect(table.getByRole("link", { name: t("file-audit.screen.problem_number", { id: "12" }) }).getAttribute("href"))
     .toBe("/app/report/security.problems?id=12");
   const sid = table.getByText(/S-1-5-21-100000001-200000002-300000003-1199/);
