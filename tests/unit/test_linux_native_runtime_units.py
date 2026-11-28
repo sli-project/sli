@@ -50,8 +50,13 @@ def test_upgrade_starts_and_checks_only_dotnet_beta_services(monkeypatch):
     monkeypatch.setattr(runtime, 'systemd', lambda service: probes.append(service) or {
         'ActiveState': 'active', 'MainPID': '42'})
     monkeypatch.setattr(native_install, 'command', lambda argv, **kw: calls.append(argv))
-    monkeypatch.setattr(native_install, 'wait_api', lambda settings: calls.append('api-ready'))
-    monkeypatch.setattr(native_install, 'wait_health', lambda: calls.append('workers-ready'))
+    monkeypatch.setattr(native_install, 'wait_api', lambda settings, **kwargs: calls.append('api-ready'))
+
+    def wait_health(*, check_services):
+        calls.append('workers-ready')
+        check_services()
+
+    monkeypatch.setattr(native_install, 'wait_health', wait_health)
     monkeypatch.setattr(native_upgrade.subprocess, 'run', lambda argv, **kw: SimpleNamespace(returncode=0))
     native_upgrade.start_checked()
     assert calls[0] == ['systemctl', 'reset-failed', 'sli-ready.service', 'sli-health.service',

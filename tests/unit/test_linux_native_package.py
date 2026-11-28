@@ -53,6 +53,43 @@ def test_wait_api_rejects_untrusted_tls_without_retry(monkeypatch, wrapped):
     assert caught.value.__suppress_context__
 
 
+@pytest.mark.parametrize("ready_after", [5, 14, None])
+def test_upgrade_waits_for_api_before_worker_health(monkeypatch, ready_after):
+    from urllib.error import HTTPError, URLError
+
+    config = {"health_url": "https://192.0.2.10:443/api/health/ready"}
+    clock = [0]
+    probes, health = [], []
+    monkeypatch.setattr(install.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(install.time, "sleep", lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+    monkeypatch.setattr("ssl.create_default_context", lambda **kwargs: object())
+    monkeypatch.setattr(runtime, "configuration", lambda: config)
+    monkeypatch.setattr(runtime, "selected", lambda config: ("api",))
+    monkeypatch.setattr(runtime, "systemd", lambda service: {"ActiveState": "active", "MainPID": "42"})
+    monkeypatch.setattr(install, "command", lambda *args, **kwargs: None)
+    monkeypatch.setattr(install, "wait_health", lambda **kwargs: health.append(clock[0]))
+    monkeypatch.setattr(native_upgrade.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=1))
+
+    def urlopen(url, **kwargs):
+        assert url == config["health_url"]
+        probes.append(clock[0])
+        if len(probes) == 1:
+            raise URLError(ConnectionRefusedError())
+        if ready_after is None or clock[0] < ready_after:
+            raise HTTPError(url, 503, "starting", None, None)
+        return nullcontext(SimpleNamespace(status=200))
+
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    if ready_after is None:
+        with pytest.raises(install.UnitCommandFailure, match="^native_install_api_unready$"):
+            native_upgrade.start_checked()
+        assert not health and clock[0] == 15
+    else:
+        native_upgrade.start_checked()
+        assert health == [probes[-1]] and ready_after <= health[0] < min(ready_after + 4, 15)
+    assert probes[:3] == [0, 1, 3]
+
+
 @pytest.fixture(autouse=True)
 def native_clickhouse_mode(monkeypatch):
     monkeypatch.setattr(host.clickhouse, "configured_mode", lambda root=Path("/"): "native")
@@ -994,3 +1031,23 @@ def test_health_retries_startup_and_has_a_deadline(monkeypatch):
     monkeypatch.setattr(install, "command", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("unhealthy")))
     with pytest.raises(RuntimeError, match="native_install_workers_unhealthy"):
         install.wait_health()
+
+
+def test_health_retries_when_a_worker_restarts_after_a_successful_probe(monkeypatch):
+    clock = [0]
+    checks = []
+    monkeypatch.setattr(install.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(install.time, "sleep", lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+    monkeypatch.setattr(install, "command", lambda *args, **kwargs: None)
+    monkeypatch.setattr(runtime, "configuration", lambda: {})
+    monkeypatch.setattr(runtime, "selected", lambda config: ("api",))
+    monkeypatch.setattr(runtime, "healthy_service", lambda service: False)
+
+    def check_services():
+        checks.append(clock[0])
+        if clock[0] < 5:
+            raise install.UnitCommandFailure("sli-dotnet-api.service", 1, "restarting",
+                                             code="native_upgrade_service_unready")
+
+    install.wait_health(check_services=check_services)
+    assert len(checks) == 2 and checks[0] == 0 and checks[1] >= 5

@@ -281,6 +281,8 @@ jobs:
           python-version: "3.14"
           cache: pip
       - run: python -m pip install --disable-pip-version-check -r requirements.txt
+      - name: Verify delayed API readiness and checkpoint rollback
+        run: python -m pytest -q tests/unit/test_linux_native_upgrade_prepare.py::test_package_upgrade_api_readiness_controls_checkpoint_restore
       - name: Ensure PostgreSQL 18 binaries
         shell: bash
         run: |
