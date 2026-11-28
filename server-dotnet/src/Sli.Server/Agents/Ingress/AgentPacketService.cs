@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Npgsql;
 using Sli.Agent.Core;
 using Sli.Agent.Protocol;
+using Sli.Server.Workstations;
 
 namespace Sli.Server.Agents.Ingress;
 
@@ -106,7 +107,7 @@ public sealed class AgentPacketService(TimeProvider clock, AgentInboxLimits limi
         }
         bool transportGap=summary?["expiry_pending"]?.GetValue<bool>() == true && Follows(envelope,previous);
         if (transportGap && envelope.ContinuityState != "gap") return Reject("agent_reset_invalid");
-        JsonArray? rows=null; SnapshotPrepared? snapshot=null; JsonObject? workstationCurrent=null;
+        JsonArray? rows=null; SnapshotPrepared? snapshot=null; JsonObject? workstationCurrent=null, hardware=null;
         if (envelope.ModuleId == "sli.heartbeat")
         {
             if (envelope.SourceInstanceId != identity.HostId.ToString("D") || !HeartbeatValidator.IsValid(identity.HostId,envelope.Channel,envelope.Generation,envelope.ModuleVersion,envelope.PolicyRevision,payload,transportGap ? "not_proven" : envelope.ContinuityState,envelope.FilteredCount,envelope.LostCount)) return Reject("agent_heartbeat_invalid");
@@ -187,10 +188,19 @@ public sealed class AgentPacketService(TimeProvider clock, AgentInboxLimits limi
                 var assignment=await AgentPolicyAssignments.ResolveAsync(connection,transaction,state.Assignments,identity.Id,envelope.ModuleId,envelope.PolicyRevision,ct)
                     ?? throw new AgentException("agent_module_not_assigned");
                 var selected=WorkstationPolicy.Parse(assignment["config"] as JsonObject ?? new JsonObject());
-                workstationCurrent=current["config"] as JsonObject ?? new JsonObject();
-                rows=AgentWorkstationValidator.Validate(envelope,payload,selected,state.SourceHost ?? identity.HostId);
-                if(workstationScope is not null && !WorkstationJournalAdmission.MatchesRows(workstationScope,rows))
-                    return Reject("agent_workstations_packet_invalid");
+                if (WorkstationHardware.IsPacket(envelope, payload))
+                {
+                    if (workstationScope is null || !await WorkstationHardwareInventory.AvailableAsync(connection, transaction, ct))
+                        return Reject("agent_workstation_inventory_unavailable", "retry_later");
+                    hardware = WorkstationHardwareInventory.Validate(envelope, payload, selected, state.SourceHost ?? identity.HostId);
+                }
+                else
+                {
+                    workstationCurrent=current["config"] as JsonObject ?? new JsonObject();
+                    rows=AgentWorkstationValidator.Validate(envelope,payload,selected,state.SourceHost ?? identity.HostId,transportGap && workstationScope is not null);
+                    if(workstationScope is not null && !WorkstationJournalAdmission.MatchesRows(workstationScope,rows))
+                        return Reject("agent_workstations_packet_invalid");
+                }
             }
             catch (Exception e) when (e is AgentException or ProtocolException or InvalidOperationException or ArgumentException)
             { return Reject("agent_workstations_packet_invalid"); }
@@ -279,12 +289,15 @@ public sealed class AgentPacketService(TimeProvider clock, AgentInboxLimits limi
         if (envelope.ModuleId==AgentAdDcValidator.History && await ledger.HistoryPendingAsync(identity.Id,ct))
             return Reject("agent_history_pending","retry_later");
         var receipt=AgentReceipt.Make(envelope,"committed",null,now);
-        if (fileAudit && transportGap) receipt["transport_gap"]=true;
+        if ((fileAudit || workstationScope is not null) && transportGap) receipt["transport_gap"]=true;
         string? quota=snapshot is null
-            ? await AgentInboxQuota.CheckAsync(connection,transaction,envelope,payload,rows,receipt,limits,diagnostics,ct)
+            ? await AgentInboxQuota.CheckAsync(connection,transaction,envelope,payload,hardware is null ? rows : new JsonArray(),receipt,limits,diagnostics,ct)
             : await SnapshotIngress.CheckQuotaAsync(connection,transaction,snapshot,receipt,limits,ct);
         if (quota is not null) return Reject(quota,"retry_later");
         await ledger.StoreAsync(envelope,payload,rows,receipt,ct);
+        if (hardware is not null)
+            await WorkstationHardwareInventory.StoreAsync(connection, transaction, workstationScope!, Guid.Parse(envelope.SourceInstanceId),
+                Guid.Parse(envelope.PacketId), Iso8601.ParseUtc(envelope.ObservedAtUtc), hardware, ct);
         if (filePermissions)
             await RecordFileAuditEventAsync(connection,transaction,identity.Id,envelope.PolicyRevision,payload,now,ct);
         if (envelope.ContinuityState=="gap") await ledger.GapAsync(envelope,previous,summary,ct);

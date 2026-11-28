@@ -107,8 +107,8 @@ public sealed class WorkstationWorkspaceReader(IPostgresConnectionFactory connec
         )
         """;
 
-    private const string StationLogon = """
-        select p.*,greatest(
+    private static string StationLogon(bool hardware) => $$"""
+        select p.*,{{(hardware ? WorkstationHardwareInventory.ModelSql : "null")}} as model,greatest(
             (select h.time_created_utc from event_hot h
              where h.event_kind=4624 and h.domain_id=p.domain_id and h.method->>'$server_id'=p.server_id::text
                and h.method#>>'{$origin,source_instance_id}'=p.source_instance_id
@@ -149,16 +149,18 @@ public sealed class WorkstationWorkspaceReader(IPostgresConnectionFactory connec
         var selected = Selection(c, scope, rowId);
         JsonObject result;
         JsonObject? station = null;
+        JsonObject? hardware = null;
         WorkstationActivity? activity = null;
         try
         {
             await using var db = await connections.OpenAsync(ct);
             await using var tx = await db.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, ct);
             await Ws.Exec(db, "set transaction read only; set local statement_timeout='5000ms'; set local jit=off", ct);
+            bool hardwareAvailable = await WorkstationHardwareInventory.AvailableAsync(db, tx, ct);
             string basis = Population + ", selected as materialized (select a.* from bound a where " + selected.Sql + ") ";
             var total = (await Query(db, basis + "select count(*) as total,count(*) filter(where station_id<=@p0::text) as preceding from selected", selected, ct, cursor)).Single();
             var rows = await Query(db, basis + ", page as materialized (select * from selected where @p0::text is null or station_id>@p0 order by station_id limit @p1) "
-                + StationLogon, selected, ct, cursor, rowId is null ? c.Paging.Limit + 1 : 2);
+                + StationLogon(hardwareAvailable), selected, ct, cursor, rowId is null ? c.Paging.Limit + 1 : 2);
             if (rowId is not null && rows.Count != 1) throw new ReportRequestException("workstation_not_found", 404);
             bool more = rowId is null && rows.Count > c.Paging.Limit;
             rows = rows.Take(c.Paging.Limit).Select(row => Present(row, access)).ToList();
@@ -189,6 +191,7 @@ public sealed class WorkstationWorkspaceReader(IPostgresConnectionFactory connec
             else
             {
                 station = rows.Single();
+                if (hardwareAvailable) hardware = await WorkstationHardwareInventory.ReadAsync(db, tx, c, station, ct);
                 if (station["journal_available"]!.GetValue<bool>())
                     activity = await WorkstationActivityReader.ReadAsync(db, c, station, journal.ShortRetentionBoundary, ct);
             }
@@ -204,7 +207,7 @@ public sealed class WorkstationWorkspaceReader(IPostgresConnectionFactory connec
         var events = await EventsAsync(c, station, activity, ct);
         result["detail"] = new JsonObject
         {
-            ["station"] = station.DeepClone(), ["events"] = events,
+            ["station"] = station.DeepClone(), ["events"] = events, ["hardware"] = hardware,
             ["activity"] = Ws.Text(events, "state") is "ok" or "empty" ? activity?.ToJson() : null,
             ["related"] = new JsonObject
             {
@@ -271,7 +274,7 @@ public sealed class WorkstationWorkspaceReader(IPostgresConnectionFactory connec
     internal static JsonObject Present(JsonObject row, AccessDecision access)
     {
         var result = Ws.Pick(row, "station_id", "agent_key", "transport_agent_id", "source_instance_id", "display_name", "host_name", "domain_id", "domain_name", "server_id",
-            "operating_system", "operating_system_version", "last_logon_utc", "agent_version", "metadata_observed_at",
+            "operating_system", "operating_system_version", "model", "last_logon_utc", "agent_version", "metadata_observed_at",
             "agent_status", "last_seen", "policy_revision", "applied_policy_revision", "collection_state");
         result["profile"] = Profile(row["module"]?["config"] as JsonObject);
         result["journal_available"] = CanReadEvents(access, result);

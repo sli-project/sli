@@ -3,13 +3,14 @@ import { selectedDomain } from "../../app/domain-navigation";
 import { withReturnTo } from "../../app/report-v2/legacy";
 import { periodBounds, type FilterValues, type PeriodValue } from "../../design-system";
 import { localDateTimeToUtc, utcToLocalDateTimeInput } from "../../shared/date-time";
+import type { StationHardware } from "./hardware-model";
 
 export const WORKSTATIONS_KEY = "workstations.overview";
 export const PAGE_SIZES = [25, 50, 100, 200];
 export const EVENT_VIEWS = ["all", "authentication", "groups", "audit", "tasks"] as const;
 export const ACTIVITY_TABS = ["important", "programs", "logons", "devices"] as const;
 export type ActivityTab = typeof ACTIVITY_TABS[number];
-export type StationTab = ActivityTab | "events" | "collection";
+export type StationTab = ActivityTab | "hardware" | "events" | "collection";
 export const STATION_SEVERITIES = ["high", "medium", "low"] as const;
 export type StationSeverity = typeof STATION_SEVERITIES[number];
 export type EventView = typeof EVENT_VIEWS[number];
@@ -26,7 +27,7 @@ const timestamp = (value: unknown) => typeof value === "string" && /(?:Z|[+-]\d\
 export type Station = {
   station_id: string; agent_key: string | null; agent_version: string | null; transport_agent_id: string | null; source_instance_id: string | null;
   display_name: string | null; host_name: string | null; domain_id: string | null; domain_name: string | null;
-  server_id: string | null; operating_system: string | null; operating_system_version: string | null;
+  server_id: string | null; operating_system: string | null; operating_system_version: string | null; model: string | null;
   metadata_observed_at: string | null; agent_status: string | null; last_seen: string | null; last_logon_utc: string | null;
   policy_revision: string | null; applied_policy_revision: string | null;
   collection_state: "enabled" | "disabled" | "unbound";
@@ -47,6 +48,7 @@ export function stationRows(items: Row[]): Station[] {
       source_instance_id: sourceText(row.source_instance_id), display_name: sourceText(row.display_name), host_name: sourceText(row.host_name),
       domain_id: positiveId(row.domain_id), domain_name: sourceText(row.domain_name), server_id: positiveId(row.server_id),
       operating_system: sourceText(row.operating_system), operating_system_version: sourceText(row.operating_system_version),
+      model: sourceText(row.model),
       metadata_observed_at: timestamp(row.metadata_observed_at), agent_status: sourceText(row.agent_status), last_seen: timestamp(row.last_seen),
       last_logon_utc: timestamp(row.last_logon_utc),
       policy_revision: scalar(row.policy_revision), applied_policy_revision: scalar(row.applied_policy_revision),
@@ -125,7 +127,7 @@ export type StationLogon = { account: string | null; type: string | null; last: 
 export type StationDevice = ActivityInterval & { class: string | null; name: string | null };
 export type StationActivity = { notable: StationFact[]; programs: StationProgram[]; logons: StationLogon[]; devices: StationDevice[] };
 export type StationDetailResult = ReportResultDto & { detail?: {
-  station: Row; events: StationEvents; activity?: StationActivity | null;
+  station: Row; events: StationEvents; activity?: StationActivity | null; hardware?: StationHardware | null;
   related: { journal: { allowed: boolean; params?: Record<string, unknown> }; problems: { allowed: boolean } };
 } };
 
@@ -202,7 +204,7 @@ export const eventView = (search: URLSearchParams): EventView => EVENT_VIEWS.fin
 export function stationTab(search: URLSearchParams): StationTab {
   const tab = search.get("station_tab");
   return ACTIVITY_TABS.find(key => key === tab)
-    ?? (tab === "collection" ? tab : tab === "events" || search.has("event") || search.has("event_cursor") || search.has("program") ? "events" : "important");
+    ?? (tab === "collection" || tab === "hardware" ? tab : tab === "events" || search.has("event") || search.has("event_cursor") || search.has("program") ? "events" : "important");
 }
 
 /** Browser navigation fields never enter either native API route. The registry supplies the business allowlist. */

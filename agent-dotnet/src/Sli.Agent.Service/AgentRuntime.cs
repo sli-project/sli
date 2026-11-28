@@ -24,7 +24,8 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
     IDirectorySnapshotReader? snapshotReader = null, IFileAuditEventSource? fileEventSource = null, IFileAuditApi? fileAuditApi = null,
     Action<string,string>? filePathCheck = null, Func<string,bool>? fileAccountCheck = null,
     INpsEventSource? npsEventSource = null, IRadiusTailSource? radiusSource = null, Func<JsonObject>? protectionReader = null,
-    Func<CancellationToken, LocalSmbCatalog>? localShareReader = null) : IDisposable
+    Func<CancellationToken, LocalSmbCatalog>? localShareReader = null,
+    Func<CancellationToken, Task<JsonObject?>>? hardwareReader = null) : IDisposable
 {
     private readonly AgentOptions _options = options.Value;
     private readonly IDurableFiles _files = CreateFiles();
@@ -38,6 +39,10 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
     private DateTimeOffset? _lastCapture;
     private string? _lastCapturePolicy;
     private string? _dcCatchUpChannel;
+    private Task<JsonObject?>? _hardwareRead;
+    private CancellationTokenSource? _hardwareCancellation;
+    private DateTimeOffset? _nextHardwareRead;
+    private string? _hardwareHost;
     private IWindowsAudit? _audit = audit;
     private SnapshotCapture? _snapshots;
     private FileAuditManager? _fileAudit;
@@ -274,8 +279,22 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
                 _lastCapture = clock.GetUtcNow();
                 _lastCapturePolicy = capturePolicy;
             }
+            bool capturedHardware = false;
             if (state == "active")
             {
+                if (policy.AdDc is null && policy.Workstations is { } hardwareConfig
+                    && assignment[WorkstationHardware.Capability] is JsonValue capability && capability.TryGetValue<bool>(out var hardwareSupported)
+                    && hardwareSupported && (hardwareReader is not null || OperatingSystem.IsWindows()))
+                {
+                    try
+                    {
+                        capturedHardware = await CaptureHardwareAsync(sourceHostId, WorkstationPolicy.Parse(hardwareConfig),
+                            Position(WorkstationsModule.ModuleId), cancellationToken);
+                        if (capturedHardware) captured++;
+                    }
+                    catch (QueueFullException exception) { error = exception.Code; }
+                }
+                else StopHardwareRead();
                 foreach (var (moduleId, npsPolicy) in policy.NpsModules)
                 {
                     var signature = CanonicalJson.Serialize(npsPolicy.Value);
@@ -355,12 +374,14 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
                 }
                 catch (QueueFullException exception) { error = exception.Code; }
             }
+            else StopHardwareRead();
             // A new check-in still authorizes every burst. Failed delivery and the owner's rate limit
             // retain normal backoff; a healthy DC backlog or newly captured packet needs no idle poll.
-            ContinueImmediately = state == "active" && (policy.AdDc is not null || policy.FileAuditActivity)
+            if (_hardwareRead is { IsCompleted: false }) IntervalSeconds = Math.Min(IntervalSeconds, 1);
+            ContinueImmediately = state == "active" && (policy.AdDc is not null || policy.FileAuditActivity || capturedHardware)
                 && error is null && !failed
                 && _attempts.Count < policy.Control.RateLimitPerMinute
-                && (policy.AdDc is not null && _dcCatchUpChannel is not null
+                && (capturedHardware || policy.AdDc is not null && _dcCatchUpChannel is not null
                     || _queue.Pending().Any(packet => policy.AdDc is not null && packet.Envelope.ModuleId == AdDcModule.ModuleId
                         || policy.FileAuditActivity && packet.Envelope.ModuleId == FileAuditModule.ModuleId));
         }
@@ -379,6 +400,43 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
             return Finish(error ?? transportError.Code, active, captured, failed, transportError.Detail);
         return Finish(error ?? (failed ? "agent_delivery_pending" : null), active, captured, failed,
             snapshotFailure?.Code == error ? snapshotFailure?.Detail : null);
+    }
+
+    private async Task<bool> CaptureHardwareAsync(string host, WorkstationPolicy policy, CapturedPosition? position, CancellationToken ct)
+    {
+        if (_hardwareHost != host)
+        {
+            StopHardwareRead();
+            _hardwareHost = host;
+        }
+        if (_nextHardwareRead is { } due && clock.GetUtcNow() < due) return false;
+        // Keep at most one inventory in the durable queue and compare against the
+        // last acknowledged content after delivery has had a chance to run.
+        if (_queue!.Pending().Any(packet => WorkstationHardware.IsPacket(packet.Envelope, packet.Payload))) return false;
+        if (_hardwareRead is null)
+        {
+            _hardwareCancellation = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var token = _hardwareCancellation.Token;
+            _hardwareRead = hardwareReader is not null ? hardwareReader(token)
+                : OperatingSystem.IsWindows() ? WorkstationHardwareReader.ReadAsync(token) : Task.FromResult<JsonObject?>(null);
+        }
+        if (!_hardwareRead.IsCompleted) return false;
+        var snapshot = await _hardwareRead;
+        var observed = clock.GetUtcNow();
+        var sample = snapshot is null ? null : WorkstationHardware.Collect(snapshot, _queue.WorkstationHardwareDigest(), host, policy, position, observed);
+        if (sample is not null) _queue.Capture(_identity!.Signer, _identity.AgentId, sample, observed);
+        StopHardwareRead();
+        _nextHardwareRead = observed + (snapshot is null ? TimeSpan.FromMinutes(5) : TimeSpan.FromHours(24));
+        return sample is not null;
+    }
+
+    private void StopHardwareRead()
+    {
+        _hardwareCancellation?.Cancel();
+        _hardwareCancellation?.Dispose();
+        _hardwareCancellation = null;
+        _hardwareRead = null;
+        _nextHardwareRead = null;
     }
 
     private string ProbeRights(AgentPolicy policy, IEventLogSource? source, string hostId)
@@ -429,6 +487,7 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
         _queue?.Dispose();
         _queue = null;
         _snapshots?.Cancel(clearFailures: true);
+        StopHardwareRead();
         _lastCapture = null;
         _lastFileCapture = null;
         _fileModule = null;
@@ -583,6 +642,7 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
 
     public void Dispose()
     {
+        StopHardwareRead();
         _snapshots?.Dispose();
         _fileAuditCatalog?.Dispose();
         _fileAuditReport.Dispose();

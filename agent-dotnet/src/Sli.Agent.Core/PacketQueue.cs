@@ -81,10 +81,11 @@ public sealed class FilePacketQueue : IPacketQueue, IDisposable
         public string? ExpiredToUtc { get; set; }
         public long Quarantined { get; set; }
         public string? LastRejectionReason { get; set; }
+        public string? HardwareDigest { get; set; }
 
         public ModuleState Clone() => new() { Committed = Committed, Captured = Captured,
             GapPending = GapPending, ExpiredFromUtc = ExpiredFromUtc, ExpiredToUtc = ExpiredToUtc,
-            Quarantined = Quarantined, LastRejectionReason = LastRejectionReason };
+            Quarantined = Quarantined, LastRejectionReason = LastRejectionReason, HardwareDigest = HardwareDigest };
     }
 
     private string StatePath => Path.Combine(_root, "checkpoints.json");
@@ -155,6 +156,7 @@ public sealed class FilePacketQueue : IPacketQueue, IDisposable
                     ExpiredToUtc = item["expired_to_utc"]?.GetValue<string>(),
                     Quarantined = item["quarantined"]?.GetValue<long>() ?? 0,
                     LastRejectionReason = item["last_rejection_reason"]?.GetValue<string>(),
+                    HardwareDigest = item["hardware_digest"]?.GetValue<string>(),
                 };
             }
             return state;
@@ -180,6 +182,7 @@ public sealed class FilePacketQueue : IPacketQueue, IDisposable
                 ["quarantined"] = module.Quarantined,
                 ["last_rejection_reason"] = module.LastRejectionReason,
             };
+            if (module.HardwareDigest is not null) root[moduleId]!["hardware_digest"] = module.HardwareDigest;
         }
         _files.WriteAtomic(StatePath, CanonicalJson.ToBytes(root));
     }
@@ -201,6 +204,15 @@ public sealed class FilePacketQueue : IPacketQueue, IDisposable
             // Disk usage, not packet age, limits capture.
             Recover();
             return Entries().Select(item => item.Packet).ToList();
+        }
+    }
+
+    public string? WorkstationHardwareDigest()
+    {
+        lock (_gate)
+        {
+            Recover();
+            return _state.GetValueOrDefault(WorkstationsModule.ModuleId)?.HardwareDigest;
         }
     }
 
@@ -279,6 +291,8 @@ public sealed class FilePacketQueue : IPacketQueue, IDisposable
                 module.GapPending = true;
             }
             else if (envelope.ContinuityState == "gap") module.GapPending = false;
+            if (!expired && !disabled && !rejected && WorkstationHardware.IsPacket(envelope, packet.Payload))
+                module.HardwareDigest = Packets.Digest(packet.Payload["records"]![0]!["payload"]!);
             if (rejected)
             {
                 var name = envelope.Sequence.ToString("D19",CultureInfo.InvariantCulture) + "-" + envelope.PacketId + ".rejected";

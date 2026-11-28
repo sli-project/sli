@@ -221,18 +221,28 @@ internal sealed partial class SemanticProduction
     internal static async Task<DetectionOutcome> ManagedRansom(ISemanticSession session, JsonNode source, DateTimeOffset now, CancellationToken ct, DetectionDiagnostics? diagnostics = null)
     {
         await session.QueryAsync("savepoint default_file_ransom",ct); string? key = null;
+        var evaluation = diagnostics is null ? null : new JsonObject
+        {
+            ["result_count"] = 0, ["results"] = new JsonArray(), ["reason"] = "no_results"
+        };
         try
         {
             var scope = source["scope"]!.AsObject(); string agent = source.Text("agent_id")!; var config = source["config"]!.AsObject(); var definition = Definition("qw.file-ransom",scope,agent,config);
-            if (!await AdmitDefault(session,definition,ct)) { await session.QueryAsync("release savepoint default_file_ransom",ct); return new(); }
+            if (!await AdmitDefault(session,definition,ct))
+            {
+                if (evaluation is not null) evaluation["reason"] = "policy_not_admitted";
+                await session.QueryAsync("release savepoint default_file_ransom",ct);
+                return new();
+            }
             key = FileCheckpoint(scope,agent,"qw.file-ransom",config:config);
             bool pending; lock (RansomWaits) pending = RansomWaits.TryGetValue(key,out var wait) && wait.From <= now && now < wait.To;
             if (pending || source["ransom_policy"] is not null && source["ransom_policy"].Text("state") != "ready")
             {
+                if (evaluation is not null) evaluation["reason"] = "source_policy_waiting";
                 diagnostics?.Add(new InvalidOperationException("source_policy_waiting")); if (!pending) RememberRansomWait(key,now); await session.QueryAsync("release savepoint default_file_ransom",ct); return new(Failed:1,Waiting:1);
             }
             var rule = DetectorRule.Read("file-ransom", new JsonObject { ["scope"] = scope.Copy(), ["agent_id"] = agent, ["source_policy_revision"] = config["policy_revision"].Copy() ?? JsonValue.Create("1"), ["threshold"] = config["mass_operation_files"].Copy() ?? JsonValue.Create(100), ["window_seconds"] = config["mass_operation_seconds"].Copy() ?? JsonValue.Create(300), ["evaluation_mode"] = "enabled" });
-            var result = await RunFileRansom(session,source,ct,rule,now); await session.QueryAsync("release savepoint default_file_ransom",ct); lock (RansomWaits) RansomWaits.Remove(key); return new((int)result.Number("jobs"));
+            var result = await RunFileRansom(session,source,ct,rule,now,evaluation); await session.QueryAsync("release savepoint default_file_ransom",ct); lock (RansomWaits) RansomWaits.Remove(key); return new((int)result.Number("jobs"));
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception e)
@@ -240,7 +250,17 @@ internal sealed partial class SemanticProduction
             diagnostics?.Add(e);
             await session.QueryAsync("rollback to savepoint default_file_ransom",ct); await session.QueryAsync("release savepoint default_file_ransom",ct);
             bool waiting = e is PostgresException p && p.SqlState == "P0001" && p.MessageText == "file_ransom_source_policy_mismatch";
+            if (evaluation is not null)
+            {
+                evaluation["reason"] = waiting ? "source_policy_waiting"
+                    : e is PostgresException { MessageText: "file_ransom_source_denied" } ? "scope_mismatch" : "rolled_back";
+                foreach (var decision in evaluation["results"]!.AsArray()) decision!["episode"] = "none";
+            }
             if (waiting && key is not null) RememberRansomWait(key,now); return new(Failed:1,Waiting:waiting ? 1 : 0);
+        }
+        finally
+        {
+            if (evaluation is not null) diagnostics!.FileRansom(evaluation);
         }
     }
     private static void RememberRansomWait(string key, DateTimeOffset now)
