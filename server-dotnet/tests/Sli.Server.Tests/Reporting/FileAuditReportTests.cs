@@ -163,13 +163,7 @@ public sealed class FileAuditReportTests
         public Task<NpgsqlConnection> OpenAsync(CancellationToken ct) => fixture.Pg.OpenAsync(ct, "adlog_user");
     }
 
-    internal static async Task CheckActivity(SqlPostgresFixture fixture, DateTimeOffset observed, long problem, string root, CancellationToken ct)
-    {
-        var from = observed.AddMinutes(-1).UtcDateTime.ToString("O",CultureInfo.InvariantCulture);
-        var to = observed.AddMinutes(1).UtcDateTime.ToString("O",CultureInfo.InvariantCulture);
-        var filter = $"period=custom&from={Uri.EscapeDataString(from)}&to={Uri.EscapeDataString(to)}&source_kind=server";
-        var reader = new FileAuditReportReader(new SemanticDatabase(new PostgresConnections(fixture)));
-        static AccessFacts WithProblemGrant(AccessFacts facts) => facts with
+    private static AccessFacts WithProblemGrant(AccessFacts facts) => facts with
             {
                 ReportAssignments = [..facts.ReportAssignments, ReportFixture.J("""
                     {"report_key":"security.queue","effect":"allow","allowed_actions":["view"],
@@ -181,6 +175,13 @@ public sealed class FileAuditReportTests
                      "definition_json":{"actions":["view"]}}
                     """)]
             };
+
+    internal static async Task CheckActivity(SqlPostgresFixture fixture, DateTimeOffset observed, long problem, string root, CancellationToken ct)
+    {
+        var from = observed.AddMinutes(-1).UtcDateTime.ToString("O",CultureInfo.InvariantCulture);
+        var to = observed.AddMinutes(1).UtcDateTime.ToString("O",CultureInfo.InvariantCulture);
+        var filter = $"period=custom&from={Uri.EscapeDataString(from)}&to={Uri.EscapeDataString(to)}&source_kind=server";
+        var reader = new FileAuditReportReader(new SemanticDatabase(new PostgresConnections(fixture)));
         foreach (string tab in new[] { "actions", "overview" })
         {
             string key = "file-audit." + tab;
@@ -234,6 +235,35 @@ public sealed class FileAuditReportTests
         var action = ProblemPresentation.RuleMessage(finding,"next","ru",access)["text"]!.ToString();
         Assert.Contains(root,action);
         Assert.Contains("Остановите процесс",action);
+    }
+
+    internal static async Task CheckBurst(SqlPostgresFixture fixture, DateTimeOffset observed, string folder, int problems, CancellationToken ct)
+    {
+        var facts = WithProblemGrant(Facts("actions"));
+        var decision = new ReportEligibility().Compose(facts,new CapabilityComposer().Compose(facts));
+        var access = new ProblemAccess(decision);
+        var repository = new ProblemRepository(new PostgresConnections(fixture),TimeProvider.System);
+        var response = await repository.FindingsAsync(new FindingQuery(null,null,null,null,null,null,null,[1],50,false)
+            { PageQueue=true,QueueView="open",QueueList=true,GroupQueue=true },access,ct);
+        var findings = response["items"]!.AsArray().OfType<JsonObject>()
+            .Where(item => item["rule_code"]?.ToString()=="semantic.qw.file-ransom").ToArray();
+        Assert.Equal(problems,findings.Length);
+        var finding = Assert.Single(findings,item =>
+            ProblemPresentation.RuleMessage(item,"next","ru",access)["text"]!.ToString().Contains(folder,StringComparison.Ordinal));
+        Assert.Contains("110 файлов за 1 мин",ProblemPresentation.RuleMessage(finding,"title","ru",access)["text"]!.ToString());
+
+        var from = Uri.EscapeDataString(observed.AddMinutes(-1).UtcDateTime.ToString("O",CultureInfo.InvariantCulture));
+        var to = Uri.EscapeDataString(observed.AddMinutes(1).UtcDateTime.ToString("O",CultureInfo.InvariantCulture));
+        var path = $@"{folder}\doc-001.txt";
+        var reader = new FileAuditReportReader(new SemanticDatabase(new PostgresConnections(fixture)));
+        await using var host = await ReportFixture.Start(facts,new ReportDefinitionRegistry().Get("file-audit.actions"),nativeReader:reader);
+        using var result = await host.Client.GetAsync($"/api/v2/reports/file-audit.actions/data?period=custom&from={from}&to={to}&source_kind=server&path={Uri.EscapeDataString(path)}",ct);
+        Assert.Equal(HttpStatusCode.OK,result.StatusCode);
+        var rows = (await ReportFixture.Body(result))["items"]!.AsArray();
+        var rename = Assert.Single(rows,row => row!["operation"]?.ToString()=="rename")!;
+        Assert.Equal(path,rename["old_path"]!.ToString());
+        Assert.Equal(path+".locked",rename["path"]!.ToString());
+        Assert.DoesNotContain(rows,row => row!["operation"]?.ToString() is "delete_right" or "access_check");
     }
 
     internal static async Task CheckNativePermissionChanges(SqlPostgresFixture fixture, NpgsqlConnection owner,

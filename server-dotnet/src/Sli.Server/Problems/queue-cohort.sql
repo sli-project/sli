@@ -19,6 +19,8 @@
         select case
             when password.facts->>'cohort_key' is not null
             then jsonb_build_array('password',findings.rule_code,password.facts->>'cohort_key')
+            when findings.rule_code='semantic.qw.file-ransom'
+            then jsonb_build_array('finding',findings.id)
             when scenario_object.entity is not null
             then jsonb_build_array('rule-entity',findings.rule_code,scenario_object.partition_key,scenario_object.entity)
             when nullif(btrim(findings.target),'') is not null and length(findings.target)<=2048

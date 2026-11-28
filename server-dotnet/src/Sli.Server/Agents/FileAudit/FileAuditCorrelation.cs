@@ -56,6 +56,32 @@ internal static class FileAuditCorrelation
         var deleted=previous.Where(x=>(N(x["facts"]!["access_mask"]) & 0x10000)!=0).MaxBy(x=>I(x["record_id"]));
         return deleted is null ? null : (opened,deleted);
     }
+
+    private static JsonObject? ImmediateRenameSource(JsonObject item,IEnumerable<JsonObject> available)
+    {
+        var facts=item["facts"]!.AsObject();
+        if(I(item["event_id"]) is not (4656 or 4663) || S(facts["outcome"])!="success"
+            || S(item["path"]) is not { Length: > 0 } path || !HasHandle(facts)
+            || N(facts["server_process_id"])==0 || N(facts["logon_id_numeric"])==0) return null;
+        string target=UnicodeCaseFold.Fold(path);
+        var cutoff=T(item["observed_at"]).AddMilliseconds(-100);
+        var recent=available.Where(row=>T(row["observed_at"])>=cutoff
+            && new[]{"subject_user_sid","logon_id_numeric","server_process_id"}.All(k=>Eq(row["facts"]![k],facts[k]))).ToArray();
+        var candidates=recent.Where(row=>I(row["event_id"])==4663
+            && S(row["facts"]!["outcome"])=="success" && (N(row["facts"]!["access_mask"]) & 0x10000)!=0
+            && HasHandle(row["facts"]!.AsObject()) && S(row["path"]) is { Length: > 0 } old
+            && IsSuffixRename(UnicodeCaseFold.Fold(old),target)
+            && !recent.Any(later=>I(later["record_id"])>I(row["record_id"]) &&
+                (I(later["event_id"]) is 4658 or 4660 && Eq(later["facts"]!["handle_id"],row["facts"]!["handle_id"])
+                 || I(later["event_id"]) is 4656 or 4663 && S(later["facts"]!["outcome"])=="success"
+                    && S(later["path"]) is { } destination && UnicodeCaseFold.Fold(destination)==target))).ToArray();
+        return candidates.Select(row=>UnicodeCaseFold.Fold(S(row["path"])!)).Distinct().Count()==1
+            ? candidates.MaxBy(row=>I(row["record_id"])) : null;
+    }
+
+    private static bool IsSuffixRename(string oldPath,string target)
+        => target.StartsWith(oldPath+".",StringComparison.Ordinal)
+            && target.Length>oldPath.Length+1 && !target[(oldPath.Length+1)..].Contains('\\');
     private static string? Address(string? text)
     {
         if(string.IsNullOrEmpty(text) || text.Any(char.IsWhiteSpace)) return null;
@@ -80,25 +106,31 @@ internal static class FileAuditCorrelation
     {
         var contexts=prior.OfType<JsonObject>().ToList(); var f=item["facts"]!.AsObject(); long id=I(item["event_id"]);
         if(FileAuditPolicy.ContextEvents.Contains((int)id) || id==4658) return [];
-        if(id==4656 && S(f["outcome"])!="failure") return [];
+        var available=Available(item,contexts);
+        var rename=objectType=="directory" ? null : Rename(item,available);
+        var previous=rename?.Previous ?? (objectType=="directory" ? null : ImmediateRenameSource(item,available));
+        if(id==4656 && S(f["outcome"])!="failure" && previous is null) return [];
         var scopes=item["scopes"]!.AsArray().OfType<JsonObject>().ToList(); string? path=S(item["path"]); string state="complete";
         var evidence=new JsonArray(Ref(item,"primary")); var operations=new List<string>();
         if(id==4660) { var (status,chosen)=DeleteContext(item,contexts); state=status; if(chosen is null) return []; scopes=chosen["scopes"]!.AsArray().OfType<JsonObject>().ToList(); path=S(chosen["path"]); evidence.Add(Ref(chosen,"handle_context")); operations.Add("delete"); }
+        else if(previous is not null)
+        {
+            var admitted=previous["scopes"]!.AsArray().OfType<JsonObject>().Select(x=>S(x["collection_scope_id"]));
+            if(rename is { } existing)
+            {
+                admitted=admitted.Intersect(existing.Open["scopes"]!.AsArray().OfType<JsonObject>()
+                    .Select(x=>S(x["collection_scope_id"])));
+                evidence.Add(Ref(existing.Open,"handle_context"));
+            }
+            var scopeIds=admitted.ToHashSet();
+            scopes=scopes.Where(x=>scopeIds.Contains(S(x["collection_scope_id"]))).ToList();
+            operations.Add("rename");
+            evidence.Add(Ref(previous,"handle_context"));
+        }
         else if(id==4663) {
             if(S(f["outcome"])!="success") return []; var mask=N(f["access_mask"]);
             if((mask&1)!=0 && objectType!="directory") operations.Add("read"); if((mask&6)!=0) operations.Add("write"); if((mask&0x10000)!=0) operations.Add("delete_right");
-            var rename=Rename(item,contexts);
-            if(rename is not null)
-            {
-                var (opened,previous)=rename.Value;
-                var admitted=opened["scopes"]!.AsArray().OfType<JsonObject>().Select(x=>S(x["collection_scope_id"]))
-                    .Intersect(previous["scopes"]!.AsArray().OfType<JsonObject>().Select(x=>S(x["collection_scope_id"]))).ToHashSet();
-                scopes=scopes.Where(x=>admitted.Contains(S(x["collection_scope_id"]))).ToList();
-                operations=["rename"];
-                evidence.Add(Ref(opened,"handle_context"));
-                evidence.Add(Ref(previous,"handle_context"));
-            }
-            else if(operations.Count>0 && path is not null && HasHandle(f))
+            if(operations.Count>0 && path is not null && HasHandle(f))
             {
                 var boundary=Related(item,contexts).Where(x=>I(x["event_id"]) is 4656 or 4658 or 4660).MaxBy(x=>I(x["record_id"]));
                 if(boundary is not null && I(boundary["event_id"])==4656 && S(boundary["facts"]!["outcome"])=="success"
@@ -109,7 +141,6 @@ internal static class FileAuditCorrelation
         else operations.Add(id switch { 4656 or 5140 or 5145 or 5168=>"access_check",4659=>"delete_right",4670=>"permissions",5142 or 5143 or 5144=>"share_change",4907=>"audit_change",_=>"unknown" });
         string? ip=null,ipSource=null;
         if(id is 5140 or 5145 or 5168 && Address(S(f["ip_address"])) is { } direct) { ip=direct; ipSource=$"event:{id}"; }
-        var available=Available(item,contexts);
         if(ip is null && !string.IsNullOrEmpty(S(f["subject_user_sid"])) && N(f["logon_id_numeric"])!=0) {
             var logons=available.Where(x=>I(x["event_id"])==4624 && S(x["facts"]!["outcome"])=="success" && Eq(x["facts"]!["subject_user_sid"],f["subject_user_sid"]) && Eq(x["facts"]!["logon_id_numeric"],f["logon_id_numeric"])).ToList();
             var addresses=logons.Select(x=>S(x["facts"]!["ip_address"])).Distinct().ToList();
@@ -122,6 +153,7 @@ internal static class FileAuditCorrelation
             string quality=operation=="delete_right" || operation=="read" && objectType=="unknown" ? "partial" : state;
             string action=Packets.Digest(new JsonArray(item["evidence_key"]!.DeepClone(),scope["collection_scope_id"]!.DeepClone(),operation,1));
             result.Add(new JsonObject { ["action_id"]=action,["agent_id"]=item["agent_id"]!.DeepClone(),["source_instance_id"]=item["source_instance_id"]!.DeepClone(),["collection_scope_id"]=scope["collection_scope_id"]!.DeepClone(),["observed_at"]=item["observed_at"]!.DeepClone(),["subject_sid"]=f["subject_user_sid"]?.DeepClone(),["logon_id"]=f["logon_id"]?.DeepClone(),["path"]=path,["share_name"]=scope["share_name"]!.DeepClone(),["object_type"]=objectType,["access_mask"]=f["access_mask"]?.DeepClone(),["operation"]=operation,["outcome"]=outcome,["denial_layer"]=outcome=="failure" ? id==4656?"ntfs":id is 5145 or 5168?"smb":null : null,["client_ip"]=ip,["client_ip_source"]=ipSource,["server_process_id"]=f["server_process_id"]?.DeepClone(),["handle_id"]=f["handle_id"] is null?null:N(f["handle_id"]).ToString(System.Globalization.CultureInfo.InvariantCulture),["correlation_state"]=quality,["projection_version"]=1,["contract_version"]=1,["evidence"]=evidence.DeepClone() });
+            if(previous is not null) result[^1]!["old_path"]=previous["path"]!.DeepClone();
         }
         return result;
     }

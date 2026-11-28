@@ -118,11 +118,13 @@ async function verifyFileServers(page, { url, directory, fixture }) {
 
   const initialActions = await readResponse(page, 'open default Actions', reportPath('actions'), () => page.goto(initial.href));
   await expect(page.getByRole('tab', { name: 'Действия', exact: true })).toHaveAttribute('aria-selected', 'true');
-  await expect(page.getByRole('tab', { name: 'Ресурсы', exact: true })).toBeVisible();
-  await expect(page.getByRole('tab', { name: 'Права', exact: true })).toBeVisible();
+  const tabs = page.getByRole('tablist', { name: 'Файловые серверы', exact: true }).getByRole('tab');
+  await expect(tabs).toHaveText([
+    'Обзор', 'Действия', 'Массовые операции', 'Изменения прав', 'Отказы', 'Вне графика', 'Права', 'Аудит',
+  ]);
   await expect(page.getByRole('navigation').getByRole('link', { name: 'Файловые серверы', exact: true })).toHaveCount(1);
-  const overviewTab = page.getByRole('tab', { name: 'Ресурсы', exact: true });
-  let overview = await readResponse(page, 'open resources', reportPath('overview'), () => overviewTab.click());
+  const overviewTab = page.getByRole('tab', { name: 'Обзор', exact: true });
+  let overview = await readResponse(page, 'open Overview', reportPath('overview'), () => overviewTab.click());
   assertWindow(overview.params, fixture, false);
   const rootRow = () => page.getByRole('table').getByRole('row').filter({ hasText: fixture.path });
   await expect(rootRow()).toHaveCount(1);
@@ -155,13 +157,14 @@ async function verifyFileServers(page, { url, directory, fixture }) {
   assert.equal(groups[0].aggregate.boundary, 'inside');
   assert.equal(Date.parse(groups[0].aggregate.first_seen_utc), Date.parse(fixture.first_seen_utc));
   assert.equal(Date.parse(groups[0].aggregate.last_seen_utc), Date.parse(fixture.last_seen_utc));
-  const actions = page.getByRole('table', { name: 'Действия', exact: true });
-  const actionRow = actions.locator('tbody > tr[data-clickable]');
+  await expect(page.getByRole('tab', { name: 'Изменения прав', exact: true })).toHaveAttribute('aria-selected', 'true');
+  const permissionChanges = page.getByRole('table', { name: 'Изменения прав', exact: true });
+  const actionRow = permissionChanges.locator('tbody > tr[data-clickable]');
   await expect(actionRow).toHaveCount(1);
-  await expect(actionRow.getByText('×7', { exact: true })).toBeVisible();
+  await expect(actionRow.getByRole('cell', { name: String(fixture.event_count), exact: true })).toBeVisible();
   await actionRow.click();
-  await expect(actions.locator('tbody > tr > td[colspan]')).toBeVisible();
-  await screenshot('04-actions.png', changes);
+  await expect(permissionChanges.locator('tbody > tr > td[colspan]')).toBeVisible();
+  await screenshot('04-permission-changes.png', changes);
   assert.equal(initialActions.body.items.length, changes.body.items.length);
 
   await page.getByRole('link', { name: 'К списку', exact: true }).click();

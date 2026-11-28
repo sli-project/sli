@@ -10,6 +10,8 @@
         select case
             when password.facts->>'cohort_key' is not null
                 then jsonb_build_array('password',findings.rule_code,password.facts->>'cohort_key')::text
+            when findings.rule_code='semantic.qw.file-ransom'
+                then jsonb_build_array('finding',findings.id)::text
             when scenario.scenario_key is not null
                 then coalesce(scenario.cohort,jsonb_build_array('finding',findings.id)::text)
             else findings.object_key
