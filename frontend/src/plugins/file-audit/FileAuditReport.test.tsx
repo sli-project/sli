@@ -11,7 +11,7 @@ import { OverlayProvider } from "../../design-system";
 import { TimeZoneContext } from "../../shared/time-zone";
 import reportDefinitions from "../../../../server-dotnet/src/Sli.Server/Reporting/V2/report-definitions.json";
 
-const mocks = vi.hoisted(() => ({ definition: vi.fn(), data: vi.fn(), detail: vi.fn(), agents: vi.fn(), agentAction: vi.fn(), access: {
+const mocks = vi.hoisted(() => ({ definition: vi.fn(), data: vi.fn(), detail: vi.fn(), eventAvailable: vi.fn(), agents: vi.fn(), agentAction: vi.fn(), access: {
   platform_owner: false, preview: false,
   subject: { type: "user", id: 1, coarse_role: "viewer" }, evaluated_at_utc: "synthetic-evaluation", capabilities: ["file-audit.view", "file-audit.export"],
   reports: ["overview", "actions", "mass-operations", "permission-changes", "access-denials", "out-of-hours", "permissions", "audit-state"].map((key) => ({
@@ -20,7 +20,7 @@ const mocks = vi.hoisted(() => ({ definition: vi.fn(), data: vi.fn(), detail: vi
 } }));
 vi.mock("../../api/client", async (importOriginal) => ({ ...await importOriginal<typeof import("../../api/client")>(),
   api: { reportV2Definition: mocks.definition, reportV2Data: mocks.data, reportV2Detail: mocks.detail, agents: mocks.agents,
-    agentAction: mocks.agentAction } }));
+    agentAction: mocks.agentAction, eventAvailable: mocks.eventAvailable } }));
 vi.mock("../../app/App", () => ({ useEffectiveAccess: () => mocks.access, useTimeZone: () => ({ timeZone: "UTC" }) }));
 vi.mock("../../app/report-v2/ReportDenied", () => ({ ReportDenied: () => <div role="alert">Denied</div> }));
 
@@ -47,6 +47,7 @@ beforeEach(() => {
   mocks.definition.mockReset().mockImplementation(async (key: string) => declaration(key));
   mocks.data.mockReset().mockImplementation(async (key: string, params: URLSearchParams) => result(key, params));
   mocks.detail.mockReset();
+  mocks.eventAvailable.mockReset();
   mocks.access.capabilities = ["file-audit.view", "file-audit.export"];
   mocks.access.platform_owner = false;
   mocks.access.preview = false;
@@ -226,12 +227,11 @@ it.each([
   ["permission-changes", "permission-changes", "operation", null],
   ["access-denials", "access-denials", "operation", null],
   ["out-of-hours", "out-of-hours", "operation", null],
-] as const)("opens the %s action filter in its assigned report", async (filter, target, parameter, value) => {
+] as const)("preserves the scope of a bookmarked %s filter", async (filter, target, parameter, value) => {
+  window.history.replaceState({}, "", "/app/report/file-audit.actions?action_filter=" + filter);
   mount();
-  await userEvent.click(await screen.findByRole("button", { name: t('file-audit.filters.' + filter as 'file-audit.filters.all') }));
   await waitFor(() => expect(mocks.data.mock.calls.at(-1)?.[0]).toBe('file-audit.' + target));
   await waitFor(() => expect(mocks.data.mock.calls.at(-1)?.[1].get(parameter)).toBe(value));
-  expect(screen.getByRole("tab", { name: t("file-audit.screen.actions") }).getAttribute("aria-selected")).toBe("true");
 });
 
 it("applies a custom period from the header and preserves an unchanged exact boundary", async () => {
@@ -249,28 +249,63 @@ it("applies a custom period from the header and preserves an unchanged exact bou
   expect(mocks.data.mock.calls.at(-1)?.[1].get("from")).toBe(from);
 });
 
-it("renders an aggregate, qualified account and Problem link, and expands inside the table", async () => {
+it("expands a grouped interval across the table and links only to available targets", async () => {
+  const path = "C:\\Fixture\\<name>";
+  mocks.eventAvailable.mockResolvedValue(true);
   mocks.data.mockImplementation(async (key, params) => ({ ...result(key, params), items: [{
-    id: "group", path: "C:\\Fixture\\<name>", operation: "permissions", source_name: "FS.example.test",
+    id: "group", path, operation: "permissions", source_name: "FS.example.test", event_code: 4670, journal: "Security",
     subject_name: "EXAMPLE\\operator", subject_sid: "S-1-5-21-100000001-200000002-300000003-1199",
-    aggregate: { first_seen_utc: "2026-11-24T08:12:01Z", last_seen_utc: "2026-11-24T08:12:30Z", count: 7 },
-    problem_id: 12, evidence: [{ event_id: 4670, record_id: 41607 }],
+    aggregate: { first_seen_utc: "2026-11-24T08:12:01Z", last_seen_utc: "2026-11-24T08:12:30Z", count: 7, boundary: "overlap" },
+    problem_id: 12, evidence: [{ event_id: 4670, record_id: 41607, role: "primary", reference: "event_cold_facts:44" }],
   }] }));
   mount();
   const table = within(await screen.findByRole("table", { name: t("file-audit.screen.actions") }));
-  expect(table.queryByRole("columnheader", { name: t("file-audit.screen.from") })).toBeNull();
-  expect(table.getByText("×7")).toBeTruthy();
+  expect(table.queryByRole("columnheader", { name: t("file-audit.activity.client") })).toBeNull();
+  expect(table.getByText(t("file-audit.activity.in_group", { count: "7" }))).toBeTruthy();
   expect(table.getByText("EXAMPLE\\operator")).toBeTruthy();
+  expect(table.getByText(path)).toBeTruthy();
+  const group = table.getByText(path).closest("tr")!;
+  expect(group.hasAttribute("data-clickable")).toBe(true);
+  await userEvent.click(group);
   expect(table.getByRole("link", { name: t("file-audit.screen.problem_number", { id: "12" }) }).getAttribute("href"))
     .toBe("/app/report/security.problems?id=12");
-  const action = table.getByRole("button", { name: "C:\\Fixture\\<name>" });
-  await userEvent.click(action);
-  const sid = table.getByText("S-1-5-21-100000001-200000002-300000003-1199");
-  expect(sid.closest("td")?.colSpan).toBeGreaterThan(1);
+  const sid = table.getByText(/S-1-5-21-100000001-200000002-300000003-1199/);
+  expect(sid.closest("td")?.colSpan).toBe(6);
   expect(table.getByText("4670 · 41607")).toBeTruthy();
+  expect((await table.findByRole("link", { name: t("file-audit.activity.saved_record") })).getAttribute("href")).toBe("/app/events/44");
+  expect(table.queryByRole("link", { name: t("file-audit.activity.object_permissions") })).toBeNull();
+  expect(table.queryByRole("link", { name: t("file-audit.activity.compare") })).toBeNull();
   expect(screen.queryByRole("dialog")).toBeNull();
-  await userEvent.click(action);
-  expect(table.queryByText("S-1-5-21-100000001-200000002-300000003-1199")).toBeNull();
+  await userEvent.click(table.getByRole("button", { name: t("file-audit.activity.collapse") }));
+  expect(table.queryByText(/S-1-5-21-100000001-200000002-300000003-1199/)).toBeNull();
+});
+
+it("opens a stored mass-operation window with its own condition, counts and published problem", async () => {
+  mocks.data.mockImplementation(async (key, params) => ({ ...result(key, params), items: key === "file-audit.mass-operations" ? [{
+    id: "episode", operation: "write", source_name: "FS.example.test", share_name: "Finance", subject_name: "EXAMPLE\\operator",
+    details: { window_start: "2026-11-24T08:12:01Z", window_end: "2026-11-24T08:17:01Z", distinct_files: 110,
+      threshold: 100, window_seconds: 300 }, observation_count: 125, problem_id: 12,
+    evidence: [{ path: "C:\\Finance\\report.csv" }],
+  }] : [] }));
+  mount();
+  await userEvent.click(screen.getByRole("tab", { name: t("file-audit.tabs.mass-operations") }));
+  const table = within(await screen.findByRole("table", { name: t("file-audit.tabs.mass-operations") }));
+  expect(table.getByText("110")).toBeTruthy();
+  expect(table.getByText("125")).toBeTruthy();
+  expect(table.getByText(t("file-audit.activity.condition_value", { count: "100", seconds: "300" }))).toBeTruthy();
+  expect(table.getByRole("link", { name: t("file-audit.screen.problem_number", { id: "12" }) }).getAttribute("href"))
+    .toBe("/app/report/security.problems?id=12");
+  await userEvent.click(table.getByRole("button", { name: t("file-audit.activity.expand") }));
+  expect(table.getByText("C:\\Finance\\report.csv")).toBeTruthy();
+});
+
+it("shows the missing schedule without a measured count or download", async () => {
+  mocks.data.mockImplementation(async (key, params) => ({ ...result(key, params), state: "partial",
+    items: [], filtered_count: 0, coverage: { reason: "schedule_not_configured" } }));
+  mount(declaration("file-audit.out-of-hours"));
+  expect(await screen.findByText(t("file-audit.activity.no_schedule"))).toBeTruthy();
+  expect(screen.queryByText(t("file-audit.activity.no_records"))).toBeNull();
+  expect(screen.queryByRole("link", { name: t("reports.renderer.export_csv") })).toBeNull();
 });
 
 it("sends typed searches to the server and resets the cursor when using 200 rows", async () => {
@@ -279,8 +314,7 @@ it("sends typed searches to the server and resets the cursor when using 200 rows
   }] }));
   mount();
   const table = within(await screen.findByRole("table"));
-  expect(table.getByRole("columnheader", { name: t("file-audit.screen.from") })).toBeTruthy();
-  expect(table.getByText("192.0.2.1")).toBeTruthy();
+  expect(table.queryByText("192.0.2.1")).toBeNull();
   await userEvent.click(screen.getByRole("button", { name: t("table.next") }));
   await waitFor(() => expect(mocks.data.mock.calls.at(-1)?.[1].get("cursor")).toBe("synthetic-cursor"));
   await userEvent.click(screen.getByRole("radio", { name: "200" }));

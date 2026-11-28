@@ -23,12 +23,81 @@ public sealed class WorkstationActivityTests
     [InlineData(@"C:\Windows\Temp\example.exe", true)]
     [InlineData(@"C:\Temp\example.exe", true)]
     [InlineData(@"C:\Program Files\Desktop\example.exe", false)]
-    [InlineData(@"C:\Users\example\Downloads\..\Documents\example.exe", false)]
+    [InlineData(@"C:\Users\example\Downloads\..\Documents\example.exe", true)]
     public void Writable_program_paths_are_classified_by_directory(string path, bool writable)
     {
         var report = Read(Event(4688) with { Path = path });
         Assert.Equal(writable, Assert.Single(report.Programs).Writable);
         Assert.Equal(writable ? "high" : null, report.Importance(1, null));
+    }
+
+    [Theory]
+    [InlineData(@"C:\Users\example\Downloads\example.exe", true, null, "high")]
+    [InlineData(@"%TEMP%\example.exe", true, null, "high")]
+    [InlineData(@"C:\Users\example\AppData\Local\Temp\example.exe", true, null, "high")]
+    [InlineData(@"C:\Users\example\Desktop\example.exe", false, null, "high")]
+    [InlineData(@"\\example.test\share\example.exe", true, null, "high")]
+    [InlineData(@"E:\example.exe", true, "removable", "high")]
+    [InlineData(@"Z:\example.exe", false, "network", "high")]
+    [InlineData(@"C:\$Recycle.Bin\example\example.exe", true, null, "high")]
+    [InlineData(@"C:\Users\example\AppData\Local\Programs\Example\example.exe", false, null, "low")]
+    [InlineData(@"C:\Users\example\AppData\Local\Microsoft\WinGet\Packages\Example\example.exe", null, null, "low")]
+    [InlineData(@"C:\Users\example\AppData\Local\Microsoft\WindowsApps\example.exe", null, null, "low")]
+    [InlineData(@"C:\Users\example\AppData\Roaming\Example\Update.exe", false, null, "low")]
+    [InlineData(@"C:\Users\example\AppData\Local\Example\example.exe", true, null, "low")]
+    [InlineData(@"C:\Users\example\AppData\Local\Example\example.exe", false, null, "high")]
+    [InlineData(@"C:\Users\example\AppData\Local\Example\example.exe", null, null, "high")]
+    [InlineData(@"C:\Users\example\Documents\example.exe", true, null, null)]
+    public void Ranks_program_location_and_verified_signature(string path, bool? signed, string? drive, string? severity)
+    {
+        var report = Read(Event(4688) with { Path = path, Signed = signed, DriveType = drive });
+        Assert.Equal(severity, report.Importance(1, null));
+        Assert.Equal(severity, Assert.Single(report.Programs).Severity);
+        if (severity is null or "low") Assert.Empty(report.Notable);
+        else Assert.Equal(severity, Assert.Single(report.Notable).Severity);
+    }
+
+    [Fact]
+    public void Uses_earliest_launch_and_collapses_install_hashes_into_one_program()
+    {
+        const string old = @"C:\Users\example\AppData\Local\Example\bin\abcdef1234\example.exe";
+        const string current = @"C:\Users\example\AppData\Local\Example\bin\987654fedc\example.exe";
+        var report = Read(Event(4688, -15 * 1440, 4) with { Path = old },
+            Event(4688, 1, 2) with { Path = old, Signed = false },
+            Event(4688, 2, 3) with { Path = current });
+        Assert.Equal("medium", report.Importance(2, null));
+        Assert.Equal("medium", report.Importance(3, null));
+        Assert.Equal(2, Assert.Single(report.Notable).Count);
+        var program = Assert.Single(report.Programs);
+        Assert.Equal("example.exe", program.Name);
+        Assert.Equal(2, program.Count);
+    }
+
+    [Theory]
+    [InlineData(-23 * 60, "high")]
+    [InlineData(-23 * 60 - 1, "medium")]
+    public void Unknown_signer_changes_priority_at_the_24_hour_boundary(int firstMinute, string severity)
+    {
+        const string path = @"C:\Users\example\Documents\example.exe";
+        var report = Read(Event(4688, firstMinute, 2) with { Path = path }, Event(4688) with { Path = path });
+        Assert.Equal(severity, report.Importance(1, null));
+        Assert.Equal(severity, Assert.Single(report.Notable).Severity);
+    }
+
+    [Fact]
+    public void Developer_tool_fixture_has_no_high_facts()
+    {
+        const string local = @"C:\Users\example\AppData\Local\";
+        var paths = new[] { @"Programs\Python\Python310\python.exe",
+            @"OpenAI\Codex\bin\1234567890abcdef\codex.exe", @"OpenAI\Codex\bin\fedcba0987654321\codex.exe",
+            @"OpenAI\Codex\bin\1234567890abcdef\codex-windows-sandbox-setup.exe",
+            @"Claude-Data\Example\claude.exe", @"hermes\node\node.exe",
+            @"Microsoft\WinGet\Packages\BurntSushi.ripgrep_Example\rg.exe" };
+        var report = Read(paths.Select((path, index) => Event(4688, index, index + 1) with { Path = local + path,
+            Signed = index is > 0 and < 6 ? true : null, Count = index == 3 ? 548 : index == 6 ? 170 : 1 }).ToArray());
+        Assert.Empty(report.Notable);
+        Assert.Equal(6, report.Programs.Length);
+        Assert.All(report.Programs, program => Assert.Equal("low", program.Severity));
     }
 
     [Theory]

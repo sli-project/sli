@@ -565,10 +565,11 @@ it.each(["ru", "en"] as const)("links a file action to Problems and opens its re
   renderReport(raw.key);
   const table = within(await screen.findByRole("table", { name: t("file-audit.screen.actions") }));
   expect(table.getByText(actor)).toBeTruthy();
+  expect(table.getByText(path)).toBeTruthy();
+  await userEvent.click(table.getByRole("button", { name: t("file-audit.activity.expand") }));
   expect(table.getByRole("link", { name: t("file-audit.screen.problem_number", { id: "7" }) }).getAttribute("href"))
     .toBe("/app/report/security.problems?id=7");
-  await userEvent.click(table.getByRole("button", { name: path }));
-  expect(table.getByText(t("file-audit.workspace.interval")).closest("td")?.colSpan).toBeGreaterThan(1);
+  expect(table.getByText(t("file-audit.workspace.interval"), { selector: "dt" }).closest("td")?.colSpan).toBeGreaterThan(1);
   expect(table.getByText(/4663.*40123/)).toBeTruthy();
 });
 

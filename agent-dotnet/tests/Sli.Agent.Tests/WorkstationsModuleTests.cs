@@ -126,6 +126,41 @@ public sealed class WorkstationsModuleTests
     }
 
     [Fact]
+    public void WindowsProcessSignatureEvidenceBindsTheMeasuredFileToTheEmittedEvent()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var folder = Directory.CreateTempSubdirectory("sli-workstation-signature-");
+        try
+        {
+            string path = Path.Combine(folder.FullName, "fixture.exe");
+            File.Copy(typeof(WorkstationsModuleTests).Assembly.Location, path);
+            const string provider = "Microsoft-Windows-Security-Auditing";
+            var raw = Native(4688, 1, "Security", provider, ("NewProcessName", path), ("CommandLine", "fixture.exe"));
+            var root = EventXml.ParseBounded(raw.Xml);
+            System.Xml.Linq.XNamespace ns = EventXml.Namespace;
+            var now = DateTimeOffset.UtcNow.AddSeconds(1);
+            root.Element(ns + "System")!.Add(new System.Xml.Linq.XElement(ns + "TimeCreated",
+                new System.Xml.Linq.XAttribute("SystemTime", now.ToString("O", System.Globalization.CultureInfo.InvariantCulture))));
+            var source = new RowsSource([raw with { Xml = root.ToString() }]);
+            var sample = new WorkstationsModule(Helpers.HostId, WorkstationPolicy.Parse(new()), source, collectExecutableEvidence: true)
+                .Collect(null, now).Sample!;
+            var capsule = Assert.Single(sample.Payload["context"]!["workstations"]!["process_signatures"]!.AsArray())!;
+            Assert.Equal(1L, capsule["record_id"]!.GetValue<long>());
+            Assert.Equal(path, capsule["path"]!.GetValue<string>());
+            Assert.Equal("unsigned", capsule["measurement"]!["status"]!.GetValue<string>());
+            Assert.Null(capsule["measurement"]!["signer_sha256"]);
+            string finalXml = sample.Payload["records"]![0]!["payload"]!["xml"]!.GetValue<string>();
+            Assert.Equal(Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(finalXml))),
+                capsule["source_sha256"]!.GetValue<string>());
+        }
+        finally
+        {
+            File.Delete(Path.Combine(folder.FullName, "fixture.exe"));
+            folder.Delete();
+        }
+    }
+
+    [Fact]
     public void WorkstationNativeFilterIncludesAssignedEventsAndKeepsTheSavedAnchor()
     {
         var policy = WorkstationPolicy.Parse(new JsonObject { ["allow_event_ids"] = new JsonArray(4624, 4688, 6416) });

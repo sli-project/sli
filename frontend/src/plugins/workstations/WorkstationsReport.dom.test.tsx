@@ -21,6 +21,7 @@ let client: QueryClient;
 let directoryOnly = false;
 let fleetEmpty = false;
 let emptyActivity = false;
+let developerPrograms = false;
 let withHardware = false;
 const station = (index = 0) => ({ station_id: index ? `00000000-0000-4000-8000-${String(index + 2).padStart(12, "0")}` : stationId,
   agent_key: index ? `00000000-0000-4000-8000-${String(index + 2).padStart(12, "0")}` : stationId,
@@ -53,12 +54,15 @@ const events = [
     workstation_event: { image_path: "C:\\Tools\\calc.exe" } },
 ];
 const activity = (): StationActivity => ({
-  notable: emptyActivity ? [] : [
+  notable: emptyActivity || developerPrograms ? [] : [
     { fact: "new_program", severity: "medium", object: "Example newest", first: from, last: to, count: 1 },
     { fact: "service_outside_system", severity: "high", object: "Example earlier", first: from, last: from, count: 1 },
     { fact: "writable_program", severity: "high", object: "Example later", first: from, last: to, count: 2 },
   ],
-  programs: [{ name: "notepad.exe", path: "C:\\Tools\\notepad.exe", writable: false, first: from, last: to, count: 3, users: ["alex"] }],
+  programs: developerPrograms ? [
+    { name: "example.exe", path: "C:\\Users\\example\\AppData\\Local\\Programs\\example.exe",
+      severity: "low", writable: true, first: from, last: to, count: 548, users: ["alex"] },
+  ] : [{ name: "notepad.exe", path: "C:\\Tools\\notepad.exe", writable: false, first: from, last: to, count: 3, users: ["alex"] }],
   logons: [], devices: [],
 });
 const detailResult = (program: string | null): StationDetailResult => ({ ...result({ items: [station()], filtered_count: 1,
@@ -78,6 +82,7 @@ beforeEach(() => {
   directoryOnly = false;
   fleetEmpty = false;
   emptyActivity = false;
+  developerPrograms = false;
   withHardware = false;
   localStorage.clear();
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
@@ -140,6 +145,17 @@ it("shows the period-specific empty state when there are no notable facts", asyn
   setLocale("en"); emptyActivity = true; mount();
   fireEvent.click(await screen.findByRole("link", { name: "WS-WORKSPACE-001" }));
   expect(await screen.findByText("No important events in the selected period.")).toBeTruthy();
+});
+
+it("counts low-priority developer tools in Programs and excludes their launches from Important", async () => {
+  setLocale("en"); developerPrograms = true; mount();
+  fireEvent.click(await screen.findByRole("link", { name: "WS-WORKSPACE-001" }));
+  expect(await screen.findByRole("link", { name: "Important: 0" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("link", { name: "Programs: 1" }));
+  const programs = await screen.findByRole("table", { name: "Programs" });
+  const program = within(programs).getByRole("row", { name: /example\.exe/ });
+  expect(within(program).getByText("Low")).toBeTruthy();
+  expect(within(program).getByText("548")).toBeTruthy();
 });
 
 it("shows the hardware tab and history independently of journal access, with a model column the operator can enable", async () => {

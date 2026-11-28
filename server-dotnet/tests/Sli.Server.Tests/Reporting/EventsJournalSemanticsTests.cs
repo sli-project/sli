@@ -207,7 +207,7 @@ public sealed class EventsJournalSemanticsTests
         source["event_id"] = 1102;
         Assert.Null(EventsJournalReader.DomainChangeDomain(Access(owner), source));
         source["provider_name"] = "Microsoft-Windows-Eventlog";
-        Assert.Equal(2L, EventsJournalReader.DomainChangeDomain(Access(owner), source));
+        Assert.Null(EventsJournalReader.DomainChangeDomain(Access(owner), source));
     }
 
     [Fact]

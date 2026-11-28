@@ -646,16 +646,24 @@ def test_setup_health_polls_refusal_and_http503_until_ready(tmp_path, monkeypatc
 def test_setup_health_deadline_has_fixed_error(monkeypatch):
     from urllib.error import URLError
 
-    from deploy.linux import native_setup as setup
-    ticks = iter([0, 1800])
+    from deploy.linux import native_setup as setup, operation_wait
+
+    clock = [0]
+    probes = []
     monkeypatch.setattr(setup.ssl, 'create_default_context', lambda **kwargs: object())
-    monkeypatch.setattr(install.time, 'monotonic', lambda: next(ticks))
+    monkeypatch.setattr(operation_wait, 'readiness_history', lambda: None)
+    monkeypatch.setattr(operation_wait, 'stall_seconds', lambda *, default: 60)
+    monkeypatch.setattr(install.time, 'monotonic', lambda: clock[0])
+
     def urlopen(*args, **kwargs):
+        probes.append(clock[0])
         raise URLError(ConnectionRefusedError('private'))
+
     monkeypatch.setattr('urllib.request.urlopen', urlopen)
-    monkeypatch.setattr(install.time, 'sleep', lambda _: pytest.fail('deadline already expired'))
+    monkeypatch.setattr(install.time, 'sleep', lambda seconds: clock.__setitem__(0, clock[0] + seconds))
     with pytest.raises(RuntimeError, match='^native_setup_health_failed:RuntimeError$'):
         setup.wait_api({'health_url': 'https://127.0.0.1:8443/api/health/ready'})
+    assert probes == [0, 30]
 
 
 @pytest.mark.parametrize('error,reason', [

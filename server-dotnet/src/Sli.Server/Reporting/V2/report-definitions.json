@@ -2128,6 +2128,16 @@
         ]
       },
       {
+        "key": "hide_open_problem_evidence",
+        "label": "Hide evidence of open problems",
+        "kind": "choice",
+        "hidden": true,
+        "options": [
+          { "value": "on", "label": "On" },
+          { "value": "off", "label": "Off" }
+        ]
+      },
+      {
         "key": "expand",
         "label": "Repeat group",
         "kind": "int",
@@ -9311,6 +9321,10 @@
             "label": "Аудит"
           },
           {
+            "value": "access_denied",
+            "label": "Access denied"
+          },
+          {
             "value": "access_check",
             "label": "Проверка доступа"
           },
@@ -9376,6 +9390,27 @@
     ],
     "columns": [
       {
+        "key": "journal",
+        "label": "Journal",
+        "kind": "text",
+        "path": "journal",
+        "field_categories": []
+      },
+      {
+        "key": "event_code",
+        "label": "Event code",
+        "kind": "number",
+        "path": "event_code",
+        "field_categories": []
+      },
+      {
+        "key": "outcome",
+        "label": "Result",
+        "kind": "text",
+        "path": "outcome",
+        "field_categories": []
+      },
+      {
         "key": "observed_at",
         "label": "Время",
         "kind": "datetime",
@@ -9417,6 +9452,7 @@
           "permissions": "Права",
           "share_change": "Настройки шары",
           "audit_change": "Аудит",
+          "access_denied": "Access denied",
           "access_check": "Проверка доступа",
           "unknown": "Неизвестно"
         },
@@ -9431,7 +9467,7 @@
       },
       {
         "key": "count",
-        "label": "Событий в сохранённой группе",
+        "label": "Observations",
         "kind": "number",
         "path": "count",
         "field_categories": []
@@ -9662,6 +9698,14 @@
         "field_categories": []
       },
       {
+        "key": "account_search",
+        "label": "Account or SID",
+        "kind": "text",
+        "max_length": 256,
+        "hidden": true,
+        "field_categories": []
+      },
+      {
         "key": "period",
         "label": "Период",
         "kind": "period",
@@ -9819,6 +9863,27 @@
       }
     ],
     "columns": [
+      {
+        "key": "observation_count",
+        "label": "Observations",
+        "kind": "number",
+        "path": "observation_count",
+        "field_categories": []
+      },
+      {
+        "key": "threshold",
+        "label": "Minimum paths",
+        "kind": "number",
+        "path": "details.threshold",
+        "field_categories": []
+      },
+      {
+        "key": "window_seconds",
+        "label": "Window in seconds",
+        "kind": "number",
+        "path": "details.window_seconds",
+        "field_categories": []
+      },
       {
         "key": "employee",
         "label": "Сотрудник",
@@ -10728,6 +10793,41 @@
     ],
     "columns": [
       {
+        "key": "source_name",
+        "label": "Server",
+        "kind": "text",
+        "path": "source_name",
+        "field_categories": []
+      },
+      {
+        "key": "share_name",
+        "label": "Resource",
+        "kind": "text",
+        "path": "share_name",
+        "field_categories": []
+      },
+      {
+        "key": "outcome",
+        "label": "Result",
+        "kind": "text",
+        "path": "outcome",
+        "field_categories": []
+      },
+      {
+        "key": "journal",
+        "label": "Journal",
+        "kind": "text",
+        "path": "journal",
+        "field_categories": []
+      },
+      {
+        "key": "event_code",
+        "label": "Event code",
+        "kind": "number",
+        "path": "event_code",
+        "field_categories": []
+      },
+      {
         "key": "observed_at",
         "label": "Время",
         "kind": "datetime",
@@ -11138,6 +11238,27 @@
       }
     ],
     "columns": [
+      {
+        "key": "source_name",
+        "label": "Server",
+        "kind": "text",
+        "path": "source_name",
+        "field_categories": []
+      },
+      {
+        "key": "share_name",
+        "label": "Resource",
+        "kind": "text",
+        "path": "share_name",
+        "field_categories": []
+      },
+      {
+        "key": "schedule_timezone",
+        "label": "Schedule time zone",
+        "kind": "text",
+        "path": "schedule_timezone",
+        "field_categories": []
+      },
       {
         "key": "local_time",
         "label": "Местное время",

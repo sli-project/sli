@@ -142,7 +142,7 @@ async function verifyFileServers(page, { url, directory, fixture }) {
   await readResponse(page, 'open permission checks', reportPath('permissions'),
     () => page.getByRole('tab', { name: 'Права', exact: true }).click());
   await expect(page.getByRole('table', { name: 'Права', exact: true })).toBeVisible();
-  await overviewTab.click();
+  await readResponse(page, 'return to Overview', reportPath('overview'), () => overviewTab.click());
   await expect(rootRow()).toHaveCount(1);
 
   const changes = await readResponse(page, 'open observation count', reportPath('permission-changes'),
@@ -162,8 +162,12 @@ async function verifyFileServers(page, { url, directory, fixture }) {
   const actionRow = permissionChanges.locator('tbody > tr[data-clickable]');
   await expect(actionRow).toHaveCount(1);
   await expect(actionRow.getByRole('cell', { name: String(fixture.event_count), exact: true })).toBeVisible();
-  await actionRow.click();
+  const savedRecords = await readResponse(page, 'check retained record availability', '/api/v1/events/batch', () => actionRow.click());
   await expect(permissionChanges.locator('tbody > tr > td[colspan]')).toBeVisible();
+  assert.deepEqual(savedRecords.body.items, [], 'The projected group has no independently available exact record');
+  await expect(permissionChanges.getByRole('link', { name: 'Показать сохранённую запись', exact: true })).toHaveCount(0);
+  await expect(permissionChanges.getByRole('link', { name: 'Права объекта', exact: true })).toBeVisible();
+  await expect(permissionChanges.getByRole('link', { name: 'Сравнить снимки', exact: true })).toBeVisible();
   await screenshot('04-permission-changes.png', changes);
   assert.equal(initialActions.body.items.length, changes.body.items.length);
 

@@ -33,6 +33,15 @@ internal static class AgentWorkstationEvidence
             }
         }
         ValidateSignatures(context["process_signatures"],rows,observed);
+        if (context.ContainsKey("process_drive_types"))
+        {
+            if (channel != "Security" || context["process_drive_types"] is not JsonObject drives || drives.Count > rows.Count)
+                throw new ArgumentException();
+            var processes = rows.OfType<JsonObject>().Where(row => PythonMetadataEquality.Equal(row["event_id"], JsonValue.Create(4688)))
+                .Select(row => row["record_id"]!.ToJsonString()).ToHashSet(StringComparer.Ordinal);
+            foreach (var (recordId, drive) in drives)
+                Require(processes.Contains(recordId) && JsonRead.TryString(drive, out var value) && value is "removable" or "network");
+        }
     }
     private static string? Text(XElement? node)
     {

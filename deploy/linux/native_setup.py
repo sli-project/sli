@@ -368,7 +368,7 @@ def run_initial_admin(mode, release=None):
 
 
 def wait_api(config=None):
-    """Use the verified CA and bounded health polling before reporting success."""
+    """Poll with the verified CA; log readiness expiry as native_setup_health_failed:RuntimeError."""
     try:
         if config is None:
             if __package__ in {None, ''}:

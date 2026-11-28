@@ -141,6 +141,9 @@ public sealed class SecurityEventsReader(IAdReportStore store, ISemanticDatabase
             result["change_counts"] = new JsonObject(AdSecurity.ChangeViews.Select(key =>
                 KeyValuePair.Create(key, (JsonNode?)JsonValue.Create(sources.Sum(s => s["change_counts"].Int(key))))));
             result["filtered_count"] = sources.Sum(s => s.Int("filtered_count"));
+            result["change_columns"] = new JsonObject(new[] { "field", "value", "result" }
+                .Select(key => KeyValuePair.Create(key, (JsonNode?)JsonValue.Create(
+                    sources.Any(s => s["change_columns"]?.AsObject().Flag(key) == true)))));
         }
         result["has_more"] = more; result["next_cursor"] = more && page.Length > 0 ? ReportCursor.Encode(binding, new JsonObject { ["time"] = page[^1]["time_created_utc"]!.DeepClone(), ["id"] = page[^1]["event_db_id"]?.DeepClone() ?? JsonValue.Create(0), ["group"] = page[^1]["summary_key"]?.DeepClone() }.ToJsonString()) : null;
         result["window"] = new JsonObject { ["from_utc"] = c.Params["period"]!["from_utc"]!.DeepClone(), ["to_utc_exclusive"] = c.Params["period"]!["to_utc"]!.DeepClone() };
@@ -165,15 +168,7 @@ public sealed class SecurityEventsReader(IAdReportStore store, ISemanticDatabase
         row["member_text"] = row["member"]?["state"]?.ToString() == "observed" ? (row["member"]?["name"] ?? row["member"]?["sid"])?.DeepClone() : null;
         string code = "reports.v2.security.events.chains.actions." + row["event_id"];
         if (row["event_id"]?.ToString() == "4776") code += "." + row["outcome_code"];
-        if (row.Flag("sli_service_install")) code = "reports.v2.security.events.chains.actions.sli_service";
-        JsonObject? parameters = null;
-        if (row.Int("sli_audit_subcategories") is > 0 and var subcategories)
-        {
-            code = "reports.v2.security.events.chains.actions.sli_audit." + (subcategories % 100 is >= 11 and <= 14
-                ? "many" : (subcategories % 10) switch { 1 => subcategories == 1 ? "one" : "ending_one", >= 2 and <= 4 => "few", _ => "many" });
-            parameters = new JsonObject { ["count"] = subcategories };
-        }
-        var message = ReportPresentation.Message(code, false, parameters);
+        var message = ReportPresentation.Message(code, false);
         row["change_text"] = message?["text"]?.DeepClone();
         if (message is not null)
         {

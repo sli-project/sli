@@ -1,7 +1,11 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
+using Sli.Server.Access;
 using Sli.Server.Entities;
+using Sli.Server.Problems;
+using Sli.Server.Reporting.V2;
 using Sli.Server.Storage.EventReports;
+using Sli.Server.Workstations;
 using static Sli.Server.Reporting.ReportJson;
 
 namespace Sli.Server.Reporting;
@@ -13,6 +17,8 @@ internal sealed record JournalOptions(bool Collapse, long? Expand, long? Before,
     internal string? SourcePlugin { get; init; }
     internal string? StationProgram { get; init; }
     internal bool PageOnly { get; init; }
+    internal bool IncludePeriodMetadata { get; init; }
+    internal AccessDecision? HideOpenEvidenceFor { get; init; }
 }
 
 internal static class JournalPage
@@ -39,7 +45,9 @@ internal static class JournalPage
         bool accounts = security && fields.Contains("subject_user_name") && fields.Contains("target_user_name");
         bool workstation = technical && options.SourcePlugin == "sli.workstations";
         bool canGroup = (identity || workstation && options.ServerId is not null) && accounts && technical;
-        bool groupRepeats = canGroup && options.Before is null && (options.Collapse || options.Expand.HasValue);
+        bool groupRepeats = canGroup && options.Before is null
+            && (options.Collapse || options.Expand.HasValue && !options.IncludePeriodMetadata);
+        bool pairActions = groupRepeats || canGroup && options.Before is null && options.IncludePeriodMetadata;
         sql.Definition(Dataset, definition, 90);
         var filters = new Dictionary<string, string>();
         string search = query.GetValueOrDefault("q", "").Trim();
@@ -68,9 +76,10 @@ internal static class JournalPage
         if (options.StationProgram is { Length: > 0 } program)
             sql.Predicates.Add(workstation && security && options.ServerId is not null
                 ? "event.event_id=4688 and event.channel='Security' and event.provider_name='Microsoft-Windows-Security-Auditing' and "
-                  + Fold("replace(event.fields->>'NewProcessName','/',chr(92))") + "="
-                  + Fold("replace(" + sql.Parameter(program) + "::text,'/',chr(92))")
+                  + Fold(WorkstationActivity.ProgramKeySql("btrim(event.fields->>'NewProcessName')")) + "="
+                  + Fold(WorkstationActivity.ProgramKeySql(sql.Parameter(program) + "::text"))
                 : "false");
+        string searchMatch = "true";
         if (search.Length > 0)
         {
             string term = Fold(sql.Parameter(search));
@@ -90,12 +99,14 @@ internal static class JournalPage
                 if (security && long.TryParse(search, NumberStyles.None, CultureInfo.InvariantCulture, out long code))
                     matches.Add("event.event_id=" + sql.Parameter(code));
             }
-            sql.Predicates.Add(matches.Count > 0 ? string.Join(" or ", matches) : "false");
+            searchMatch = matches.Count > 0 ? string.Join(" or ", matches) : "false";
+            if (!pairActions) sql.Predicates.Add(searchMatch);
         }
 
         var start = DateTimeOffset.Parse(query["time_from"], CultureInfo.InvariantCulture).ToUniversalTime();
         var end = DateTimeOffset.Parse(query["time_to"], CultureInfo.InvariantCulture).ToUniversalTime();
         bool pageOnly = options.PageOnly && options.Before is null && start >= boundary;
+        var hideAccess = identity && security && technical ? options.HideOpenEvidenceFor : null;
         int scanStartIndex = sql.Values.Count;
         string from = sql.Parameter(start);
         string to = sql.Parameter(end);
@@ -159,7 +170,8 @@ internal static class JournalPage
                            when 4624 then event.fields->>'TargetLogonId'
                            when 4672 then event.fields->>'SubjectLogonId'
                            end from '^0[xX]([0-9a-fA-F]+)$')),'0'),'') as logon_session,
-                       {category} as journal_category,{outcome} as journal_result,{workstationFields} as workstation_event
+                       {category} as journal_category,{outcome} as journal_result,{workstationFields} as workstation_event,
+                       ({(pairActions ? searchMatch : "true")}) is true as journal_search_match
                 from (select e.*,e.actor as subject_user_name,e.target as target_user_name,e.source as ip_address,
                              e.source as workstation_name,e.fields->>'TargetLogonId' as logon_id from short_events e) event
                 join servers server on server.id=event.server_id and server.domain_id=event.domain_id
@@ -175,8 +187,60 @@ internal static class JournalPage
             )
             """;
         const string Failure = "(journal_category='authentication' or event_id=4740) and journal_result='failure'";
-        string serviceColumn = groupRepeats ? "action_service" : "journal_service";
-        string population = groupRepeats ? "classified" : "candidates";
+        if (pairActions) statement += PairMatches;
+        string population = "candidates";
+        if (hideAccess is not null)
+        {
+            long[]? domains;
+            try { domains = new ProblemAccess(hideAccess).Scope("security.queue").Domains(); }
+            catch (ProblemException) { domains = []; }
+            if (domains is null || domains.Length > 0)
+            {
+                var origins = await db.QueryAsync("""
+                    select server.id as server_id,server.domain_id,channel.value as channel
+                    from servers server cross join storage_v2_channel channel
+                    """, [], ct);
+                var allowed = origins.Where(row => EventsJournalReader.CanReadExact(hideAccess,
+                    row.Number("domain_id"), row.Number("server_id"), row.Text("channel")))
+                    .Select(row => (Server: row.Number("server_id"), Channel: row.Text("channel"))).ToArray();
+                if (allowed.Length > 0)
+                {
+                    string scopeIds = sql.Parameter(allowed.Select(origin => origin.Server).ToArray());
+                    string scopeChannels = sql.Parameter(allowed.Select(origin => origin.Channel).ToArray());
+                    string domainFilter = domains is null ? "null" : sql.Parameter(domains);
+                    statement += $"""
+                        , open_problem_evidence as materialized (
+                            select distinct event.id
+                            from candidates event
+                            join unnest({scopeIds}::bigint[],{scopeChannels}::text[]) allowed(server_id,channel)
+                                on (allowed.server_id,allowed.channel)=(event.server_id,event.channel)
+                            join finding_event_details337 linked on linked.event_db_id=event.id
+                            join findings_active findings on findings.id=linked.finding_id
+                            left join lateral (
+                                select state,expires_at from semantic_suppressions
+                                where finding_id=findings.id and kind='risk_acceptance' order by id desc limit 1
+                            ) risk on true
+                            where ({ProblemRepository.EffectiveStatus}) not in ('closed','false_positive')
+                              and {EventsJournalReader.ProblemLinkVisibility(domainFilter)}
+                        ),
+                        hidden_events as (
+                            select id from open_problem_evidence
+                            {(pairActions ? """
+                            union all
+                            select case when evidence.id=pairs.primary_id then pairs.companion_id else pairs.primary_id end
+                            from pairs join open_problem_evidence evidence on evidence.id in (pairs.primary_id,pairs.companion_id)
+                            """ : "")}
+                        ),
+                        admitted as materialized (
+                            select * from candidates event
+                            where not exists(select 1 from hidden_events hidden where hidden.id=event.id)
+                        )
+                        """;
+                    population = "admitted";
+                }
+            }
+        }
+        string serviceColumn = pairActions ? "action_service" : "journal_service";
         string categoryWhere = options.View switch
         {
             "all" when options.Before is null => $"where not {serviceColumn}",
@@ -195,24 +259,30 @@ internal static class JournalPage
                 """ : "false";
             string computerMatch = technical ? "nullif(lower(peer.journal_computer),'')=nullif(lower(anchor.journal_computer),'')" : "false";
             statement += $"""
-                , anchor as materialized (select * from candidates where id={sql.Parameter(before)}),
+                , anchor as materialized (select * from {population} where id={sql.Parameter(before)}),
                 visible as (
                     select peer.*,false as journal_expandable,({accountMatch}) is true as journal_account_match
-                    from candidates peer cross join anchor
+                    from {population} peer cross join anchor
                     where peer.domain_id=anchor.domain_id and peer.last_seen_utc<anchor.time_created_utc
                       and ({computerMatch} or {accountMatch})
                 )
                 """;
         }
-        else if (groupRepeats)
+        else if (pairActions)
         {
-            statement += PairMatches + $"""
+            string pairedSearch = search.Length > 0 ? """
+                left join pairs primary_pair on primary_pair.primary_id=candidate.id
+                where candidate.journal_search_match or pairs.search_match or primary_pair.search_match
+                """ : "";
+            statement += $"""
                 , classified as not materialized (
-                    select candidates.*,coalesce(pairs.primary_service,candidates.journal_service) as action_service
-                    from candidates left join pairs on pairs.companion_id=candidates.id
+                    select candidate.*,coalesce(pairs.primary_service,candidate.journal_service) as action_service
+                    from {population} candidate left join pairs on pairs.companion_id=candidate.id
+                    {pairedSearch}
                 ),
                 selected as (select * from classified {categoryWhere})
-                """ + PairedActions(workstation);
+                """ + PairedActions(workstation, groupRepeats);
+            population = "classified";
             if (options.Expand is { } expand)
                 statement += $"""
                     , anchor as materialized (
@@ -228,6 +298,15 @@ internal static class JournalPage
                         select member.*,false as journal_expandable
                         from selected member
                         where member.id in (select id from expanded_ids)
+                    )
+                    """;
+            else if (!groupRepeats)
+                statement += """
+                    , visible as (
+                        select *,companion_id is not null as journal_expandable,
+                            case when companion_id is null then 1 else 2 end as source_count,
+                            journal_initiator as group_initiator,journal_computer as group_computer
+                        from actions
                     )
                     """;
             else
@@ -255,7 +334,7 @@ internal static class JournalPage
                     """;
         }
         else
-            statement += $", visible as (select *,false as journal_expandable from candidates {categoryWhere})";
+            statement += $", visible as (select *,false as journal_expandable from {population} {categoryWhere})";
 
         sql.Predicates.Clear();
         int cursorIndex = sql.Values.Count;
@@ -291,14 +370,17 @@ internal static class JournalPage
         else if (metadata)
             eventCount = $"(select coalesce(sum(event_count),0) from candidates {categoryWhere})";
         string priority = options.Before.HasValue ? "journal_account_match desc," : "";
-        bool includeMembers = groupRepeats && options.Expand is null;
-        string memberLookup = includeMembers ? """
+        bool includeMembers = pairActions && options.Expand is null;
+        string memberLookup = includeMembers ? $"""
             , page_actions as (
+                {(groupRepeats ? """
                 select page.id as anchor_id,action.id,action.companion_id,action.server_id
                 from page join actions action using(repeat_key)
                 where page.journal_expandable
                 union all
-                select id,id,companion_id,server_id from page where repeat_key is null and companion_id is not null
+                """ : "")}
+                select id as anchor_id,id,companion_id,server_id from page
+                where repeat_key is null and companion_id is not null
             ),
             page_members as (
                 select anchor_id,jsonb_agg(jsonb_build_array(member.id,server_id) order by member.id,server_id) as members
@@ -308,7 +390,7 @@ internal static class JournalPage
             )
             """ : "";
         string shape = pageOnly && options.Expand is null ? "null::bigint as filtered_count,null::jsonb as journal_varying_columns"
-            : $"count(*) as filtered_count,{(metadata ? VaryingColumns(includeMembers, security, technical, accounts) : "null::jsonb")} as journal_varying_columns from visible";
+            : $"count(*) as filtered_count,{(metadata ? VaryingColumns(groupRepeats, pairActions, security, technical, accounts) : "null::jsonb")} as journal_varying_columns from visible";
         int limitIndex = sql.Values.Count;
         statement += $"""
             , page as (
@@ -327,7 +409,7 @@ internal static class JournalPage
             )
             select meta.*,(
                 select coalesce(jsonb_agg(
-                    (to_jsonb(page)-array['repeat_key','repeat_rank','journal_account_sid','journal_account_match','journal_service','action_service'])
+                    (to_jsonb(page)-array['repeat_key','repeat_rank','journal_account_sid','journal_account_match','journal_service','action_service','journal_search_match'])
                     {(includeMembers ? "||jsonb_build_object('_journal_members',page_members.members)" : "")}
                     order by {priority}page.time_created_utc desc,coalesce(page.id,0) desc,page.summary_key desc
                 ),'[]'::jsonb) from page {(includeMembers ? "left join page_members on page_members.anchor_id=page.id" : "")}
@@ -338,7 +420,7 @@ internal static class JournalPage
         JsonObject meta = new();
         JsonObject[] rows;
         if (pageOnly)
-            rows = await ReadWindowsAsync(db, statement, sql.Values, start, end, cursorTime, options.Expand, groupRepeats,
+            rows = await ReadWindowsAsync(db, statement, sql.Values, start, end, cursorTime, options.Expand, pairActions,
                 scanStartIndex, windowIndex, limitIndex, limit + 1, ct);
         else
         {
@@ -456,7 +538,7 @@ internal static class JournalPage
     // have that ID, so only pair mutually closest witnesses in a short window.
     private static readonly string PairMatches = $"""
         , pairable as materialized (
-            select id,event_id,domain_id,server_id,time_created_utc,journal_address,journal_workstation,journal_service,
+            select id,event_id,domain_id,server_id,time_created_utc,journal_address,journal_workstation,journal_service,journal_search_match,
                    case when event_id in (4624,4672) then 'session:'||logon_session
                         when journal_server_role='domain_controller' and journal_result='failure'
                              and (event_id=4776 or auth_package is null or auth_package in ('ntlm','negotiate'))
@@ -472,6 +554,7 @@ internal static class JournalPage
                    primary_event.journal_service as primary_service,
                    primary_event.journal_address as primary_address,
                    companion.journal_address as companion_address,companion.journal_workstation as companion_workstation,
+                   primary_event.journal_search_match or companion.journal_search_match as search_match,
                    (primary_event.journal_address=companion.journal_address) is true as same_address,
                    abs(extract(epoch from primary_event.time_created_utc-companion.time_created_utc)) as delta
             from pairable primary_event
@@ -496,12 +579,12 @@ internal static class JournalPage
             from matches
         ),
         pairs as materialized (
-            select primary_id,companion_id,privileged,primary_service,companion_address,companion_workstation from ranked
+            select primary_id,companion_id,privileged,primary_service,companion_address,companion_workstation,search_match from ranked
             where primary_rank=1 and companion_rank=1 and primary_ties=1 and companion_ties=1
               and (privileged or same_address or first_address is not distinct from last_address)
         )
         """;
-    private static string PairedActions(bool workstation)
+    private static string PairedActions(bool workstation, bool groupRepeats)
     {
         string processRepeat = workstation ? $"""
             when id is not null and {NativeSecurity} and event_id=4688
@@ -519,6 +602,7 @@ internal static class JournalPage
                    coalesce(journal_workstation,pairs.companion_workstation) as action_workstation,
                    case when pairs.privileged then 'privileged_logon'
                         when id is not null and event_id=4625 and {NativeSecurity} then 'failed_logon' end as journal_action,
+                   {(groupRepeats ? $"""
                    case when id is not null and {NativeSecurity}
                         and event_id in (4624,4625,4776)
                         and coalesce(local_account_key,journal_account_sid,journal_account) is not null
@@ -531,14 +615,15 @@ internal static class JournalPage
                              {Fold("coalesce(local_account_key,journal_account_sid,journal_account)")},
                              coalesce(journal_address,pairs.companion_address),journal_logon_type,journal_result]
                         {processRepeat}
-                   end as repeat_key
+                   end
+                   """ : "null::text[]")} as repeat_key
             from selected left join pairs on pairs.primary_id=selected.id
             where not exists(select 1 from pairs companion where companion.companion_id=selected.id)
         )
         """;
     }
 
-    private static string VaryingColumns(bool grouped, bool security, bool technical, bool accounts)
+    private static string VaryingColumns(bool grouped, bool paired, bool security, bool technical, bool accounts)
     {
         var values = new (string Key, string Expression, bool Visible)[]
         {
@@ -546,7 +631,7 @@ internal static class JournalPage
             ("account", Fold("coalesce(journal_account,'')"), accounts),
             ("initiator", grouped ? "lower(coalesce(group_initiator,''))" : "lower(coalesce(journal_initiator,''))", accounts),
             ("computer", grouped ? "lower(coalesce(group_computer,''))" : "lower(coalesce(journal_computer,''))", technical),
-            ("address", grouped ? "lower(coalesce(action_address,action_workstation,''))"
+            ("address", paired ? "lower(coalesce(action_address,action_workstation,''))"
                                 : "lower(coalesce(journal_address,journal_workstation,''))", accounts),
             ("logonType", "case when journal_logon_type in ('2','3','4','5','7','8','9','10','11','12','13') then journal_logon_type else '' end", accounts),
             ("result", "coalesce(journal_result,'')", security && technical),

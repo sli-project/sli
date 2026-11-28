@@ -18,6 +18,8 @@ VERSION = '2.0-1~deb13'
 TX = 'a' * 32
 READ_BACKUP_SCHEDULE = install.backup_schedule
 START_CHECKED = upgrade.start_checked
+FENCE = upgrade.fence
+STOP_APPLICATION = upgrade.stop_application
 
 
 def make_integrity_receipt(journal):
@@ -643,6 +645,7 @@ def preparation(tmp_path, monkeypatch):
     monkeypatch.setattr(install, 'wait_health', lambda: None)
     monkeypatch.setattr(install, 'backup_schedule', lambda: 'disabled')
     monkeypatch.setattr(upgrade, 'fence', lambda: events.append('fence'))
+    monkeypatch.setattr(upgrade, 'stop_application', lambda: events.append('stop-application'))
     monkeypatch.setattr(upgrade, 'file_metadata', lambda: {})
     monkeypatch.setattr(native, 'capture_locked', capture)
     monkeypatch.setattr(native, 'verify', lambda path: (json.loads((path / 'manifest.json').read_text()), None, None))
@@ -904,27 +907,35 @@ def test_reuse_failed_acceptance_restores_checkpoint_and_previous_release(reuse_
         upgrade.reuse_existing('new')
 
 
-@pytest.mark.parametrize('api_starts', [True, False])
-def test_package_upgrade_api_readiness_controls_checkpoint_restore(reuse_transaction, monkeypatch, capsys, api_starts):
+@pytest.mark.parametrize(('api_starts', 'rollback_query'), [(True, False), (False, False), (False, True)])
+def test_package_upgrade_api_readiness_controls_checkpoint_restore(
+        reuse_transaction, monkeypatch, capsys, api_starts, rollback_query):
     from urllib.error import URLError
 
     events = reuse_transaction.events
     clock = [0]
     started = [0]
     probes = []
+    runtime_running = False
+    previous_ready = False
 
     def systemctl(argv, **kwargs):
+        nonlocal runtime_running
         if argv == ['systemctl', 'start', 'sli-dotnet.target']:
             started[0] = clock[0]
+            runtime_running = True
         events.append(argv)
 
     def urlopen(url, **kwargs):
+        nonlocal previous_ready
         release = next(event for event in reversed(events) if isinstance(event, str) and event.startswith('switch-'))
         if release == 'switch-new':
             elapsed = clock[0] - started[0]
             probes.append(elapsed)
             if elapsed < 5 or not api_starts:
                 raise URLError(ConnectionRefusedError())
+        else:
+            previous_ready = True
         return nullcontext(SimpleNamespace(status=200))
 
     monkeypatch.setattr(install, 'setup_deadline', nullcontext)
@@ -942,6 +953,26 @@ def test_package_upgrade_api_readiness_controls_checkpoint_restore(reuse_transac
     monkeypatch.setattr(runtime, 'selected', lambda config: ('api',))
     monkeypatch.setattr(runtime, 'systemd', lambda service: {'ActiveState': 'active', 'MainPID': '42'})
     monkeypatch.setattr(upgrade.subprocess, 'run', lambda *args, **kwargs: SimpleNamespace(returncode=1))
+
+    if rollback_query:
+        def stop_writers():
+            nonlocal runtime_running
+            runtime_running = False
+
+        def database_quiet():
+            assert not runtime_running
+            if previous_ready:
+                # A PostgreSQL backend can still be unwinding after its worker exits.
+                raise RuntimeError('native_upgrade_pg_busy')
+            events.append('database-quiet')
+
+        monkeypatch.setattr(upgrade, 'fence', FENCE)
+        monkeypatch.setattr(upgrade, 'stop_application', STOP_APPLICATION)
+        monkeypatch.setattr(upgrade, 'unit_absent', lambda unit: False)
+        monkeypatch.setattr(runtime, 'stop_services', lambda *args, **kwargs: None)
+        monkeypatch.setattr(runtime, 'stop_writers', stop_writers)
+        monkeypatch.setattr(upgrade, 'wait_restore_databases', lambda: None)
+        monkeypatch.setattr(upgrade, 'database_quiet', database_quiet)
 
     if api_starts:
         upgrade.configure_package('new', VERSION)
@@ -962,6 +993,10 @@ def test_package_upgrade_api_readiness_controls_checkpoint_restore(reuse_transac
         assert result['reason_code'] == 'native_install_api_unready'
         assert events.index('restore-checkpoint') < events.index('switch-old')
         assert reasons == ['native_upgrade_rollback reason_code=native_install_api_unready']
+        assert previous_ready and runtime_running
+        assert ['systemctl', 'enable', '--now', 'sli.target'] in events
+        if rollback_query:
+            assert events.index('database-quiet') < events.index('restore-checkpoint')
 
 
 @pytest.fixture

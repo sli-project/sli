@@ -677,6 +677,8 @@
     "config/postgres_migrations/464_file_ransom_episodes.sql": "8f1ae282bb06ace3d4f1def1ee7e52a6c6626b5da06c94c5b278cf405ab75da1",
     "config/postgres_migrations/465_workstation_hardware.rollback.sql": "a5d9b0a5f683e0a83c8e7f784f26e80aee3d5687ef64e21b51241c8f8753e81a",
     "config/postgres_migrations/465_workstation_hardware.sql": "61f889a5ae87fd928cece37f7bb94b2edb6ae95bc2a1d7b3fc568618c16807cf",
+    "config/postgres_migrations/466_file_action_groups.rollback.sql": "5b638ca9fe528eb79b8a0b4a9186013ff1f4514945082dc3a1a766951b8f8643",
+    "config/postgres_migrations/466_file_action_groups.sql": "adb716c7fdcaaf0027fbd8ff501c0d2e366aec8699be08d0e3dff82565b0213f",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },

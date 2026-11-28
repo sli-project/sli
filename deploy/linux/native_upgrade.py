@@ -460,8 +460,8 @@ def stop_units(units, *, timeout=120):
             raise
 
 
-def fence():
-    from deploy.linux import native_install as install, native_runtime as runtime
+def stop_application():
+    from deploy.linux import native_runtime as runtime
 
     # Stop scheduling before draining; stopping API gives clients a retryable
     # transport failure and never acknowledges an uncommitted import.
@@ -471,6 +471,10 @@ def fence():
     runtime.stop_services(('api',), timeout=180)
     runtime.stop_writers()  # Cooperative SIGTERM plus every MainPID/cgroup readback.
     stop_units(('sli-ready.service',))
+
+
+def fence():
+    stop_application()
     # Type=simple only proves process creation. After power loss PostgreSQL may
     # still be replaying WAL/checkpointing when systemd reports it active.
     wait_restore_databases()
@@ -1565,7 +1569,9 @@ def recover_compatible(journal):
         start_checked(retained_runtime(recovery))
     else:
         start_checked()
-    fence()
+    # Restart to clear the testing environment. The data restore is already
+    # complete, so a draining backend cannot block reopening the old release.
+    stop_application()
     testing_units()
     journal.complete()
     journal.transition('recovering')

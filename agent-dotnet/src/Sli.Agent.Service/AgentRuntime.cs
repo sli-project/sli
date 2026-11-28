@@ -251,7 +251,7 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
                 var dc = policy.AdDc is not null ? new AdDcModule(hostId, AdDcConfig.Parse(policy.AdDc, _catalog), source!, _catalog) : null;
                 var ws = workstation is not null ? new WorkstationsModule(hostId, workstation, source!,
                     protectionReader ?? (OperatingSystem.IsWindows() ? DefenderProtectionReader.Read : null),
-                    policy.Control.AuditProcessCommandLine) : null;
+                    policy.Control.AuditProcessCommandLine, collectExecutableEvidence: OperatingSystem.IsWindows()) : null;
                 var deadline = Stopwatch.StartNew();
                 if (_lastCapturePolicy != capturePolicy) _dcCatchUpChannel = null;
                 var channel = dc is not null && _lastCapturePolicy == capturePolicy ? _dcCatchUpChannel : null;

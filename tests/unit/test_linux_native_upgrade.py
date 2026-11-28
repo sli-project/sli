@@ -14,6 +14,7 @@ from deploy.linux import native_pg_migrate
 
 TX = 'a' * 32
 REAL_FENCE = upgrade.fence
+REAL_STOP_APPLICATION = upgrade.stop_application
 
 pytestmark = pytest.mark.skipif(os.name == 'nt', reason='POSIX durable transactions, fcntl and package recovery; Linux CI')
 
@@ -59,6 +60,7 @@ def operation(tmp_path, monkeypatch):
     monkeypatch.setattr(backup, 'size_bytes', lambda path: 1)
     monkeypatch.setattr(upgrade.shutil, 'disk_usage', lambda path: SimpleNamespace(free=100 * 1024**3))
     monkeypatch.setattr(upgrade, 'fence', lambda: events.append('fence'))
+    monkeypatch.setattr(upgrade, 'stop_application', lambda: events.append('stop-application'))
     monkeypatch.setattr(upgrade, 'file_metadata', lambda: {})
     monkeypatch.setattr(upgrade, 'start_checked', lambda: events.append('restart-old'))
     monkeypatch.setattr(install, 'command', lambda *a, **kw: None)
@@ -400,6 +402,7 @@ def test_candidate_failure_rolls_back_with_unloaded_units_without_resume(activat
     monkeypatch.setattr(subprocess, 'run', lambda *args, **kwargs: SimpleNamespace(returncode=1,
         stdout='LoadState=not-found\nActiveState=inactive\nMainPID=0\nControlGroup=\n'))
     monkeypatch.setattr(upgrade, 'fence', REAL_FENCE)
+    monkeypatch.setattr(upgrade, 'stop_application', REAL_STOP_APPLICATION)
     monkeypatch.setattr(install, 'command', command)
     monkeypatch.setattr(upgrade, 'start_checked', start)
     monkeypatch.setattr(runtime, 'stop_services', lambda *args, **kwargs: None)
