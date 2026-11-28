@@ -107,6 +107,7 @@ export function WorkstationsReport({ definition, initialSearch: providedSearch }
       onClick={event => { event.stopPropagation(); if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return; event.preventDefault(); open(row); }}><StationName station={row}/></a></span> },
     { key: "os", label: t("workstations.overview.os"), render: row => <span className="sli-workstations__cell"><span>{row.operating_system ?? "—"}</span>
       {row.operating_system_version ? <small>{row.operating_system_version}</small> : null}</span>, hiddenByDefault: false },
+    { key: "model", label: t("workstations.hardware.model"), value: row => row.model ?? "—", hiddenByDefault: true },
     { key: "last_logon_utc", label: t("reports.v2.ad.computers.v6.columns.last_logon_utc.label"), kind: "datetime",
       render: row => <span>{row.last_logon_utc ? formatDateTime(row.last_logon_utc) : "—"}</span> },
     { key: "agent_version", label: t("workstations.overview.agent"), render: row => <span>{row.agent_version ?? "—"}</span> },

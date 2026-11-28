@@ -37,6 +37,7 @@ public sealed class PolicyCycleTests : IDisposable
     private IRadiusTailSource? _radiusSource;
     private Func<JsonObject>? _protectionReader;
     private Func<CancellationToken, LocalSmbCatalog>? _catalogReader;
+    private Func<CancellationToken, Task<JsonObject?>>? _hardwareReader;
     private Func<JsonNode, CancellationToken, Task<HttpResponseMessage>>? _catalogReport;
     private Func<JsonNode, CancellationToken, Task<HttpResponseMessage>>? _fileAuditReport;
     private bool _catalogAdvertised;
@@ -120,7 +121,45 @@ public sealed class PolicyCycleTests : IDisposable
             }
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(result.ToJsonString(), Encoding.UTF8, "application/json") };
         })) { BaseAddress = new Uri(_options.ServerUrl) });
-    }, _source, new Audit(), _snapshotReader, _fileSource, _fileApi, (_,_) => { }, _ => true, _npsSource, _radiusSource, _protectionReader, _catalogReader);
+    }, _source, new Audit(), _snapshotReader, _fileSource, _fileApi, (_,_) => { }, _ => true, _npsSource, _radiusSource, _protectionReader, _catalogReader, _hardwareReader);
+
+    [Fact]
+    public async Task HardwareCollectionStartsWithTheWorkstationPolicyAndSendsOnlyChangedContentDaily()
+    {
+        int reads = 0;
+        string model = "Example PC";
+        _hardwareReader = _ =>
+        {
+            reads++;
+            return Task.FromResult(WorkstationHardware.Build(new JsonObject { ["computer"] = new JsonArray(new JsonObject { ["model"] = model }) }));
+        };
+        async Task Cycle(DateTimeOffset now)
+        {
+            _clock.Now = now;
+            Assert.Null((await Runtime().RunCycleAsync(CancellationToken.None)).ErrorCode);
+        }
+        IEnumerable<SignedPacket> Sent() => _requests.Where(request => request.Path.EndsWith("/packets", StringComparison.Ordinal))
+            .Select(request => SignedPacket.FromJson(request.Body)).Where(packet => WorkstationHardware.IsPacket(packet.Envelope, packet.Payload));
+
+        await Cycle(Helpers.Now);
+        Assert.Equal(0, reads);
+        _assignment[WorkstationHardware.Capability] = true;
+        var start = Helpers.Now.AddMinutes(2);
+        await Cycle(start);
+        Assert.Equal(1, reads);
+        await Cycle(start.AddMinutes(2));
+        Assert.Single(Sent());
+        await Cycle(start.AddHours(23));
+        Assert.Equal(1, reads);
+        await Cycle(start.AddDays(1));
+        Assert.Equal(2, reads);
+        Assert.Single(Sent());
+        model = "Replacement PC";
+        await Cycle(start.AddDays(2));
+        await Cycle(start.AddDays(2).AddMinutes(2));
+        Assert.Equal(3, reads);
+        Assert.Equal(new[] { "Example PC", "Replacement PC" }, Sent().Select(packet => packet.Payload["records"]![0]!["payload"]!["computer"]![0]!["model"]!.ToString()));
+    }
 
     [Theory]
     [InlineData("broken-key")]

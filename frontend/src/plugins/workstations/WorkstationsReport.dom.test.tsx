@@ -9,6 +9,7 @@ import { localeRuntime, setLocale, t } from "../../i18n";
 import { TimeZoneContext } from "../../shared/time-zone";
 import { WorkstationsPage } from "./route";
 import { WORKSTATIONS_KEY, type StationActivity, type StationDetailResult } from "./model";
+import { hardwareFixture } from "./WorkstationHardware.fixture";
 
 const definition = { ...definitions.find(item => item.key === WORKSTATIONS_KEY), filter_options: {} } as unknown as ReportDefinitionDto;
 const source = "00000000-0000-4000-8000-000000000001";
@@ -20,11 +21,13 @@ let client: QueryClient;
 let directoryOnly = false;
 let fleetEmpty = false;
 let emptyActivity = false;
+let withHardware = false;
 const station = (index = 0) => ({ station_id: index ? `00000000-0000-4000-8000-${String(index + 2).padStart(12, "0")}` : stationId,
   agent_key: index ? `00000000-0000-4000-8000-${String(index + 2).padStart(12, "0")}` : stationId,
   transport_agent_id: "00000000-0000-4000-8000-000000000003", source_instance_id: index ? `10000000-0000-4000-8000-${String(index).padStart(12, "0")}` : source,
   display_name: `WS-WORKSPACE-${String(index + 1).padStart(3, "0")}`, host_name: `WS-WORKSPACE-${String(index + 1).padStart(3, "0")}`,
   domain_id: 11, domain_name: "synthetic.invalid", server_id: 5, operating_system: "Windows 11", operating_system_version: "26100",
+  model: withHardware ? "Atlas 240" : null,
   metadata_observed_at: "2026-11-25T08:00:00Z", agent_status: "active", last_seen: "2026-11-25T09:05:00Z",
   last_logon_utc: index === 0 ? "2026-11-25T09:03:00Z" : null,
   policy_revision: 4, applied_policy_revision: 4, collection_state: "enabled", journal_available: true,
@@ -62,6 +65,7 @@ const detailResult = (program: string | null): StationDetailResult => ({ ...resu
   ...(detailMode === "denied" ? { access: { allowed: false } } : {}) }), detail: {
   station: detailMode === "malformed" ? { station_id: stationId } : station(),
   activity: activity(),
+  hardware: withHardware ? hardwareFixture : null,
   events: { state: detailMode === "events_denied" ? "denied" : "ok",
     items: program ? events.filter(row => row.workstation_event?.image_path === program) : events, filtered_count: program ? 1 : 5, journal_event_count: 45, has_more: !program,
     next_cursor: "bound-next-event-page", window: { from_utc: from, to_utc_exclusive: to } },
@@ -74,6 +78,7 @@ beforeEach(() => {
   directoryOnly = false;
   fleetEmpty = false;
   emptyActivity = false;
+  withHardware = false;
   localStorage.clear();
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
   vi.spyOn(app, "useEffectiveAccess").mockImplementation(() => ({ subject: { type: "session", id: 7 }, evaluated_at_utc: revision,
@@ -135,6 +140,36 @@ it("shows the period-specific empty state when there are no notable facts", asyn
   setLocale("en"); emptyActivity = true; mount();
   fireEvent.click(await screen.findByRole("link", { name: "WS-WORKSPACE-001" }));
   expect(await screen.findByText("No important events in the selected period.")).toBeTruthy();
+});
+
+it("shows the hardware tab and history independently of journal access, with a model column the operator can enable", async () => {
+  setLocale("en"); withHardware = true; detailMode = "events_denied"; mount();
+  const fleet = await screen.findByRole("table", { name: t("workstations.overview.stations") });
+  expect(within(fleet).queryByRole("columnheader", { name: "Model" })).toBeNull();
+  fireEvent.click(screen.getByText(t("table.columns"), { selector: "summary" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Model" }));
+  expect(within(fleet).getAllByRole("cell", { name: "Atlas 240" }).length).toBeGreaterThan(0);
+  fireEvent.click(await screen.findByRole("link", { name: "WS-WORKSPACE-001" }));
+  const important = await screen.findByRole("table", { name: "Important" });
+  const ranked = within(important).getAllByRole("row").slice(1);
+  expect(ranked.map(row => within(row).getAllByRole("cell")[1].textContent)).toEqual([
+    "Disk added", "Memory · Changed", "BIOS/UEFI · Version changed",
+  ]);
+  expect(screen.getAllByRole("tab").map(tab => tab.textContent).slice(-3)).toEqual(["Devices", "Hardware", "All events"]);
+  fireEvent.click(screen.getByRole("tab", { name: "Hardware" }));
+  const history = await screen.findByRole("table", { name: "Hardware changes" });
+  expect(within(history).getByText("16 GB → 32 GB")).toBeTruthy();
+  expect(within(history).getByText("1.12 → 1.15")).toBeTruthy();
+  expect(within(screen.getByRole("table", { name: "BitLocker volumes" })).getByText("C:")).toBeTruthy();
+  expect(within(screen.getByRole("table", { name: "Monitors" })).getByText("—")).toBeTruthy();
+});
+
+it("shows a single inventory message before the agent sends any hardware", async () => {
+  setLocale("ru"); mount();
+  fireEvent.click(await screen.findByRole("link", { name: "WS-WORKSPACE-001" }));
+  fireEvent.click(await screen.findByRole("tab", { name: "Оборудование" }));
+  expect(await screen.findByText("Опись оборудования ещё не получена от агента")).toBeTruthy();
+  expect(screen.queryByRole("table")).toBeNull();
 });
 
 it("opens Programs from the count and requests all events filtered by the selected program", async () => {

@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http.Features;
+using Sli.Agent.Core;
 using Sli.Server.Agents.Certificates;
 using Sli.Server.Agents.ClientControl;
 using Sli.Server.Agents.Control;
@@ -9,6 +10,7 @@ using Sli.Server.Auth.Lifecycle;
 using Sli.Server.Domains;
 using Sli.Server.Hosting;
 using Sli.Server.Infrastructure;
+using Sli.Server.Workstations;
 namespace Sli.Server.Agents;
 
 public static class AgentClientControlEndpoints
@@ -51,6 +53,10 @@ public static class AgentClientControlEndpoints
                     await tx.CommitAsync(ct);await DomainHttp.WriteAsync(context,result,200,ct);return;
                 }
                 result=await service.CheckInAsync(db,tx,agent,ct);
+                if (result["assigned_modules"] is JsonArray modules && modules.OfType<JsonObject>().Any(module =>
+                        module["module_id"]?.ToString() == WorkstationsModule.ModuleId && module["enabled"]?.GetValue<bool>() == true)
+                    && await WorkstationHardwareInventory.AvailableAsync(db,tx,ct))
+                    result[WorkstationHardware.Capability] = true;
                 catalogAgent=agent.Id;
             }
             await tx.CommitAsync(ct);
