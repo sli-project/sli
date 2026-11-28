@@ -301,13 +301,6 @@ def test_another_operation_and_disk_admission_leave_runtime_untouched(operation,
     assert not operation.path.exists() and not operation.events
 
 
-def test_other_unfinished_transaction_blocks_prepare(operation):
-    (operation.transactions / ('b' * 32)).mkdir()
-    with pytest.raises(FileNotFoundError):
-        upgrade.prepare('new', TX)
-    assert not operation.path.exists() and not operation.events
-
-
 def test_unhealthy_old_runtime_is_not_stopped(operation, monkeypatch):
     monkeypatch.setattr(install, 'wait_health', lambda: (_ for _ in ()).throw(RuntimeError('unhealthy')))
     with pytest.raises(RuntimeError, match='unhealthy'):

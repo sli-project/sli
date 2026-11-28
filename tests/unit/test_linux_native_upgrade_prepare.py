@@ -660,6 +660,13 @@ def fail_fence():
     raise runtime.RuntimeErrorCode('native_writers_still_running')
 
 
+def test_other_unfinished_transaction_blocks_prepare(preparation):
+    (preparation.transactions / ('b' * 32)).mkdir()
+    with pytest.raises(runtime.RuntimeErrorCode, match='^native_transaction_pending$'):
+        upgrade.prepare('new', TX)
+    assert not (preparation.transactions / TX).exists() and not preparation.events
+
+
 def test_prepare_publishes_a_pending_result_before_fencing(preparation, monkeypatch):
     atomic = install.atomic
 

@@ -124,8 +124,15 @@ def test_host_admission_uses_capture_only_budget(tmp_path, monkeypatch, capsys):
     assert str(budget['capture_bytes']) in message and str(source) in message
 
 
+@pytest.fixture
+def trusted_upgrade_host(tmp_path, monkeypatch):
+    monkeypatch.setattr(native_upgrade, 'RUNTIME_HELPER', tmp_path / 'usr/lib/sli/native_runtime.py')
+    monkeypatch.setattr(native_preinstall, 'trusted', lambda path: None)
+
+
 @pytest.mark.parametrize('early_shortfall,late_shortfall', [(0, 0), (1, 1), (0, 1)])
-def test_prepare_and_host_agree_with_real_manifest(tmp_path, monkeypatch, capsys, early_shortfall, late_shortfall):
+def test_prepare_and_host_agree_with_real_manifest(
+        tmp_path, monkeypatch, capsys, trusted_upgrade_host, early_shortfall, late_shortfall):
     machine = host.Host(tmp_path)
     source = machine.path('/mnt/copies')
     root = source / 'native'
@@ -154,7 +161,12 @@ def test_prepare_and_host_agree_with_real_manifest(tmp_path, monkeypatch, capsys
     monkeypatch.setattr(native_upgrade, 'TRANSACTIONS', tmp_path / 'transactions')
     monkeypatch.setattr(native_upgrade, 'systemd_available', lambda: False)
     monkeypatch.setattr(native_upgrade, 'operation_lock', lambda p: nullcontext())
-    monkeypatch.setattr(native_upgrade, 'preflight', lambda: (Path('/old'), Path('/recovery')))
+    recovery = tmp_path / 'recovery'
+    recovery.mkdir()
+    seal = recovery / 'recovery.json'
+    seal.write_text('{}')
+    monkeypatch.setattr(native_upgrade, 'preflight', lambda: (Path('/old'), recovery))
+    monkeypatch.setattr(native_install, 'trusted', lambda path: seal.read_bytes() if path == seal else pytest.fail(str(path)))
     monkeypatch.setattr(native_preinstall, 'recovery_required', lambda: True)
     monkeypatch.setattr(native_runtime, 'release', lambda: (Path('/old'), {}, ''))
     monkeypatch.setattr(native_upgrade, 'package_metadata', lambda p: {'version': '1.0-1~deb13'})
@@ -167,10 +179,13 @@ def test_prepare_and_host_agree_with_real_manifest(tmp_path, monkeypatch, capsys
     class AdmissionComplete(Exception):
         pass
 
-    def after_admission(*args, **kwargs):
-        raise AdmissionComplete
+    def stage_transaction(path, value):
+        if path.name == 'result.json':
+            assert value['status'] == 'preflight' and value['terminal'] is False
+            raise AdmissionComplete
+        assert path.name == 'journal.json'
 
-    monkeypatch.setattr(native_upgrade, 'ensure_directory', after_admission)
+    monkeypatch.setattr(native_install, 'atomic', stage_transaction)
     if early_shortfall:
         with pytest.raises(host.HostError, match='insufficient_space'):
             machine.validate_backup_root('/mnt/copies')
@@ -205,7 +220,7 @@ def test_prepare_and_host_agree_with_real_manifest(tmp_path, monkeypatch, capsys
     (True, '1.0-2~deb13', 'committed', True, True),
 ])
 def test_early_package_space_is_required_only_for_a_new_checkpoint(
-        monkeypatch, installed, version, journal_status, restored, needs_space):
+        monkeypatch, trusted_upgrade_host, installed, version, journal_status, restored, needs_space):
     monkeypatch.setattr(native_preinstall, 'recovery_required', lambda: installed)
 
     def release():
