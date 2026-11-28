@@ -57,7 +57,7 @@ internal sealed class SemanticOutboxPump : IAsyncDisposable
                 do
                 {
                     var watch = Stopwatch.StartNew();
-                    var slice = await production.ProcessOutbox(db, ct);
+                    var slice = await production.ProcessOutbox(db, ct, prioritizeLive: true);
                     rate.Observe(slice.Number("completed"), watch.Elapsed);
                     ready.TrySetResult();
                     lock (progress) {

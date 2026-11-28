@@ -15,7 +15,9 @@ using Sli.Server.Access;
 using Sli.Server.Auth;
 using Sli.Server.Auth.Lifecycle.Security;
 using Sli.Server.Semantic;
+using Sli.Server.Tests.Semantic;
 using Sli.Server.Tests.Reporting;
+using Sli.Server.Tests.Storage;
 using Xunit;
 using EventXml = Sli.Agent.Core.EventXml;
 using FileAuditPolicy = Sli.Agent.Core.FileAuditPolicy;
@@ -462,7 +464,7 @@ public class FileAuditConsumerDatabaseTests
     }
 
     [Fact]
-    public async Task Paged_unicode_apply_enables_file_activity_and_publishes_mass_write()
+    public async Task Paged_unicode_apply_publishes_110_file_writes_while_a_backfill_drains()
     {
         const string root = @"C:\SLI-Lab-Files\Обмен";
         const string commandId = "paged-unicode-apply";
@@ -474,6 +476,9 @@ public class FileAuditConsumerDatabaseTests
         await fixture.Pg.ApplyFileAsync(Path.Combine(PostCollectionPostgres.Repository(),
             "config/postgres_migrations/462_file_actions_and_problems.sql"), null, ct);
         await using var owner = await fixture.Pg.OpenAsync(ct);
+        await SemanticOutboxThroughputPostgresTests.Seed(owner, 1, 149_998, ct);
+        string lanes = Path.Combine(PostCollectionPostgres.Repository(), "config/postgres_migrations/463_semantic_outbox_lanes.sql");
+        await fixture.Pg.ApplyFileAsync(lanes, null, ct);
         await Register(owner, ct, root);
         await PostCollectionPostgres.Sql(owner, "update sli_agents set collection_policy=jsonb_set(collection_policy,'{manage_windows_audit}','true')", ct);
         await PostCollectionPostgres.Sql(owner, """
@@ -684,11 +689,31 @@ public class FileAuditConsumerDatabaseTests
               and result#>>'{details,distinct_files}'='110' and result#>>'{details,threshold}'='100'
               and result#>>'{details,window_seconds}'='300' and finding_id is not null
             """,ct));
-        await using (var worker = new NpgsqlConnection(fixture.Dsn("sli_semantic_login")))
+        // Real attested AD inputs exercise both outbox lanes. The file detector
+        // consumes the native file results in the same cycle as the live claim.
+        var fresh = DateTimeOffset.UtcNow.AddSeconds(-30);
+        var adEvents = await ShortEventAdmissionPostgresTests.SeedAsync(owner, ct, eventKinds: [1102, 1102, 1102],
+            nativeTimestamps: [SemanticJson.Stamp(fresh.AddMinutes(-30)), SemanticJson.Stamp(fresh.AddMinutes(-29)), SemanticJson.Stamp(fresh)]);
+        await ShortEventAdmissionPostgresTests.WriteAsync(fixture, adEvents, ct);
+        await using var worker = new NpgsqlConnection(fixture.Dsn("sli_semantic_login"));
+        await worker.OpenAsync(ct);
+        await PostCollectionPostgres.Sql(worker,"set role adlog_semantic_worker",ct);
+        var produced = await SemanticProducerBackfill.RunAsync(worker, SemanticRuntimeSettings.FindingsMode, 3, ct);
+        Assert.Equal(1, produced.Number("live_queued"));
+        Assert.Equal(2, produced.Number("backfill_queued"));
+        Assert.Equal(150_001, await Number(owner, "select count(*) from semantic_processing_outbox where status='queued'", ct));
+        // At the head of the historical lane, these rows have real source proof.
+        await PostCollectionPostgres.Sql(owner, """
+            update semantic_processing_outbox set available_at='1999-01-01 00:00:00+00'::timestamptz
+                + source_event_id*interval '1 millisecond'
+            where source_event_id>=900001
+            """, ct);
+        var production = new SemanticProduction(null!, new(true, true, false, true, true, true), SemanticRuntimeSettings.FindingsMode, 1);
+        Assert.Equal(1, (await production.ProcessOutbox(worker, ct, prioritizeLive: true)).Number("completed"));
+        Assert.Equal(adEvents[2].EventId, await Number(owner, "select source_event_id from semantic_processing_outbox where status='completed'", ct));
+
+        await using (var tx = await worker.BeginTransactionAsync(ct))
         {
-            await worker.OpenAsync(ct);
-            await PostCollectionPostgres.Sql(worker,"set role adlog_semantic_worker",ct);
-            await using var tx = await worker.BeginTransactionAsync(ct);
             var diagnostics = new DetectionDiagnostics();
             var session = new SemanticSession(worker,tx,diagnostics:diagnostics);
             var sources = await session.QueryAsync("""
@@ -705,16 +730,12 @@ public class FileAuditConsumerDatabaseTests
             await tx.CommitAsync(ct);
         }
         Assert.Equal(1, await Number(owner,"select count(*) from semantic_file_ransom_episodes",ct));
-        await using (var worker = new NpgsqlConnection(fixture.Dsn("sli_semantic_login")))
-        {
-            await worker.OpenAsync(ct);
-            await PostCollectionPostgres.Sql(worker,"set role adlog_semantic_worker",ct);
-            var production = new SemanticProduction(null!, new(true, true, false, true, false, false),
-                SemanticRuntimeSettings.FindingsMode, 1);
-            var risk = await production.ProcessRisk(worker, ct, fileEpisodesOnly: true);
-            Assert.True(risk.Number("published") == 1, risk.ToJsonString() + " " +
-                (await fixture.Pg.DiagnosticsAsync(ct)).Split('\n').LastOrDefault(line => line.Contains("ERROR:")));
-        }
+        var risk = await production.ProcessRisk(worker, ct, fileEpisodesOnly: true);
+        Assert.True(risk.Number("published") == 1, risk.ToJsonString() + " " +
+            (await fixture.Pg.DiagnosticsAsync(ct)).Split('\n').LastOrDefault(line => line.Contains("ERROR:")));
+        Assert.Equal(1, (await production.ProcessOutbox(worker, ct, prioritizeLive: true)).Number("completed"));
+        Assert.Equal(adEvents[0].EventId, await Number(owner, "select min(source_event_id) from semantic_processing_outbox where status='completed'", ct));
+        Assert.Equal(149_999, await Number(owner, "select count(*) from semantic_processing_outbox where status='queued'", ct));
         Assert.Equal(1, await Number(owner,"""
             select count(*) from public.findings_active
             where rule_code='semantic.qw.file-ransom' and public.is_semantic_finding_published_v1(id)
@@ -731,6 +752,8 @@ public class FileAuditConsumerDatabaseTests
         // The preceding schema accepts the migration and rollback preserves
         // the imported projection and its evidence.
         await fixture.RollbackAfterAsync(457,ct);
+        Assert.Equal(2, await Number(owner, "select count(*) from semantic_processing_outbox where status='completed'", ct));
+        Assert.Equal(0, await Number(owner, "select count(*) from pg_indexes where indexname in ('semantic_outbox_lane_claim463','semantic_outbox_lane_age463')", ct));
         await using (var tx = await app.BeginTransactionAsync(ct))
             Assert.False(await AgentPolicyAssignments.FileActivityAvailableAsync(app,tx,ct));
         Assert.Equal(117, await Number(owner,"select count(*) from sli_plugin_file_audit.actions",ct));

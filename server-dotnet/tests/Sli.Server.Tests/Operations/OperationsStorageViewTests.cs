@@ -81,7 +81,7 @@ public sealed class OperationsStorageViewTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task WorkersViewReadsOnlyHeartbeatsAndPasswordHealth(bool projectionUnavailable)
+    public async Task WorkersViewKeepsHeartbeatsAndEachHealthMeasurementIndependent(bool projectionUnavailable)
     {
         using var app = await OperationsEndpointTests.Start();
         app.Queries.FailContaining = projectionUnavailable ? "read_password_threshold_status418" : "semantic_processing_outbox";
@@ -93,6 +93,8 @@ public sealed class OperationsStorageViewTests
         app.Queries.Results[OperationsService.PasswordThresholdStatusSql] = new JsonArray(
             new JsonObject { ["rule_id"] = "qw.password-brute-force", ["state"] = "current", ["observed_at"] = observed },
             new JsonObject { ["rule_id"] = "qw.password-spray", ["state"] = "unknown" });
+        app.Queries.Results[OperationsService.SemanticOutboxLagSql] = new JsonArray(
+            new JsonObject { ["live_age_seconds"] = 301, ["backfill_age_seconds"] = 7200 });
 
         using var response = await app.Client.GetAsync("/api/v1/operations/overview?view=workers", TestContext.Current.CancellationToken);
         var body = await OperationsEndpointTests.Body(response);
@@ -116,6 +118,10 @@ public sealed class OperationsStorageViewTests
             Assert.Equal(new[] { "qw.password-brute-force", "qw.password-spray" }, rules.Select(row => (string?)row?["rule_id"]));
             Assert.Equal(new[] { "current", "unknown" }, rules.Select(row => (string?)row?["state"]));
         }
+        var lag = workers["semantic_outbox_lag"]!.AsObject();
+        Assert.Equal(projectionUnavailable ? "ok" : "unavailable", (string?)lag["status"]);
+        Assert.Equal(projectionUnavailable ? 301L : (long?)null, (long?)lag["live_age_seconds"]);
+        Assert.Equal(projectionUnavailable ? 7200L : (long?)null, (long?)lag["backfill_age_seconds"]);
 
         Assert.Collection(app.Queries.Calls,
             heartbeat =>
@@ -123,6 +129,7 @@ public sealed class OperationsStorageViewTests
                 Assert.Equal("select worker_name,worker_id,process_pid,status,phase,expected_interval_seconds,details_json,started_at,heartbeat_at from runtime_worker_heartbeats order by worker_name", heartbeat.Sql);
                 Assert.Empty(heartbeat.Parameters);
             },
+            age => Assert.Equal(OperationsService.SemanticOutboxLagSql, age.Sql),
             health =>
             {
                 Assert.Equal(OperationsService.PasswordThresholdStatusSql, health.Sql);

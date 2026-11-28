@@ -61,6 +61,8 @@ export function SystemStatusPage() {
   ]);
   const workers = operations.data?.workers;
   const services = statusServices(workers?.items ?? [], timeZone);
+  const outboxLag = workers?.semantic_outbox_lag;
+  const liveAge = outboxLag?.status === "ok" ? outboxLag.live_age_seconds : null;
   const passwordRules = statusPasswordRules(workers?.password_detection, timeZone);
   const importIssue = statusAdDcImportIssue(workers?.items ?? []);
   const disk = storage.data?.storage.postgres_volume;
@@ -149,6 +151,9 @@ export function SystemStatusPage() {
     {operations.isPending ? loading(serviceColumns.length) : workers && workers.status !== "unavailable" && workers.items && !operations.isError
       ? <DataTable columns={serviceColumns} rows={services} rowKey={(row) => row.id} labelledBy="status-services" showFooter={false}/>
       : failed(t("systemStatus.services"), operations.refetch)}
+    {!operations.isError && liveAge != null && liveAge > 300 ? <p>{t("systemStatus.liveEventLag", {
+      minutes: Math.floor(liveAge / 60), seconds: liveAge % 60,
+    })}</p> : null}
     {canViewOperations && !operations.isPending && !operations.isError ? <>
       <h2 id="status-password-detection" className="sli-ds-section-title">{t("systemStatus.passwordDetection.title")}</h2>
       {passwordRules.length ? <DataTable columns={[

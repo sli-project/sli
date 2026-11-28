@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Npgsql;
+using Sli.Server.Operations;
 using Sli.Server.Semantic;
 using Sli.Server.Tests.Agents;
 using Xunit;
@@ -65,21 +66,63 @@ public sealed class SemanticOutboxThroughputPostgresTests(ITestOutputHelper outp
         return session.Plan;
     }
 
-    private static async Task Seed(NpgsqlConnection db, int first, int count, CancellationToken ct)
+    [Fact]
+    public async Task Scheduled_claims_preserve_lane_order_and_reserve_a_backfill_turn()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture(); await fixture.StartAsync(ct);
+        await using var owner = await fixture.Pg.OpenAsync(ct);
+        await Seed(owner, 1, 128, ct);
+        await Seed(owner, 1001, 512, ct, live: true);
+        var production = new SemanticProduction(null!, new(true, true, false, true, false, false), SemanticRuntimeSettings.FindingsMode, 128);
+
+        await using var worker = new NpgsqlConnection(fixture.Dsn("sli_semantic_login")); await worker.OpenAsync(ct);
+        await PostCollectionPostgres.Sql(worker, "set role adlog_semantic_worker", ct);
+        await using var web = new NpgsqlConnection(fixture.Dsn("adlog_user")); await web.OpenAsync(ct);
+        await using var lag = new NpgsqlCommand(OperationsService.SemanticOutboxLagSql, web);
+        lag.Parameters.AddWithValue("version", SemanticEvent.Version);
+        lag.Parameters.AddWithValue("replay", SemanticEvent.Version + "+r7-%");
+        await CheckLag(hasLive: true, hasHistory: true);
+        foreach (int first in new[] { 1001, 1129, 1257, 1, 1385 })
+        {
+            await using var session = new SemanticSession(worker, await worker.BeginTransactionAsync(ct));
+            var jobs = await production.ClaimScheduled(session, 128, ct);
+            Assert.Equal(Enumerable.Range(first, 128).Select(id => (long)id), jobs.Select(job => job.Number("source_event_id")));
+            await SemanticProduction.CompleteBatch(session, jobs.Select(job => job!).ToArray(), ct);
+            await session.CommitAsync(ct);
+            if (first == 1) await CheckLag(hasLive: true, hasHistory: false);
+        }
+        await CheckLag(hasLive: false, hasHistory: false);
+
+        async Task CheckLag(bool hasLive, bool hasHistory)
+        {
+            await using var ages = await lag.ExecuteReaderAsync(ct);
+            Assert.True(await ages.ReadAsync(ct));
+            if (hasLive) Assert.InRange(ages.GetInt64(0), 360, 480);
+            else Assert.True(ages.IsDBNull(0));
+            if (hasHistory) Assert.InRange(ages.GetInt64(1), 7200, 7320);
+            else Assert.True(ages.IsDBNull(1));
+        }
+    }
+
+    internal static async Task Seed(NpgsqlConnection db, int first, int count, CancellationToken ct, bool live = false)
     {
         await using var command = new NpgsqlCommand("""
         insert into semantic_processing_outbox(job_id,source_event_id,job_kind,semantic_contract_version,
             processor_id,processor_version,idempotency_key,source_id,domain_id,partition_key,occurred_at_utc,
-            source_identity_json,available_at,created_at)
+            source_identity_json,available_at,created_at,payload_json)
         select gen_random_uuid(),n,'normalize_event',1,'semantic-shadow',@version,sha256(n::text::bytea),
             1,1,'1:1',now(),jsonb_build_object('id',n,'server_id',1,'domain_id',1,'log_source_id',1,
                 'event_id',1102,'time_created_utc',now(),'normalized_hash',repeat('a',64),'migrated_at',now(),'channel','Security'),
-            timestamp with time zone '2000-01-01 00:00:00+00'+n*interval '1 millisecond',now()
+            timestamp with time zone '2000-01-01 00:00:00+00'+n*interval '1 millisecond',
+            now()-case when @live then interval '6 minutes' else interval '2 hours' end,
+            case when @live then '{"queue_lane":"live"}'::jsonb else '{}'::jsonb end
         from generate_series(@first,@last) n
         """, db) { CommandTimeout = 0 };
         command.Parameters.AddWithValue("version", SemanticEvent.Version);
         command.Parameters.AddWithValue("first", first);
         command.Parameters.AddWithValue("last", first + count - 1);
+        command.Parameters.AddWithValue("live", live);
         await command.ExecuteNonQueryAsync(ct);
     }
 

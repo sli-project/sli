@@ -243,6 +243,7 @@ export const ru = {
   "systemStatus.passwordDomainRequired": "Для агента {name} не определён домен обнаружения подбора паролей.",
   "systemStatus.setPasswordDomain": "Указать домен",
   "systemStatus.services": "Службы сервера",
+  "systemStatus.liveEventLag": "Самое раннее из новых событий ждёт анализа {minutes} мин {seconds} с.",
   "systemStatus.adDcImport.catalog": "Сервер не может обработать события контроллеров домена: недоступен каталог событий.",
   "systemStatus.adDcImport.connection": "Сервер не может обработать события контроллеров домена: подключение к хранилищу событий отсутствует или настроено неверно.",
   "systemStatus.adDcImport.authorizationMissing": "Сервер не может обработать события контроллеров домена: не выдано разрешение на запись в хранилище событий.",

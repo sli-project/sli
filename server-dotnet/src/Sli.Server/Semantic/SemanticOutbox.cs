@@ -12,6 +12,15 @@ namespace Sli.Server.Semantic;
 
 internal sealed partial class SemanticProduction
 {
+    private int outboxClaimTurn;
+    internal const string OutboxLane = "(case when job_kind in ('normalize_event','investigation_context') and payload_json->>'queue_lane'='live' then 1 else 0 end)";
+    internal const string OutboxVersion = "(case when job_kind='semantic_replay' then split_part(processor_version,'+r7-',1) else processor_version end)";
+    internal const string PendingOutboxJobs = """
+        semantic_contract_version=1 and processor_id='semantic-shadow'
+        and status in('queued','failed','leased') and (attempt_count<max_attempts or status='leased')
+        and job_kind<>'semantic_v2_quarantine_repair'
+        """;
+
     internal static string ClaimFilter(string? repair, long[]? exact, out object?[] values)
     {
         var arguments = new List<object?> { Guid.NewGuid() };
@@ -66,11 +75,13 @@ internal sealed partial class SemanticProduction
         if (dispatch) await EnqueueDispatch(session, ev, SemanticEvent.Version, ct);
         return actions.Count;
     }
-    internal Task<JsonObject> ProcessOutbox(NpgsqlConnection db, CancellationToken ct, Action<SemanticProcessingStep, TimeSpan>? timing = null, IReadOnlyList<long>? sourceEventIds = null)
-        => ProcessOutbox(token => Transaction(db, token), ct, timing, sourceEventIds, batch: true);
+    internal Task<JsonObject> ProcessOutbox(NpgsqlConnection db, CancellationToken ct, Action<SemanticProcessingStep, TimeSpan>? timing = null,
+        IReadOnlyList<long>? sourceEventIds = null, bool prioritizeLive = false)
+        => ProcessOutbox(token => Transaction(db, token), ct, timing, sourceEventIds, batch: true, prioritizeLive: prioritizeLive);
 
     internal async Task<JsonObject> ProcessOutbox(Func<CancellationToken, Task<ISemanticSession>> open,
-        CancellationToken stopping, Action<SemanticProcessingStep, TimeSpan>? timing = null, IReadOnlyList<long>? sourceEventIds = null, bool batch = false)
+        CancellationToken stopping, Action<SemanticProcessingStep, TimeSpan>? timing = null, IReadOnlyList<long>? sourceEventIds = null,
+        bool batch = false, bool prioritizeLive = false)
     {
         sourceEventIds ??= exactSourceIds;
         ValidateExactSources(mode, sourceEventIds, repairDigest);
@@ -86,7 +97,9 @@ internal sealed partial class SemanticProduction
             long claimStarted = System.Diagnostics.Stopwatch.GetTimestamp();
             await using (var session = await open(ct))
             {
-                jobs = await Claim(session, ct, repairDigest, sourceEventIds?.ToArray(), batchClaims ? budget - claimed : 1);
+                jobs = prioritizeLive && batchClaims
+                    ? await ClaimScheduled(session, budget - claimed, ct)
+                    : await Claim(session, ct, repairDigest, sourceEventIds?.ToArray(), batchClaims ? budget - claimed : 1);
                 await session.CommitAsync(ct);
             }
             timing?.Invoke(SemanticProcessingStep.Claim, System.Diagnostics.Stopwatch.GetElapsedTime(claimStarted));
@@ -273,7 +286,19 @@ internal sealed partial class SemanticProduction
             SigmaProjection.At(row, "expires_at").UtcDateTime, row["revoked_at"] is null ? null : SigmaProjection.At(row, "revoked_at").UtcDateTime, row.Text("authorization_digest")!);
         return DirectRuntimeAuthorization.Validate(record, now).ArchiveRoot;
     }
-    internal static async Task<JsonArray> Claim(ISemanticSession session, CancellationToken ct, string? repairDigest = null, long[]? sourceEventIds = null, int count = 1)
+    internal async Task<JsonArray> ClaimScheduled(ISemanticSession session, int count, CancellationToken ct)
+    {
+        // Keep one full historical turn in four even when both lanes are busy.
+        // A vacant turn goes to the other lane. Each lane retains its FIFO key.
+        bool live = outboxClaimTurn != 3;
+        var jobs = await Claim(session, ct, count: count, live: live);
+        if (jobs.Count == 0) jobs = await Claim(session, ct, count: count, live: !live);
+        if (jobs.Count > 0) outboxClaimTurn = (outboxClaimTurn + 1) % 4;
+        return jobs;
+    }
+
+    internal static async Task<JsonArray> Claim(ISemanticSession session, CancellationToken ct, string? repairDigest = null,
+        long[]? sourceEventIds = null, int count = 1, bool? live = null)
     {
         repairDigest = string.IsNullOrWhiteSpace(repairDigest) ? null : repairDigest.Trim();
         if (repairDigest is not null && !System.Text.RegularExpressions.Regex.IsMatch(repairDigest, @"\A[0-9a-f]{64}\z")) throw new InvalidDataException("semantic_repair_digest_invalid");
@@ -281,13 +306,14 @@ internal sealed partial class SemanticProduction
         string filter = "and job_kind<>'semantic_v2_quarantine_repair'";
         if (repairDigest is not null) { args.Add(repairDigest); filter = "and job_kind='semantic_v2_quarantine_repair' and payload_json->>'repair_plan_digest'=$4"; }
         if (sourceEventIds is not null) { if (repairDigest is null) filter += " and job_kind='normalize_event'"; args.Add(sourceEventIds.Distinct().Order().ToArray()); filter += " and source_event_id=any($" + args.Count + ")"; }
+        if (live is bool isLive) filter += " and " + OutboxLane + (isLive ? "=1" : "=0");
         string take = "1";
         if (count != 1) { args.Add(Math.Clamp(count, 1, 128)); take = "$" + args.Count; }
         return await session.QueryAsync($"""
             with candidates as(select job_id from semantic_processing_outbox where semantic_contract_version=1
               and status in('queued','failed','leased') and processor_id='semantic-shadow'
               and (attempt_count<max_attempts or status='leased')
-              and (case when job_kind='semantic_replay' then split_part(processor_version,'+r7-',1) else processor_version end)=$2
+              and {OutboxVersion}=$2
               and ((job_kind='semantic_replay' and processor_version like $3) or(job_kind<>'semantic_replay' and processor_version=$2))
               and available_at<=now() and((status in('queued','failed') and attempt_count<max_attempts) or(status='leased' and lease_until<now()))
               {filter} order by available_at,created_at,job_id for update skip locked limit {take}),

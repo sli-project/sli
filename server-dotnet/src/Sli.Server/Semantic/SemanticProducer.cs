@@ -143,9 +143,11 @@ internal static class SemanticProducer
         Password.PasswordJson.Hash(new JsonObject { ["event"]=id,["kind"]=kind,["contract"]=1,["processor"]="semantic-shadow",["version"]=version,["identity_resolution_version"]=identityVersion });
     internal static string? SecurityReportProvider(int id) => id == 4624 || ReportIds.Contains(id)
         ? id == 1102 ? "Microsoft-Windows-Eventlog" : "Microsoft-Windows-Security-Auditing" : null;
-    internal static JsonArray JobRows(IEnumerable<Candidate> jobs) => new(jobs.Select(job=> {
+    internal static JsonArray JobRows(IEnumerable<Candidate> jobs, bool live = false) => new(jobs.Select(job=> {
         string hash=JobIdentity(job.Id, job.Kind);
-        return (JsonNode)new JsonObject { ["id"]=job.Id,["job_id"]=AuthAudit.Uuid5("adlog:semantic:"+hash),["kind"]=job.Kind,["hash"]="\\x"+hash,["payload"]=new JsonObject { ["selection_reason"]=job.Reason } };
+        var payload = new JsonObject { ["selection_reason"]=job.Reason };
+        if (live) payload["queue_lane"] = "live";
+        return (JsonNode)new JsonObject { ["id"]=job.Id,["job_id"]=AuthAudit.Uuid5("adlog:semantic:"+hash),["kind"]=job.Kind,["hash"]="\\x"+hash,["payload"]=payload };
     }).ToArray());
     internal const int EnqueueBatchSize = 500;
     // A separate read keeps all event lookups outside the outbox write. The
@@ -165,9 +167,9 @@ internal static class SemanticProducer
         order by w.id,w.kind
         on conflict(idempotency_key) do nothing returning job_id
         """;
-    internal static async Task<int> Enqueue(ISemanticSession session,IEnumerable<Candidate> jobs,CancellationToken ct)
+    internal static async Task<int> Enqueue(ISemanticSession session,IEnumerable<Candidate> jobs,CancellationToken ct,bool live=false)
     {
-        var payload=JobRows(jobs); if(payload.Count==0) return 0;
+        var payload=JobRows(jobs,live); if(payload.Count==0) return 0;
         var sources=await session.QueryAsync(EnqueueSourcesSql,ct,payload);
         if(sources.Count!=payload.Count) throw new InvalidDataException("semantic_producer_source_rows_missing");
         int queued=0;
