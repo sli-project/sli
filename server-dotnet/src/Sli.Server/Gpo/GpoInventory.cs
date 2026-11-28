@@ -53,13 +53,20 @@ internal static class GpoInventory
         return versions;
     }
 
-    internal static JsonObject ListRow(JsonObject policy)
+    internal static JsonObject ListRow(JsonObject policy, JsonObject snapshot, IEnumerable<JsonObject> settings)
     {
         var row=Row(policy);
         foreach(var version in Versions(policy)) row[version.Key]=version.Value?.DeepClone();
-        foreach(string side in new[]{"computer","user"})
-            row[side+"_setting_count"]=policy[side]?["settings_count"]?.DeepClone();
-        if(row.Number("setting_count")==0&&policy["source_states"]?["report"].Text("status")!="observed") row["setting_count"]=null;
+        var counts = GpoSettings.RowsFor(settings).CountBy(setting => setting.Text("side")).ToDictionary();
+        int count = counts.Values.Sum();
+        bool hasCount = GpoSettings.HasCount(policy, snapshot, count);
+        row["setting_count"] = hasCount ? JsonValue.Create(count) : null;
+        foreach (string side in new[] { "computer", "user" })
+        {
+            int sideCount = counts.GetValueOrDefault(side);
+            row[side + "_setting_count"] = sideCount > 0 || hasCount && (policy[side]?["source_state"] is null
+                || policy[side]?["source_state"].Text("status") == "observed") ? JsonValue.Create(sideCount) : null;
+        }
         row["unlinked"]=policy.Rows("reasons").Any(reason=>reason.Text("code")=="unlinked");
         if(row.Number("link_count")==0&&!row.True("unlinked")) row["link_count"]=null;
         return row;

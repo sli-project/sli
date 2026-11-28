@@ -1,32 +1,45 @@
-import { Select } from "../../design-system/Select";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
-import { DataTable, type TableColumn } from "../../design-system";
+import { Button, DataTable, Select, type TableColumn } from "../../design-system";
+import { useDateFormatters } from "../../design-system/useDateFormatters";
 import { t } from "../../i18n";
-import { auditLeaf, auditLeafLabel, auditLeafValue, auditPath } from "./gpo-audit-setting";
-import { formatDateTime } from "../../shared/date-time";
-import { useTimeZone } from "../../shared/time-zone";
-import { gpoSettingLabel, gpoSettingMetadata } from "./gpo-settings";
+import { displaySetting, maskedValue, type Setting } from "./gpo-settings";
 
-type SnapshotChoice = { id: string; observed_at: string };
+const sides = ["computer", "user"] as const;
+type Side = typeof sides[number];
+export type Versions = Partial<Record<`${Side}_${"directory_version" | "sysvol_version"}`, number | null>>;
+type SnapshotChoice = Versions & { id: string; observed_at: string };
 type SnapshotPair = { before: string; after: string };
-type Difference = {
-  id: number;
-  side: "computer" | "user";
-  setting_name: string;
-  path: string;
+type Difference = Setting & {
+  id: string;
   kind: "added" | "changed" | "removed";
-  before_value: unknown;
-  after_value: unknown;
+  before_value?: string;
+  after_value?: string;
 };
 
-export function GpoSnapshotComparison({ reportKey, domain, policyId, revision }: {
-  reportKey: string; domain: string; policyId: string; revision: number;
+export function hasMismatch(row: Versions, component?: Side): boolean {
+  return (component ? [component] : sides).some((side) => {
+    const ad = row[`${side}_directory_version`];
+    const sysvol = row[`${side}_sysvol_version`];
+    return ad != null && sysvol != null && ad !== sysvol;
+  });
+}
+
+export function versionPair(row: Versions, side: Side, domain?: string): ReactNode {
+  const ad = row[`${side}_directory_version`];
+  const sysvol = row[`${side}_sysvol_version`];
+  if (ad == null && sysvol == null) return "—";
+  const value = `${ad ?? "—"} / ${sysvol ?? "—"}`;
+  return hasMismatch(row, side) ? <strong className="sli-ds-value-mismatch">{domain === undefined ? value :
+    <a href={`/app/report/ad.infrastructure${domain ? `?${new URLSearchParams({ domain })}` : ""}`}>{value}</a>}</strong> : value;
+}
+
+export function GpoSnapshotComparison({ reportKey, domain, policyId, revision, observed }: {
+  reportKey: string; domain: string; policyId: string; revision: number; observed?: string;
 }) {
-  const { timeZone } = useTimeZone();
-  const [selection, setSelection] = useState<Partial<SnapshotPair>>({});
-  const [submitted, setSubmitted] = useState<SnapshotPair>();
+  const { formatDateTime } = useDateFormatters();
+  const [selection, setSelection] = useState<SnapshotPair>();
   const queryKey = ["report-v2", "gpo-snapshots", reportKey, domain, policyId, revision];
   const base = { tab: "gpos", policy_id: policyId, domain };
   const queryOptions = { staleTime: 60_000, retry: false, refetchOnWindowFocus: false };
@@ -34,12 +47,10 @@ export function GpoSnapshotComparison({ reportKey, domain, policyId, revision }:
     ...queryOptions, queryKey,
     queryFn: () => api.reportV2Data(reportKey, new URLSearchParams({ ...base, snapshots: "1" })),
   });
-  const snapshots = (choices.data?.collections?.snapshots ?? []) as SnapshotChoice[];
-  const selected = {
-    before: snapshots.find((snapshot) => snapshot.id === selection.before)?.id ?? snapshots[1]?.id,
-    after: snapshots.find((snapshot) => snapshot.id === selection.after)?.id ?? snapshots[0]?.id,
-  };
-  const active = submitted && submitted.before === selected.before && submitted.after === selected.after ? submitted : undefined;
+  const snapshots = ((choices.data?.collections?.snapshots ?? []) as SnapshotChoice[])
+    .filter((snapshot) => !observed || Date.parse(snapshot.observed_at) <= Date.parse(observed));
+  const versions = new Map(snapshots.map((snapshot, index) => [snapshot.id, { snapshot, previous: snapshots[index + 1] }]));
+  const active = selection && versions.has(selection.after) && versions.has(selection.before) ? selection : undefined;
   const comparison = useQuery({
     ...queryOptions, queryKey: [...queryKey, active?.before, active?.after], enabled: Boolean(active),
     queryFn: () => api.reportV2Data(reportKey, new URLSearchParams({
@@ -49,51 +60,51 @@ export function GpoSnapshotComparison({ reportKey, domain, policyId, revision }:
 
   if (choices.isPending) return <div role="status">{t("state.loading")}</div>;
   if (choices.isError || choices.data?.state === "error" || choices.data?.state === "denied") return <div role="alert">
-    {t("reports.gpo.snapshots_failed")} <button className="sli-ds-button" type="button" onClick={() => void choices.refetch()}>{t("state.retry")}</button>
+    {t("reports.gpo.snapshots_failed")} <Button onClick={() => void choices.refetch()}>{t("state.retry")}</Button>
   </div>;
-  if (snapshots.length < 2) return <div role="status">{t("reports.gpo.snapshots_required")}</div>;
 
-  const differences = (comparison.data?.collections?.snapshot_comparison as Difference[] | undefined)
-    ?.filter((row) => !gpoSettingMetadata(row.setting_name)).map((row) => {
-    const leaf = auditLeaf(row.setting_name, row.path);
-    if (!leaf) return /(?:^|\/)RegistrySetting(?:\/|$)/i.test(row.path)
-      ? { ...row, setting_name: row.setting_name === "KeyPath" ? t("reports.gpo.path") : t("reports.gpo.registry_setting"), path: "" }
-      : { ...row, setting_name: gpoSettingLabel(row.setting_name) ?? "" };
-    const value = row.after_value ?? row.before_value;
-    return { ...row, setting_name: auditLeafLabel(leaf, typeof value === "string" ? value : undefined), path: auditPath(row.side),
-      before_value: auditLeafValue(leaf, row.before_value, row.side), after_value: auditLeafValue(leaf, row.after_value, row.side) };
-  });
+  const differences = comparison.data?.collections?.snapshot_comparison as Difference[] | undefined;
   const columns: TableColumn<Difference>[] = [
-    { key: "setting_name", label: t("reports.gpo.parameter"), width: "27%", render: (row) => <>
-      {row.setting_name || "—"}{row.path ? <div className="sli-ds-text-muted">{row.path}</div> : null}
-    </> },
+    { key: "setting_name", label: t("reports.gpo.parameter"), width: "49%", render: (row) => {
+      const setting = displaySetting(row);
+      return <>{setting.setting_name}{setting.path && <div className="sli-ds-text-muted">{setting.category} · {setting.path}</div>}</>;
+    } },
     { key: "side", label: t("reports.gpo.component"), render: (row) => t(`reports.gpo.${row.side}`) },
-    { key: "kind", label: t("reports.gpo.change"), render: (row) => t(`reports.gpo.${row.kind}`) },
-    { key: "before_value", label: t("reports.gpo.snapshot_before"), width: "25%", wrap: true },
-    { key: "after_value", label: t("reports.gpo.snapshot_after"), width: "25%", wrap: true },
+    { key: "difference", label: t("reports.gpo.change"), width: "41%",
+      renderHeader: differences?.some((row) => row.before_value === maskedValue || row.after_value === maskedValue) ?
+        () => <span title={t("reports.gpo.value_hidden_reason")}>{t("reports.gpo.change")}</span> : undefined,
+      render: (row) => {
+        const before = displaySetting({ ...row, value_display: row.before_value }).value_display;
+        const after = displaySetting({ ...row, value_display: row.after_value }).value_display;
+        return <><span className="sli-ds-text-muted">{t(`reports.gpo.${row.kind}`)} · </span>{before ?? "—"} → <b>{after ?? "—"}</b></>;
+      },
+    },
   ];
-  const canCompare = selected.before && selected.after && selected.before !== selected.after;
+  const earlier = active ? snapshots.slice(snapshots.findIndex((snapshot) => snapshot.id === active.after) + 1) : [];
   return <>
-    <form className="sli-ds-filters__fields" onSubmit={(event) => {
-      event.preventDefault();
-      if (selected.before && selected.after && canCompare) setSubmitted({ before: selected.before, after: selected.after });
-    }}>
-      {(["before", "after"] as const).map((side) => <div className="sli-ds-field" key={side}>
-        <span>{t(`reports.gpo.version_${side}`)}</span>
-        <Select label={t(`reports.gpo.version_${side}`)} value={selected[side]} onChange={(selectedValue) => {
-          setSelection({ ...selected, [side]: selectedValue });
-          setSubmitted(undefined);
-        }}
-          options={snapshots.map((snapshot) => ({ value: snapshot.id, label: formatDateTime(snapshot.observed_at, timeZone, { seconds: true }) }))}/>
-      </div>)}
-      <button className="sli-ds-button" data-variant="primary" type="submit" disabled={!canCompare}>{t("reports.gpo.compare_snapshots")}</button>
-    </form>
+    <DataTable caption={t("reports.gpo.version_history")} rows={snapshots} rowKey={(row) => row.id} selectedKey={active?.after}
+      stickyHeader={false} showFooter={false} emptyContent="—" columns={[
+        { key: "observed_at", label: t("reports.gpo.observed"), kind: "datetime" },
+        { key: "computer", label: t("reports.gpo.computer_version_pair"), render: (row) => versionPair(row, "computer", domain) },
+        { key: "user", label: t("reports.gpo.user_version_pair"), render: (row) => versionPair(row, "user", domain) },
+        { key: "compare", label: t("reports.gpo.snapshot_comparison"), render: (row) => {
+          const previous = versions.get(row.id)?.previous;
+          return previous && <Button variant="ghost" aria-pressed={active?.after === row.id} onClick={() => setSelection({ before: previous.id, after: row.id })}>
+            {t("reports.gpo.compare_snapshots")}
+          </Button>;
+        } },
+      ]}/>
+    {active && <div className="sli-ds-split-report__toolbar">
+      {earlier.length > 1 ? <Select label={t("reports.gpo.version_before")} value={active.before}
+        onChange={(before) => setSelection({ ...active, before })}
+        options={earlier.map((snapshot) => ({ value: snapshot.id, label: formatDateTime(snapshot.observed_at) }))}/> :
+        <time dateTime={versions.get(active.before)!.snapshot.observed_at}>{formatDateTime(versions.get(active.before)!.snapshot.observed_at)}</time>}
+      <span aria-hidden="true">→</span>
+      <time dateTime={versions.get(active.after)!.snapshot.observed_at}>{formatDateTime(versions.get(active.after)!.snapshot.observed_at)}</time>
+    </div>}
     {active && (comparison.isPending ? <div role="status">{t("state.loading")}</div> :
       comparison.isError || !differences ? <div role="alert">
-        {t("reports.gpo.snapshot_comparison_failed")} <button className="sli-ds-button" type="button" onClick={() => {
-          void choices.refetch();
-          void comparison.refetch();
-        }}>{t("state.retry")}</button>
+        {t("reports.gpo.snapshot_comparison_failed")} <Button onClick={() => void comparison.refetch()}>{t("state.retry")}</Button>
       </div> : differences.length === 0 ? <div role="status">{t("reports.gpo.snapshot_comparison_equal")}</div> :
         <DataTable caption={t("reports.gpo.snapshot_comparison")} rows={differences} columns={columns} rowKey={(row) => String(row.id)}
           stickyHeader={false} showFooter={false} wrapCells="all"/>)}

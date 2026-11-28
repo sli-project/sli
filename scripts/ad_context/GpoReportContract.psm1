@@ -749,6 +749,21 @@ function Get-SLIGpoAuditMode {
     }
 }
 
+function SLIV2-Get-UserRightSetting($Node) {
+    $name = $Node.SelectSingleNode("./*[local-name()='Name']").InnerText.Trim()
+    $members = foreach ($member in $Node.SelectNodes("./*[local-name()='Member']")) {
+        $principal = $member.SelectSingleNode("./*[local-name()='Name']")
+        if ($null -eq $principal -or [string]::IsNullOrWhiteSpace($principal.InnerText)) {
+            $principal = $member.SelectSingleNode("./*[local-name()='SID' or local-name()='Sid']")
+        }
+        if ($null -ne $principal -and -not [string]::IsNullOrWhiteSpace($principal.InnerText)) { $principal.InnerText.Trim() }
+    }
+    $value = if ($members -contains 'значение скрыто') { 'значение скрыто' } else {
+        ($members | Sort-Object -Unique) -join "`n"
+    }
+    [pscustomobject]@{ path = 'UserRightsAssignment'; name = $name; value = $value }
+}
+
 function ConvertTo-SLIGpoV2Settings {
     [CmdletBinding()]
     param(
@@ -792,11 +807,18 @@ function ConvertTo-SLIGpoV2Settings {
 
         $registryGroup = "local-name()='RegistrySetting' and *[local-name()='KeyPath' or local-name()='Key']"
         $accountGroup = "local-name()='Account' and *[local-name()='Name'] and *[local-name()='SettingNumber' or local-name()='SettingBoolean' or local-name()='SettingString']"
-        $groups = $extensionNode.SelectNodes(".//*[($registryGroup) or ($accountGroup)]")
+        $rightsGroup = "local-name()='UserRightsAssignment' and *[local-name()='Name']"
+        $groups = $extensionNode.SelectNodes(".//*[($registryGroup) or ($accountGroup) or ($rightsGroup)]")
         foreach ($group in $groups) {
             $xmlPath = SLIV2-Get-XmlNodePath -Node $group -StopNode $extensionNode
-            $category = if ($group.LocalName -eq 'RegistrySetting') { 'Registry' } else { 'Account Policy' }
-            $entries = if ($group.LocalName -eq 'RegistrySetting') { @(SLIV2-Get-RegistrySettings $group) } else {
+            $category = switch ($group.LocalName) {
+                'RegistrySetting' { 'Registry' }
+                'UserRightsAssignment' { 'User Rights Assignment' }
+                default { 'Account Policy' }
+            }
+            $entries = if ($group.LocalName -eq 'RegistrySetting') { @(SLIV2-Get-RegistrySettings $group) }
+            elseif ($group.LocalName -eq 'UserRightsAssignment') { @(SLIV2-Get-UserRightSetting $group) }
+            else {
                 $name = $group.SelectSingleNode("./*[local-name()='Name']").InnerText.Trim()
                 $content = $group.SelectSingleNode("./*[local-name()='SettingNumber' or local-name()='SettingBoolean' or local-name()='SettingString']")
                 [pscustomobject]@{ path = ''; name = $name; value = $content.InnerText.Trim() }
@@ -820,7 +842,7 @@ function ConvertTo-SLIGpoV2Settings {
         }
         $leafNodes = $extensionNode.SelectNodes(".//*[not(*)]")
         foreach ($leaf in $leafNodes) {
-            if ($null -ne $leaf.SelectSingleNode("ancestor::*[($registryGroup) or ($accountGroup)]")) { continue }
+            if ($null -ne $leaf.SelectSingleNode("ancestor::*[($registryGroup) or ($accountGroup) or ($rightsGroup)]")) { continue }
             if ($rows.Count -ge $Maximum) {
                 return [pscustomobject][ordered]@{ rows = @($rows); truncated = $true; source_status = "partial" }
             }

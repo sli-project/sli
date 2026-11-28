@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Runtime.CompilerServices;
 using Npgsql;
 using NpgsqlTypes;
 using Sli.Gpo.SnapshotModel;
@@ -74,13 +75,24 @@ internal sealed class GpoReadStore(IPostgresConnectionFactory connections,IConfi
         return new(snapshot, reader.GetFieldValue<DateTimeOffset>(0), ValidateSnapshot(reader.GetString(1), reader.GetFieldValue<byte[]>(2)));
     }
 
-    public async Task<IReadOnlyList<GpoPolicySnapshot>> PolicySnapshotsAsync(long domain, string policyId,
-        (Guid Before, Guid After)? comparison, CancellationToken ct)
+    public async IAsyncEnumerable<GpoPolicySnapshot> PolicySnapshotsAsync(long domain, string policyId,
+        (Guid Before, Guid After)? comparison, [EnumeratorCancellation] CancellationToken ct)
     {
         await using var db = await connections.OpenAsync(ct);
         await using var cmd = new NpgsqlCommand("""
             select source_run_id, source_observed_at_utc,
-                case when @runs is not null then payload_json end,
+                case when @runs is not null then payload_json else jsonb_build_object(
+                    'gpos', jsonb_build_array((
+                        select jsonb_build_object('id', policy->'id', 'computer', policy->'computer', 'user', policy->'user')
+                        from jsonb_array_elements(payload_json->'gpos') as policy
+                        where policy->>'id' = @policy_id
+                    )),
+                    'settings', coalesce((
+                        select jsonb_agg(setting order by ordinal)
+                        from jsonb_array_elements(payload_json->'settings') with ordinality as entries(setting, ordinal)
+                        where setting->>'gpo_id' = @policy_id
+                    ), '[]'::jsonb)
+                ) end,
                 case when @runs is not null then payload_sha256 end
             from gpo_report_v2_source_snapshots
             where domain_id = @domain and import_status = 'completed' and collection_status <> 'failed'
@@ -92,6 +104,7 @@ internal sealed class GpoReadStore(IPostgresConnectionFactory connections,IConfi
             order by source_observed_at_utc desc, snapshot_id desc
             """, db) { CommandTimeout = 0 };
         cmd.Parameters.AddWithValue("domain", domain);
+        cmd.Parameters.AddWithValue("policy_id", policyId);
         cmd.Parameters.AddWithValue("runs", NpgsqlDbType.Array | NpgsqlDbType.Uuid,
             comparison is { } pair ? new[] { pair.Before, pair.After } : DBNull.Value);
         cmd.Parameters.AddWithValue("policy", NpgsqlDbType.Jsonb, JsonSerializer.Serialize(new
@@ -99,14 +112,13 @@ internal sealed class GpoReadStore(IPostgresConnectionFactory connections,IConfi
             gpos = new[] { new { id = policyId, source_states = new { report = new { status = "observed" } } } },
         }));
 
-        var snapshots = new List<GpoPolicySnapshot>();
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
         {
-            var payload = comparison is null ? null : ValidateSnapshot(reader.GetString(2), reader.GetFieldValue<byte[]>(3));
-            snapshots.Add(new(reader.GetGuid(0), reader.GetFieldValue<DateTimeOffset>(1), payload));
+            var payload = comparison is null ? JsonNode.Parse(reader.GetString(2))!.AsObject()
+                : ValidateSnapshot(reader.GetString(2), reader.GetFieldValue<byte[]>(3));
+            yield return new(reader.GetGuid(0), reader.GetFieldValue<DateTimeOffset>(1), payload);
         }
-        return snapshots;
     }
 
     public async Task<JsonObject> GraphAsync(JsonObject snapshot,long[]? domains,CancellationToken ct)

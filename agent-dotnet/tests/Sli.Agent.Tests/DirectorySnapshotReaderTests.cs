@@ -114,7 +114,7 @@ public sealed class DirectorySnapshotReaderTests
     }
 
     [Fact]
-    public async Task EmbeddedGpoNormalizerKeepsTheValueOfEachAuditSubcategory()
+    public async Task EmbeddedGpoNormalizerKeepsAuditModesAndEachRightWithItsMembers()
     {
         if (!OperatingSystem.IsWindows()) return;
         var policy = Policy("gpo-full");
@@ -129,6 +129,8 @@ public sealed class DirectorySnapshotReaderTests
                 <AuditSetting><SubcategoryGuid>0cce921b-69ae-11d9-bed3-505054503030</SubcategoryGuid><InclusionSetting>Success and Failure</InclusionSetting></AuditSetting>
                 <AuditSetting><SubcategoryGuid>0cce921c-69ae-11d9-bed3-505054503030</SubcategoryGuid><SettingValue>2</SettingValue></AuditSetting>
                 <AuditSetting><SubcategoryGuid>0cce9224-69ae-11d9-bed3-505054503030</SubcategoryGuid></AuditSetting>
+                <UserRightsAssignment><Name>SeServiceLogonRight</Name><Member><Name>LOCAL SERVICE</Name></Member><Member><Name>NETWORK SERVICE</Name></Member></UserRightsAssignment>
+                <UserRightsAssignment><Name>SeBatchLogonRight</Name><Member><Name>LOCAL SERVICE</Name></Member><Member><SID>S-1-5-21-100000001-200000002-300000003-1001</SID></Member></UserRightsAssignment>
             </Extension></ExtensionData></Computer></GPO>
             '@
             ConvertTo-SLIGpoV2Settings -Xml $fixture -GpoId fixture -GpoName 'Fixture GPO' -Side computer -Maximum 50 -ObservedAt '2026-11-27T10:00:00Z' |
@@ -145,6 +147,12 @@ public sealed class DirectorySnapshotReaderTests
         Assert.Equal("3", auditRows["921b"]);
         Assert.Equal("2", auditRows["921c"]);
         Assert.Null(auditRows["9224"]);
+
+        var rights = result["rows"]!.AsArray().Where(row => row?["category"]?.ToString() == "User Rights Assignment")
+            .ToDictionary(row => row!["setting_name"]!.ToString(), row => row!["value_display"]!.ToString());
+        Assert.Equal(2, rights.Count);
+        Assert.Equal("LOCAL SERVICE\nNETWORK SERVICE", rights["SeServiceLogonRight"]);
+        Assert.Equal("LOCAL SERVICE\nS-1-5-21-100000001-200000002-300000003-1001", rights["SeBatchLogonRight"]);
     }
 
     [Fact]
