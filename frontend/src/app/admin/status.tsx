@@ -11,7 +11,8 @@ import { downloadOperationsExport } from "../operations-actions";
 import { statusAdDcImportIssue, statusAuditChecks, statusPasswordRules, statusServices, statusSourceGaps, statusSources } from "./status-view";
 import { RestoreAgentAction } from "./agent-restore-action";
 import { OldAgentsTable } from "./agent-removal-status";
-import { moduleName, moduleRows, moduleStatusId, moduleStatusText } from "./plugin-status";
+import { useAgentSetup } from "./agent-state";
+import { moduleName, moduleRows, moduleStatusId, moduleStatusText, pluginSilentAgents, useFileAuditResourceCounts } from "./plugin-status";
 
 const updateCommand = "sudo apt update && sudo apt upgrade";
 
@@ -29,7 +30,7 @@ export function SystemStatusPage() {
   const [exportError, setExportError] = useState(false);
   const [exporting, setExporting] = useState(false);
   const options = { retry: false, refetchInterval: 30_000 } as const;
-  const setup = useQuery({ queryKey: ["setup-status"], queryFn: api.setupStatus, ...options });
+  const setup = useAgentSetup();
   const operations = useQuery({ queryKey: ["operations-workers"], queryFn: api.operationsWorkers, ...options });
   const storage = useQuery({ queryKey: ["operations-storage"], queryFn: api.storageOverview, ...options });
   const diagnostics = useQuery({ queryKey: ["operations-diagnostics"], queryFn: api.diagnostics, ...options });
@@ -37,6 +38,8 @@ export function SystemStatusPage() {
     enabled: canViewOperations });
   const plugins = useQuery({ queryKey: ["plugins"], queryFn: api.plugins, ...options, enabled: canViewOperations });
   const pluginItems = plugins.isError ? undefined : plugins.data?.items;
+  const counts = useFileAuditResourceCounts(pluginItems?.some((item) => item.plugin_id === "sli.file-audit") === true,
+    access?.evaluated_at_utc, timeZone);
   useEffect(() => {
     const target = window.location.hash.slice(1);
     if (pluginItems && target.startsWith("module-")) document.getElementById(target)?.scrollIntoView?.();
@@ -74,7 +77,10 @@ export function SystemStatusPage() {
   }] : [];
   const latest = sources.map((source) => source.lastData).filter((time): time is string => Boolean(time))
     .sort((a, b) => Date.parse(b) - Date.parse(a))[0];
-  const connectedControllers = setup.isError ? undefined : health?.connected_domain_controllers;
+  const controllers = sources.filter((source) => source.domainController);
+  const connectedControllers = !setup.isError && health && health.state !== "unavailable"
+    ? controllers.filter((source) => source.connected).length : undefined;
+  const silentController = controllers.find((source) => !source.connected && source.href);
   const connected = connectedControllers !== undefined && connectedControllers > 0;
   const channelReady = !notifications.isError && (notifications.data?.channels.some((channel) => channel.enabled && (channel.last_accepted_at
     || (channel.kind === "smtp" && !smtp.isError && smtp.data?.host && smtp.data.sender && smtp.data.secret_set && smtp.data.needs_save === false)
@@ -127,6 +133,7 @@ export function SystemStatusPage() {
     {showSteps ? <ol aria-label={t("systemStatus.firstRun")}>
       <li><span aria-label={t(connected ? "systemStatus.done" : "systemStatus.pending")}>{connected ? "✓" : "○"}</span> {connected
         ? controllerCount
+        : silentController?.href ? <a href={silentController.href}>{t("systemStatus.openAgent")}</a>
         : <>{t("systemStatus.step.agent")} <a className="sli-ds-button" href="/app/agents">{t("systemStatus.connect")}</a></>}</li>
       <li><span aria-label={t(channelReady ? "systemStatus.done" : "systemStatus.pending")}>{channelReady ? "✓" : "○"}</span> {t("systemStatus.step.notifications")} <a className="sli-ds-button" href="/app/notifications">{t("systemStatus.configure")}</a></li>
       <li><span aria-label={t(latest ? "systemStatus.done" : "systemStatus.pending")}>{latest ? "✓" : "○"}</span> {latest ? t("systemStatus.step.received", { time: formatDateTime(latest, timeZone, { withYear: false }) }) : t("systemStatus.step.waiting")}</li>
@@ -169,7 +176,7 @@ export function SystemStatusPage() {
       {plugins.isPending ? loading(2) : plugins.isError ? failed(t("plugins.title"), plugins.refetch)
         : <DataTable labelledBy="status-plugins" rows={moduleRows(pluginItems ?? [])} rowKey={moduleStatusId} showFooter={false} columns={[
           { key: "name", label: t("plugins.module"), render: (item) => <span id={moduleStatusId(item)} tabIndex={-1}>{moduleName(item)}</span> },
-          { key: "status", label: t("systemStatus.state"), render: (item) => moduleStatusText(item, timeZone) },
+          { key: "status", label: t("systemStatus.state"), render: (item) => moduleStatusText(item, timeZone, counts?.servers, pluginSilentAgents(item, setup.isError ? null : health)) },
         ]}/>}
     </> : null}
     {auditChecks.length ? <><h2 id="status-audit-checks" className="sli-ds-section-title">{t("systemStatus.auditChecks")}</h2>

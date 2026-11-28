@@ -8,7 +8,8 @@ import { FieldError } from "./gate";
 import { formatDateTime } from "../../shared/date-time";
 import { useEffectiveAccess, useTimeZone } from "../App";
 import { AccessRequestStateView, useAccessRequest } from "../access-request-state";
-import { moduleLastData, moduleName, moduleRows, moduleSources, moduleStatusId, moduleStatusText } from "./plugin-status";
+import { useAgentSetup } from "./agent-state";
+import { moduleLastData, moduleName, moduleRows, moduleSources, moduleStatusId, moduleStatusText, pluginSilentAgents, useFileAuditResourceCounts } from "./plugin-status";
 
 export function PluginsRoute() {
   const access = useEffectiveAccess();
@@ -24,6 +25,11 @@ export function PluginsPage() {
   const titleId = useId();
   const plugins = useQuery({ queryKey: ["plugins"], queryFn: api.plugins, refetchInterval: 5_000 });
   const { timeZone } = useTimeZone();
+  const access = useEffectiveAccess();
+  const setup = useAgentSetup(Boolean(access?.platform_owner || access?.capabilities.includes("access.manage")));
+  const health = setup.isError ? null : setup.data?.agent_collection;
+  const counts = useFileAuditResourceCounts(!plugins.isError && plugins.data?.items.some((item) => item.plugin_id === "sli.file-audit") === true,
+    access?.evaluated_at_utc, timeZone);
   const canManage = plugins.data?.can_manage === true;
   return <section className="sli-ds-report">
     <PageHeader title={t("plugins.title")} titleId={titleId}/>
@@ -33,7 +39,7 @@ export function PluginsPage() {
       showFooter={false} density="compact" columns={[
         { key: "name", label: t("plugins.module"), width: "20%", wrap: true, render: moduleName },
         { key: "status", label: t("systemStatus.state"), width: "24%", wrap: true, render: (item) =>
-          <a href={`/app/admin/status#${moduleStatusId(item)}`}>{moduleStatusText(item, timeZone)}</a> },
+          <a href={`/app/admin/status#${moduleStatusId(item)}`}>{moduleStatusText(item, timeZone, counts?.servers, pluginSilentAgents(item, health))}</a> },
         { key: "sources", label: t("systemStatus.sources"), width: "12%", wrap: true, render: (item) => <span>{moduleSources(item)}</span> },
         { key: "lastData", label: t("plugins.lastData"), width: "18%", kind: "datetime", render: (item) => {
           const time = moduleLastData(item);

@@ -10,8 +10,9 @@ import { SigmaLiveRules } from "../sigma-live-rules";
 import { PluginSettingsForm } from "./plugin-settings-form";
 import { PluginReadState, PluginSources } from "./plugin-sources";
 import { PluginRadiusSources } from "./plugin-radius-sources";
-import { moduleStatusText, pluginNextAction } from "./plugin-status";
-import { selectedDomain, withDomain } from "../domain-navigation";
+import { moduleStatusText, pluginNextAction, pluginSilentAgents, useFileAuditResourceCounts } from "./plugin-status";
+import { useAgentSetup } from "./agent-state";
+import { withDomain } from "../domain-navigation";
 
 const tabIds = ["overview", "connection", "settings", "rules", "reports"] as const;
 
@@ -28,17 +29,8 @@ export function PluginPage({ pluginId, title }: { pluginId: string; title: strin
   const item = plugins.isError ? undefined : plugins.data?.items.find((plugin) => plugin.plugin_id === pluginId);
   const settings = useQuery({ queryKey: ["plugin-settings", pluginId], queryFn: () => api.pluginSettings(pluginId), enabled: !!item });
   const reports = useQuery({ queryKey: ["reports-v2-catalog"], queryFn: api.reportsV2Catalog, enabled: !!item });
-  const domain = selectedDomain(window.location.search);
-  const resourceCounts = useQuery({
-    queryKey: ["report-v2", "file-audit", "resource-counts", access?.evaluated_at_utc, domain, timeZone],
-    enabled: !!item && fileAudit,
-    refetchInterval: 5_000, retry: false,
-    queryFn: ({ signal }) => {
-      const params = new URLSearchParams({ period: "24h", source_kind: "server", limit: "1", tz: timeZone });
-      if (domain) params.set("file_server_domain", domain);
-      return api.reportV2Data("file-audit.overview", params, signal);
-    },
-  });
+  const counts = useFileAuditResourceCounts(!!item && fileAudit, access?.evaluated_at_utc, timeZone);
+  const setup = useAgentSetup(Boolean(item && (access?.platform_owner || access?.capabilities.includes("access.manage"))));
   const canEdit = !!access && (access.platform_owner === true || access.subject.coarse_role === "admin");
   const change = useMutation({
     mutationFn: ({ item, enabled }: { item: PluginState; enabled: boolean }) => api.setPluginEnabled(item, enabled),
@@ -72,10 +64,10 @@ export function PluginPage({ pluginId, title }: { pluginId: string; title: strin
   const domainPlugin = pluginId === "sli.ad" || pluginId === "sli.gpo";
   const radiusPlugin = pluginId === "sli.remote-access";
   const pluginStatus = item ? t(item.enabled ? "plugins.enabled" : "plugins.status.disabled") : undefined;
-  const counts = resourceCounts.data?.coverage.audit_resources as { servers: number; audited: number; shares: number } | undefined;
-  const statusText = fileAudit ? pluginStatus && counts && !resourceCounts.isError
-    ? t("file-audit.resources.summary", { status: pluginStatus, ...counts }) : pluginStatus
-    : item ? moduleStatusText(item, timeZone) : undefined;
+  const silent = item && !setup.isError ? pluginSilentAgents(item, setup.data?.agent_collection) : 0;
+  const fileSummary = pluginStatus && counts ? t("file-audit.resources.summary", { status: pluginStatus, ...counts }) : pluginStatus;
+  const statusText = fileAudit ? [fileSummary, silent ? t("plugins.silentAgents", { count: silent }) : null].filter(Boolean).join(" · ")
+    : item ? moduleStatusText(item, timeZone, undefined, silent) : undefined;
   const resourcesHref = withDomain("/app/report/file-audit.overview?tab=overview", window.location.search);
   const nextAction = pluginNextAction(item?.status);
   const openAgents = item?.status?.next_action === "connect_file_server" || item?.status?.next_action === "install_workstation_agent"

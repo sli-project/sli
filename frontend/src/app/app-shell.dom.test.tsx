@@ -278,18 +278,21 @@ describe("AppShell", () => {
     expect(within(main).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual(destinations);
   });
 
-  it.each(["error", "lagging"] as const)("keeps %s collection diagnostics out of the header", async (agentState) => {
+  it.each([["online", "0", "1"], ["never_seen", "1", "0"]] as const)("links the header count while an agent is %s", async (connection, silent, online) => {
     state.access = adminAccess;
-    const readCollection = vi.mocked(api.agentCollection).mockClear().mockResolvedValue({
-      agent_collection: { state: agentState === "error" ? "error" : "partial", checked_at_utc: "2026-10-13T00:00:00Z",
-        items: [{ ...fixtureAgent, state: agentState }], active_agents: 1, current_agents: 0 },
+    vi.mocked(api.setupStatus).mockResolvedValueOnce({ api_version: "v1", read_only: true,
+      generated_at_utc: "2026-10-13T00:00:00Z", steps: [], sources: [], domains: [], domain_controllers: [],
+      domain_controller_source: null, report_domain: null, collection: null, agent_collection: { state: "error", checked_at_utc: "2026-10-13T00:00:00Z",
+        items: [{ ...fixtureAgent, connection }], active_agents: 1, current_agents: 0 },
     });
     await renderShell();
     const header = within(screen.getByRole("banner"));
+    const link = await header.findByRole("link", { name: `Агенты ${online}/1` });
+    expect(link.getAttribute("href")).toBe("/agents");
+    expect(link.getAttribute("data-silent")).toBe(silent === "1" ? "true" : null);
     expect(header.queryByRole("status")).toBeNull();
     expect(header.queryByRole("button", { name: /fixture-host/ })).toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(readCollection).not.toHaveBeenCalled();
   });
 
   it("exposes the search icon as a visible keyboard submit action", async () => {

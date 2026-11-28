@@ -20,9 +20,9 @@ public static class SetupCollectionHealth
     static string? Iso(DateTimeOffset? time) => time?.ToString("yyyy-MM-ddTHH:mm:ss.ffffffzzz");
     static long? Age(JsonNode? n, DateTimeOffset now) => Time(n) is { } t ? Math.Max(0, (long)(now - t).TotalSeconds) : null;
     static bool Snapshot(string module) => module is "sli.ad-snapshot" or "sli.gpo-snapshot";
-    internal static JsonArray DataGaps(JsonNode? expiry) => new((expiry as JsonObject ?? new())
+    internal static JsonArray DataGaps(JsonNode? expiry, TimeSpan minimumDuration = default) => new((expiry as JsonObject ?? new())
         .Where(m => m.Value?["data_gap"] is JsonObject gap
-            && Time(gap["from_utc"]) is {} from && Time(gap["to_utc"]) is {} to && from <= to)
+            && Time(gap["from_utc"]) is {} from && Time(gap["to_utc"]) is {} to && to - from >= minimumDuration)
         .Select(m =>
         {
             var gap = new JsonObject
@@ -194,14 +194,14 @@ public static class SetupCollectionHealth
                 .Select(a => T(a["config"]?["source_name"]).Trim()).FirstOrDefault() ?? "";
             if (name == T(agent["host_id"]) || name == T(agent["id"])) name = "";
             if(agent["server_id"] is null) name = string.Join(" · ", new[] { name, T(agent["instance_name"]) }.Where(s => s.Length > 0));
-            var packetStamps = activeChecks.Select(c => Time(c["last_packet_at"])).Where(t => t.HasValue).ToArray();
+            var lastPacket = activeChecks.Select(c => Time(c["last_packet_at"])).Append(Time(agent["last_packet_at"])).Max();
             items.Add(new JsonObject { ["id"] = T(agent["id"]), ["host_id"] = T(agent["host_id"]), ["name"] = name,
                 ["can_restore"]=B(agent["can_restore"]), ["server_id"]=agent["server_id"]?.DeepClone(),["status"]=agent["status"]?.DeepClone(),["agent_version"]=agent["agent_version"]?.DeepClone(),["replaced_by"]=agent["replaced_by"]?.DeepClone(),["identity_conflict"]=B(agent["identity_conflict"]),
                 ["certificate_reissue_required"]=B(agent["certificate_reissue_required"]),
                 ["domains"] = new JsonArray(domains.Select(d => (JsonNode?)JsonValue.Create(d)).ToArray()), ["state"] = stateForAgent, ["connection"] = connection,
-                ["data_gaps"] = DataGaps(agent["packet_expiry"]),
+                ["data_gaps"] = DataGaps(agent["packet_expiry"], TimeSpan.FromMinutes(5)),
                 ["completeness"] = new JsonObject { ["state"] = agent["last_accepted_gap_at"] is null ? "not_assessed" : "known_gaps", ["last_accepted_gap_at"] = Iso(Time(agent["last_accepted_gap_at"])) },
-                ["last_seen"] = Iso(Time(agent["last_seen"])), ["last_packet_at"] = Iso(Time(agent["last_packet_at"]) ?? (packetStamps.Length > 0 ? packetStamps.Max() : null)),
+                ["last_seen"] = Iso(Time(agent["last_seen"])), ["last_packet_at"] = Iso(lastPacket),
                 ["modules"] = modules, ["policy_revision"] = agent["policy_revision"]?.DeepClone(), ["applied_policy_revision"] = agent["applied_policy_revision"]?.DeepClone(),
                 ["collection_interval_seconds"] = interval,
                 ["windows_audit"] = agent["windows_audit"] is JsonObject audit && audit["families"] is JsonObject

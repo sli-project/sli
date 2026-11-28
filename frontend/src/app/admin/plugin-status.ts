@@ -1,4 +1,7 @@
-import type { PluginState } from "../../api/client";
+import { useQuery } from "@tanstack/react-query";
+import { api, type AgentCollectionHealth, type PluginState } from "../../api/client";
+import { selectedDomain } from "../domain-navigation";
+import { agentObservations, isSilentAgent } from "./agent-state";
 import { plural, t, type MessageKey } from "../../i18n";
 import { formatDateTime } from "../../shared/date-time";
 import { EMPTY_VALUE, formatNumber } from "../../shared/format";
@@ -12,6 +15,37 @@ const moduleNames = {
   "sli.sigma": "plugins.sigma",
 } satisfies Record<string, MessageKey>;
 
+const collectionModules: Record<string, string[]> = {
+  "sli.ad": ["sli.windows.ad-dc", "sli.windows.ad-dc-history", "sli.ad-snapshot"],
+  "sli.gpo": ["sli.gpo-snapshot"],
+  "sli.file-audit": ["sli.file-audit"],
+  "sli.workstations": ["sli.workstations"],
+};
+
+export function pluginSilentAgents(item: PluginState, health: AgentCollectionHealth | null | undefined) {
+  if (!item.enabled || !collectionModules[item.plugin_id]) return 0;
+  return [...agentObservations(health).values()].filter((agent) => isSilentAgent(agent)
+    && agent.modules.some((module) => collectionModules[item.plugin_id].includes(module.module_id)
+      && module.channels.some((channel) => channel.state !== "disabled" && channel.state !== "paused"))).length;
+}
+
+type ResourceCounts = { servers: number; audited: number; shares: number };
+
+export function useFileAuditResourceCounts(enabled: boolean, accessRevision: string | undefined, timeZone: string) {
+  const domain = selectedDomain(window.location.search);
+  const query = useQuery({
+    queryKey: ["report-v2", "file-audit", "resource-counts", accessRevision, domain, timeZone],
+    enabled, staleTime: 5_000, refetchInterval: 30_000, retry: false,
+    queryFn: ({ signal }) => {
+      const params = new URLSearchParams({ period: "24h", source_kind: "server", limit: "1", tz: timeZone });
+      if (domain) params.set("file_server_domain", domain);
+      return api.reportV2Data("file-audit.overview", params, signal);
+    },
+  });
+  if (!enabled || query.isError || query.data?.state === "denied" || query.data?.state === "error") return undefined;
+  return query.data?.coverage.audit_resources as ResourceCounts | undefined;
+}
+
 export const moduleRows = (items: PluginState[]) => Object.keys(moduleNames)
   .flatMap((id) => items.filter((item) => item.plugin_id === id));
 export const moduleName = (item: PluginState) => t(moduleNames[item.plugin_id as keyof typeof moduleNames]);
@@ -23,18 +57,19 @@ export function pluginNextAction(status: PluginState["status"]) {
   }
   return status?.next_action ? t(`plugins.next.${status.next_action}`) : undefined;
 }
-export function moduleStatusText(item: PluginState, timeZone: string) {
+export function moduleStatusText(item: PluginState, timeZone: string, serverCount?: number, silentAgents = 0) {
   const status = item.status;
   if (!status) return t("plugins.unavailable");
   if (status.state === "disabled") return t("plugins.status.disabled");
-  const count = item.source_count;
+  const count = item.plugin_id === "sli.file-audit" ? serverCount : item.source_count;
   const noun = item.plugin_id === "sli.file-audit" ? "servers"
     : item.plugin_id === "sli.workstations" ? "computers" : "sources";
   const form = plural(count ?? 0, { one: "one", few: "few", many: "many", other: "many" }) as "one" | "few" | "many";
   const connected = count && count > 0 ? t(`plugins.connected.${noun}.${form}`, { count: formatNumber(count) }) : null;
   let detail: string | null;
   switch (status.state) {
-    case "no_sources": detail = status.reason === "no_collection" && item.plugin_id === "sli.workstations" ? connected : status.reason === "no_folders"
+    case "no_sources": detail = connected && item.plugin_id === "sli.file-audit"
+      ? [connected, t("plugins.status.noFolders")].join(" · ") : status.reason === "no_collection" && item.plugin_id === "sli.workstations" ? connected : status.reason === "no_folders"
       ? [connected, t("plugins.status.noFolders")].filter(Boolean).join(" · ")
       : t("plugins.status.noSources");
       break;
@@ -55,7 +90,8 @@ export function moduleStatusText(item: PluginState, timeZone: string) {
       }
       break;
   }
-  return [t("plugins.enabled"), detail, pluginNextAction(status)].filter(Boolean).join(" · ");
+  return [t("plugins.enabled"), detail, silentAgents ? t("plugins.silentAgents", { count: silentAgents }) : pluginNextAction(status)]
+    .filter(Boolean).join(" · ");
 }
 
 export function moduleSources(item: PluginState) {

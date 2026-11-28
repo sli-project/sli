@@ -125,6 +125,17 @@ it("gives the next action for empty Actions and Permissions tabs", async () => {
   expect(screen.queryByText(t("file-audit.screen.empty_actions"))).toBeNull();
 });
 
+it("shows workstation shares in Audit alongside server shares", async () => {
+  mocks.data.mockImplementation(async (key, params: URLSearchParams) => ({ ...result(key, params), items: [
+    { id: "server", source_name: "fs.example.test", share_name: "Server share", source_kind: "server" },
+    ...(params.has("source_kind") ? [] : [{ id: "workstation", source_name: "pc.example.test", share_name: "Workstation share", source_kind: "workstation" }]),
+  ] }));
+  mount(declaration("file-audit.audit-state"));
+  expect(await screen.findByRole("row", { name: /Server share/ })).toBeTruthy();
+  expect(screen.getByRole("row", { name: /Workstation share/ })).toBeTruthy();
+  expect(screen.getByRole("columnheader", { name: t("systemStatus.computer") })).toBeTruthy();
+});
+
 it("shows the server's agent upgrade requirement on Audit", async () => {
   mocks.data.mockImplementation(async (key, params) => ({ ...result(key, params), items: [{
     id: "fixture-resource", share_name: "Fixture share", audit_receipt: {

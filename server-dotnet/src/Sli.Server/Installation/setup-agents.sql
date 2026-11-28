@@ -38,8 +38,9 @@ select a.id::text, a.host_id::text, a.instance_name, a.status, a.last_seen,
            and a.status='active' and exists(select 1 from jsonb_array_elements(a.assigned_modules) m
                where m->>'module_id'=b.module_id and m->'enabled'='true'::jsonb)) as password_domain_required,
        gap.occurred_at as last_accepted_gap_at, a.packet_expiry,
-       (select max(t) from (select max(received_at) t from sli_agent_receipts where agent_id=a.id
-           union all select max(received_at) from sli_agent_stream_receipts where agent_id=a.id) packets) as last_packet_at
+       (select max(t) from (select max(received_at) t from sli_agent_receipts where agent_id=a.id and module_id<>'sli.heartbeat'
+           union all select max(received_at) from sli_agent_stream_receipts
+               where agent_id=a.id and module_id<>'sli.heartbeat') packets) as last_packet_at
 from sli_agents a
 left join latest_audit issued_version on issued_version.target=a.id::text and issued_version.action='issue'
 left join latest_audit retired on retired.target=a.id::text and retired.action='disable'

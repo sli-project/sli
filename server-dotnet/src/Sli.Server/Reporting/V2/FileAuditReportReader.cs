@@ -67,6 +67,11 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
                 && discovery.Flag("catalog_available");
             if (catalog) discovered = await CatalogRootsAsync(session, discovered, ct);
             if (discovered.Count > 1000) return ReportResult.Create(context.Definition.Key, "partial", coverage: new() { ["state"] = "unknown", ["reason"] = "result_truncated" }, limitations: [new JsonObject { ["code"] = "root_limit", ["text"] = "Область превышает 1000 шар. Уточните назначенную область доступа." }]);
+            bool serversOnly = tab == "overview" && context.Params.Text("source_kind", "server") == "server";
+            if (serversOnly)
+                discovered = new JsonArray(discovered.OfType<JsonObject>()
+                    .Where(root => !root.Flag("workstation") && Text(root, "source_kind") != "workstation")
+                    .Select(root => root.DeepClone()).ToArray());
             roots = new JsonArray(discovered.Where(r => Admitted(context, r!) && (context.Params["source_kind"] is null || (Text(r, "source_kind") ?? "server") == context.Params.Text("source_kind"))).Select(r => r!.DeepClone()).ToArray());
             var selected = Array(context.Params["share"]);
             if (context.Params["file_server_domain"] is { } domain && roots.Count > 0)
@@ -134,7 +139,8 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
             {
                 data["audit_resources"] = new JsonObject
                 {
-                    ["servers"] = readRoots.Select(root => Text(root, "agent_id")).Distinct().Count(),
+                    ["servers"] = readRoots.OfType<JsonObject>().Where(root => !root.Flag("workstation"))
+                        .Select(root => Text(root, "source_instance_id")).Distinct(StringComparer.Ordinal).Count(),
                     ["audited"] = readRoots.Count(root => Text(root, "audit_state") == "enabled"),
                     ["shares"] = readRoots.Count,
                 };
