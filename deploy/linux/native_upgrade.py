@@ -40,6 +40,8 @@ OVERRIDES = Path('/etc/systemd/system')
 RUNTIME_HELPER = Path('/usr/lib/sli/native_runtime.py')
 VOLATILE_UNITS = Path('/run/systemd/system')
 POSTGRES_CONFIG = Path('/etc/postgresql/18/sli')
+# The stand API listened 5 seconds after the target began starting. Allow 10 more seconds.
+UPGRADE_API_READY_SECONDS = 5 + 10
 TERMINAL = {'committed', 'rolled_back', 'failed', 'aborted_before_checkpoint'}
 NEXT = {'preflight': {'fenced', 'recovering'}, 'fenced': {'checkpoint_verified', 'recovering'},
         'checkpoint_verified': {'migrating', 'recovering'},
@@ -1316,21 +1318,24 @@ def start_checked(checked_runtime=None):
     target = 'sli-dotnet.target' if unit_name('api').startswith('sli-dotnet-') else 'sli-runtime.target'
     install.command(['systemctl', 'start', target])
     try:
-        install.wait_api(config)
+        install.wait_api(config, startup_timeout=UPGRADE_API_READY_SECONDS)
     except RuntimeError as error:
         code = failure_code(error)
         if code not in {'native_install_api_unready', 'native_api_tls_untrusted'}:
             raise
         unit = unit_name('api')
         raise install.UnitCommandFailure(unit, None, failure_message(code), code=code) from None
-    install.wait_health()
-    for service in runtime.selected(config):
-        row = runtime.systemd(service)
-        if row.get('ActiveState') != 'active' or int(row.get('MainPID', '0')) <= 1:
-            unit = unit_name(service)
-            exit_code = int(row['ExecMainStatus']) if row.get('ExecMainStatus', '').isdigit() else None
-            raise install.UnitCommandFailure(unit, exit_code, f'{unit} has no active main process.',
-                                             code='native_upgrade_service_unready')
+
+    def check_services():
+        for service in runtime.selected(config):
+            row = runtime.systemd(service)
+            if row.get('ActiveState') != 'active' or int(row.get('MainPID', '0')) <= 1:
+                unit = unit_name(service)
+                exit_code = int(row['ExecMainStatus']) if row.get('ExecMainStatus', '').isdigit() else None
+                raise install.UnitCommandFailure(unit, exit_code, f'{unit} has no active main process.',
+                                                 code='native_upgrade_service_unready')
+
+    install.wait_health(check_services=check_services)
 
 
 def publish(journal, status, *, terminal=True, reason_code=None, **values):
@@ -1524,8 +1529,11 @@ def recover_compatible(journal):
             and not any(event['phase'] == 'committed' for event in journal.value.get('events', [])),
             'native_upgrade_committed_no_rollback')
     remember_backup_schedule(journal)
-    journal.value['recovery_in_progress'] = True
-    journal.write()
+    if not journal.value.get('recovery_in_progress'):
+        reason = failure_code(RuntimeError(journal.value.get('failure_reason_code', '')))
+        print(f'native_upgrade_rollback reason_code={reason}', file=sys.stderr, flush=True)
+        journal.value['recovery_in_progress'] = True
+        journal.write()
     fence()
     if journal.value['status'] != 'recovering':
         if journal.value['step'] == 'before':

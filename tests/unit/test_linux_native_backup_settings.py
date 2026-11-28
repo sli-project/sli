@@ -16,6 +16,24 @@ IDENTITY = {"uuid": "archive-uuid", "target": "/mnt/sli-archives", "fsroot": "/"
 STORAGE_IDENTITY = settings.storage_identity
 
 
+def test_settings_service_sigterm_shuts_down_cleanly(monkeypatch, capsys):
+    from contextlib import suppress
+
+    handlers = {}
+    monkeypatch.setattr(backup.os, "geteuid", lambda: 0, raising=False)
+    monkeypatch.setattr(backup.os, "umask", lambda mode: None)
+    monkeypatch.setattr(backup.signal, "signal", lambda number, handler: handlers.update({number: handler}))
+
+    def serve():
+        with suppress(OSError):  # A client socket may be active during a systemd stop.
+            handlers[backup.signal.SIGTERM](backup.signal.SIGTERM, None)
+        pytest.fail("the stop signal did not unwind the server")
+
+    monkeypatch.setattr(settings, "serve", serve)
+    assert backup.main(["settings"]) == 0
+    assert not capsys.readouterr().err
+
+
 @pytest.fixture
 def coordinator(monkeypatch):
     state, timer = {}, []

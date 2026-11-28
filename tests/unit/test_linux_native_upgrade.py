@@ -1128,8 +1128,8 @@ def test_start_checked_uses_accepted_service_catalog_for_legacy_rollback(monkeyp
                                systemd=lambda service: {'ActiveState': 'active', 'MainPID': '42'})
     monkeypatch.setattr(runtime, 'selected', lambda cfg: (_ for _ in ()).throw(AssertionError('candidate services used')))
     monkeypatch.setattr(install, 'command', lambda argv, **kwargs: calls.append(argv))
-    monkeypatch.setattr(install, 'wait_api', lambda config: None)
-    monkeypatch.setattr(install, 'wait_health', lambda: None)
+    monkeypatch.setattr(install, 'wait_api', lambda config, **kwargs: None)
+    monkeypatch.setattr(install, 'wait_health', lambda *, check_services: check_services())
     monkeypatch.setattr(upgrade.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=1))
     upgrade.start_checked(accepted)
     assert calls == [['systemctl', 'start', 'sli-ready.service'], ['systemctl', 'start', 'sli-runtime.target']]
@@ -1141,8 +1141,8 @@ def test_start_checked_resets_only_selected_service_instances(monkeypatch):
     monkeypatch.setattr(runtime, 'configuration', lambda: config)
     monkeypatch.setattr(runtime, 'systemd', lambda service: {'ActiveState': 'active', 'MainPID': '42'})
     monkeypatch.setattr(install, 'command', lambda argv, **kwargs: calls.append(argv))
-    monkeypatch.setattr(install, 'wait_api', lambda config: None)
-    monkeypatch.setattr(install, 'wait_health', lambda: None)
+    monkeypatch.setattr(install, 'wait_api', lambda config, **kwargs: None)
+    monkeypatch.setattr(install, 'wait_health', lambda *, check_services: check_services())
     failed = {'value': True}
     monkeypatch.setattr(upgrade.subprocess, 'run',
                         lambda argv, **kwargs: SimpleNamespace(returncode=0 if failed['value'] else 1))
