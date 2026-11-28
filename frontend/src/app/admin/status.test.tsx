@@ -156,6 +156,7 @@ it.each(["ru", "en"] as const)("shows a declared data gap as one plain line in %
   const data = setup([{ ...agent }]);
   data.agent_collection!.items[0].data_gaps = [
     ...Array.from({ length: 2 }, () => ({ module_id: "sli.windows.ad-dc", from_utc: "2026-11-01T01:16:00Z", to_utc: "2026-11-15T01:16:00Z" })),
+    { module_id: "sli.windows.ad-dc", from_utc: "2026-11-11T01:16:00Z", to_utc: "2026-11-11T01:20:59Z" },
   ];
   vi.mocked(api.setupStatus).mockResolvedValue(data);
   renderPage();
@@ -411,11 +412,26 @@ it("does not call an enabled channel configured without a saved token and chat",
 it("shows a silent source with its name, last packet time and action", async () => {
   const silent = structuredClone(agent);
   silent.state = "error";
+  silent.last_packet_at = "2026-11-08T01:16:00Z";
   silent.modules[0].channels[0] = { ...silent.modules[0].channels[0], state: "error", failure_reason: "packet_stale", last_packet_at: "2026-11-08T01:16:00Z" };
   vi.mocked(api.setupStatus).mockResolvedValue(setup([silent]));
   renderPage();
-  const fact = await screen.findByText("LAB-DC01 не присылает данные с 08.11, 01:16");
+  const table = within(await screen.findByRole("table", { name: t("systemStatus.sources") }));
+  const fact = table.getByText("LAB-DC01 не присылает данные с 08.11, 01:16");
   expect(within(fact.closest("tr")!).getByText("Проверьте службу SLIAgentNet")).toBeTruthy();
+  expect(screen.queryByText(t("setup.controllers.currentCount", { count: 1 }))).toBeNull();
+});
+
+it("does not call the agent silent when another channel has received data", async () => {
+  const mixed = structuredClone(agent);
+  mixed.state = "error";
+  mixed.modules[0].channels.push({ ...mixed.modules[0].channels[0], channel: "System",
+    state: "error", failure_reason: "packet_stale", last_packet_at: "2026-11-14T00:15:00Z" });
+  vi.mocked(api.setupStatus).mockResolvedValue(setup([mixed]));
+  renderPage();
+  const row = (await screen.findByText(t("systemStatus.source.receiving", { name: agent.name }))).closest("tr")!;
+  expect(within(row).getByText("14.11, 01:15")).toBeTruthy();
+  expect(screen.queryByText(/не присылает данные с/)).toBeNull();
 });
 
 it("keeps the source receiving and the controller step checked during a normal import wait", async () => {

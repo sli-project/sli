@@ -75,6 +75,7 @@ export function FileAuditReport({ definition: initial }: { definition: ReportDef
   const definition = definitionQuery.data;
   const pageSize = fileAuditPageSize(requestedSize, definition?.limits.max ?? initial.limits.max);
   const requestValues: FilterValues = { ...values, view: undefined,
+    source_kind: view === "audit-state" ? undefined : values.source_kind,
     path_search: activity || view === "overview" ? values.path_search : undefined,
     deviations_only: view === "overview" ? values.deviations_only : undefined,
     account_search: activity ? values.account_search : undefined,
@@ -185,7 +186,7 @@ export function FileAuditReport({ definition: initial }: { definition: ReportDef
   const filterOptions = result?.filter_options ?? (lastOptions?.key === optionKey ? lastOptions.options : undefined);
   const serverOptions = filterOptions?.source_instance_id ?? [];
   const previousOptions = definition?.filter_options?.source_instance_id ?? [];
-  const servers = [{ value: "", label: t("file-audit.screen.all_servers") }, ...(result ? serverOptions : previousOptions)];
+  const servers = [{ value: "", label: t(view === "audit-state" ? "reports.metadata.all_computers" : "file-audit.screen.all_servers") }, ...(result ? serverOptions : previousOptions)];
   const shareOptions = (filterOptions?.share ?? definition?.filter_options?.share ?? []).filter(option => {
     if (!values.source_instance_id) return true;
     try { return JSON.parse(option.value)[1] === values.source_instance_id; } catch { return false; }
@@ -194,7 +195,7 @@ export function FileAuditReport({ definition: initial }: { definition: ReportDef
     reset();
     setValues(current => ({ ...current, source_instance_id: source || undefined, share: undefined, path: undefined, device_id: undefined, snapshot_id: undefined }));
   };
-  const serverSelect = <Select label={t("file-audit.workspace.server")} options={servers}
+  const serverSelect = <Select label={t(view === "audit-state" ? "systemStatus.computer" : "file-audit.workspace.server")} options={servers}
     value={String(values.source_instance_id ?? "")} onChange={selectServer}/>;
   const shares = [
     { value: "", label: t("file-audit.activity.all_resources") },

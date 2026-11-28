@@ -78,7 +78,7 @@ export function fileServerColumns(view: Extract<FileServerView, "overview" | "pe
     { ...when("observed_at"), label: t("file-audit.workspace.snapshot") },
   ];
   if (view === "audit-state") return [
-    { key: "source_name", label: t("file-audit.workspace.server"), value: row => hostText(row.source_name, 256) },
+    { key: "source_name", label: t("systemStatus.computer"), value: row => hostText(row.source_name, 256) },
     { key: "resource", label: t("file-audit.workspace.resource_path"), width: "18%", wrap: true, render: resourceName },
     { key: "audit_state", label: t("file-audit.screen.audit"), value: auditStatus },
     { key: "audit_condition", label: t("file-audit.audit.condition"), width: "21%", value: row => fileAuditShare(row)

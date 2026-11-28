@@ -10,6 +10,7 @@ import { AdminRelatedLinks, adminNavigationPath } from "./admin/navigation-pages
 import { THEME_PREFERENCES, setTheme, storedTheme, type ThemePreference } from "./theme";
 import { DomainSwitcher } from "./DomainSwitcher";
 import { selectedDomain } from "./domain-navigation";
+import { agentCounts, useAgentSetup } from "./admin/agent-state";
 import { PageHeaderContext } from "../design-system/PageHeader";
 
 import { DEFAULT_TIME_ZONE, TimeZoneContext } from "../shared/time-zone";
@@ -100,9 +101,9 @@ function ShellContent() {
   const isHome = location.pathname === "/";
   const isReport = location.pathname.startsWith("/report/");
   const isProblemsQueue = location.pathname === "/report/security.problems";
-  const queueAgents = useQuery({ queryKey: ["shell", "agents"], queryFn: api.agentCollection,
-    enabled: isProblemsQueue && Boolean(access.data), staleTime: 60_000, retry: false });
-  const agents = queueAgents.data?.agent_collection;
+  const canViewAgents = Boolean(access.data && (access.data.platform_owner || capabilities.has("access.manage")));
+  const agentSetup = useAgentSetup(canViewAgents);
+  const counts = agentSetup.isError ? null : agentCounts(agentSetup.data?.agent_collection);
   const workspaceAccess = access.data?.capabilities.includes("workspace.view") ? access.data : undefined;
   const domainControl = workspaceAccess && isReport ? (id?: string) => <DomainSwitcher access={workspaceAccess} domain={id}/> : undefined;
   const scopeKey = isHome ? committedSearch : JSON.stringify([selectedDomain(committedSearch), search.get("scope")]);
@@ -188,8 +189,9 @@ function ShellContent() {
           <input id="global-search" name="q" type="search" value={query} onChange={(event) => setQuery(event.target.value)}
             placeholder={t("shell.search.placeholder")} aria-label={t("shell.search.aria")}/>
         </form> : null}
-        {isProblemsQueue && agents && agents.state !== "unavailable" && Number.isFinite(agents.active_agents) && Number.isFinite(agents.current_agents)
-          ? <span className="sli-ds-shell__indicator">{t("problems.queue.agentStatus", { current: agents.current_agents, total: agents.active_agents })}</span> : null}
+        {canViewAgents && counts ? <Link to="/agents" className="sli-ds-shell__indicator" data-silent={counts.silent ? "true" : undefined}>
+          {t("shell.agentsStatus", { current: counts.online, total: counts.total })}
+        </Link> : null}
         <div className="sli-ds-shell__profile" ref={profileMenuRef}>
           <button type="button" className="sli-ds-button sli-ds-shell__control" aria-label={username} aria-haspopup="menu" aria-expanded={profileMenuOpen} onClick={() => setProfileMenuOpen((open) => !open)}>
             <span aria-hidden="true" className="sli-ds-shell__avatar">{initials}</span><span className="sli-ds-shell__label-title" title={username}>{username}</span><Icon name="chevron-down"/>

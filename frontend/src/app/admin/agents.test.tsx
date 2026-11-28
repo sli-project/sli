@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { ApiResponseError, type AgentItem } from "../../api/client";
+import { ApiResponseError, type AgentCollectionHealth, type AgentItem } from "../../api/client";
 import { localeRuntime, setLocale, t } from "../../i18n";
 import { formatDateTime } from "../../shared/date-time";
 
@@ -231,6 +231,25 @@ it("shows disabled computers only in their quick filter and counts each group", 
   expect(screen.getByText("disabled.example.test")).toBeTruthy(); expect(screen.queryByText(agent.host_name!)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Все 1" }));
   expect(screen.queryByText("disabled.example.test")).toBeNull();
+});
+
+it("counts an agent with recent contact but stopped delivery in the silent filter", async () => {
+  const lastContact = new Date().toISOString();
+  const lastPacket = new Date(Date.now() - 3_600_000).toISOString();
+  state.list.mockResolvedValue({ items: [{ ...agent, last_seen: lastContact }] });
+  const observation: AgentCollectionHealth["items"][number] = {
+    id: agent.id, host_id: agent.host_id, name: agent.host_name!, domains: [], href: "/app/agents",
+    state: "error", connection: "online", last_seen: lastContact, last_packet_at: lastPacket,
+    policy_revision: 2, applied_policy_revision: 2,
+    modules: [{ module_id: "sli.workstations", channels: [{ state: "error", failure_reason: "packet_stale",
+      channel: null, last_packet_at: lastPacket, last_import_at: null, import_lag_seconds: null, budget_seconds: 300 }] }],
+  };
+  state.setupStatus.mockResolvedValue({ agent_collection: { state: "error", items: [observation] } });
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "Молчат 1" }));
+  const row = (await screen.findByText(agent.host_name!)).closest("tr")!;
+  expect(within(row).getByText(/не присылает данные с/)).toBeTruthy();
+  expect(within(row).getByText(t("systemStatus.action.agent"))).toBeTruthy();
 });
 
 it("filters silent computers and disabled audit requirements from received observations", async () => {

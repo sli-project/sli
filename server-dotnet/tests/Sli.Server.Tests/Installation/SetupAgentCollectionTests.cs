@@ -9,6 +9,24 @@ namespace Sli.Server.Tests.InstallationSetup;
 // Behavioral vectors from tests/core/test_setup_agent_collection.py.
 public sealed class SetupAgentCollectionTests
 {
+    [Fact]
+    public void Setup_reports_the_newest_receipt_and_retains_gaps_of_at_least_five_minutes()
+    {
+        var now = DateTimeOffset.Parse(Stamp);
+        var agents = Agents();
+        agents[0]!["last_packet_at"] = now.AddMinutes(-2).ToString("O");
+        agents[0]!["packet_expiry"] = O("""
+            {"sli.heartbeat":{"data_gap":{"from_utc":"2026-09-30T23:00:00Z","to_utc":"2026-09-30T23:04:59Z"}},
+             "sli.windows.ad-dc":{"data_gap":{"from_utc":"2026-09-30T23:00:00Z","to_utc":"2026-09-30T23:05:00Z"}}}
+            """);
+        var streams = Streams();
+        streams[0]!["last_packet_at"] = Stamp;
+        var source = Assert.Single(SetupCollectionHealth.View(agents, streams, now)["items"]!.AsArray())!;
+        Assert.Equal(now, DateTimeOffset.Parse(T(source["last_packet_at"])));
+        var gap = Assert.Single(source["data_gaps"]!.AsArray());
+        Assert.Equal(Dc, T(gap!["module_id"]));
+    }
+
     [Theory]
     [InlineData(20, 20, "current", null)]
     [InlineData(20, 900, "current", null)]

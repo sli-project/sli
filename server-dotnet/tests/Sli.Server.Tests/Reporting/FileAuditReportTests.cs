@@ -44,6 +44,13 @@ public sealed class FileAuditReportTests
                   {"Name":"NETLOGON","Path":"C:\\Netlogon"},{"Name":"SYSVOL","Path":"C:\\Sysvol"},
                   {"Name":"ADMIN$","Path":"C:\\Windows"},{"Name":"C$","Path":"C:\\"}]'
             from public.sli_agents where id='11111111-1111-4111-8111-111111111111';
+            insert into public.sli_agents(id,host_id,key_fingerprint,registration_host_name,machine_role,rights_probe)
+            values('33333333-3333-4333-8333-333333333333','44444444-4444-4444-8444-444444444444',
+                repeat('b',64),'workstation.example.test','workstation','{"windows_product_type":"WinNT"}');
+            insert into public.sli_file_audit_smb_catalog(agent_id,source_id,supported_until,request_id,expires_at,cached_at,cached_shares)
+            select id,host_id::text,now()+interval '15 minutes',id,now()-interval '1 minute',now()-interval '6 minutes',
+                '[{"Name":"WorkstationShare","Path":"C:\\Users"}]'
+            from public.sli_agents where id='33333333-3333-4333-8333-333333333333';
             """, ct);
 
         var report = new FileAuditReportReader(new SemanticDatabase(new PostgresConnections(fixture)));
@@ -53,9 +60,10 @@ public sealed class FileAuditReportTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var result = await ReportFixture.Body(response);
         var shares = result["items"]!.AsArray().OfType<JsonObject>().ToDictionary(row => row["share_name"]!.GetValue<string>());
-        Assert.Equal(new[] { "Finance", "NETLOGON", "Projects", "SYSVOL" }, shares.Keys.Order());
+        Assert.Equal(new[] { "Finance", "NETLOGON", "Projects", "SYSVOL", "WorkstationShare" }, shares.Keys.Order());
         Assert.All(shares.Values, row => Assert.Equal("disabled", row["audit_state"]!.GetValue<string>()));
-        Assert.Equal(4, result["coverage"]!["audit_resources"]!["shares"]!.GetValue<int>());
+        Assert.Equal(5, result["coverage"]!["audit_resources"]!["shares"]!.GetValue<int>());
+        Assert.Equal(1, result["coverage"]!["audit_resources"]!["servers"]!.GetValue<int>());
         Assert.Equal("server_file_activity", result["coverage"]!["supported_collection_mode"]!.GetValue<string>());
 
         await using var db = await fixture.Pg.OpenAsync(ct, "adlog_user");

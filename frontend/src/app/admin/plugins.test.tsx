@@ -206,7 +206,7 @@ it("keeps an unassigned file-server module enabled and opens its setup without m
 });
 
 it.each([
-  ["sli.file-audit", "working", null, 1, "Включён · 1 сервер подключён"],
+  ["sli.file-audit", "working", null, 2, "Включён · 1 сервер подключён"],
   ["sli.file-audit", "error", null, 1, "Включён · FS01 подключён, агент устарел · Агент 26.0.136 не может проверить файловый аудит. Обновите его до версии 26.0.154 или новее."],
   ["sli.workstations", "no_sources", "install_workstation_agent", 0, "Включён · Нет подключённых источников · Установите агент SLI на рабочую станцию"],
   ["sli.remote-access", "disabled", null, 0, "Выключен"],
@@ -253,7 +253,7 @@ it.each([
     history: createMemoryHistory({ initialEntries: [href] }), basepath: "/app" });
   mount(<RouterProvider router={router}/>);
   const table = await screen.findByRole("table", { name: t("plugins.title") });
-  expect(within(table).getByRole("cell", { name: expected })).toBeTruthy();
+  expect(await within(table).findByRole("cell", { name: expected })).toBeTruthy();
 });
 
 it("keeps file-server setup and disable hidden for delegated readers", async () => {

@@ -20,6 +20,7 @@ import { AgentEventlogDiagnostics } from "./agent-eventlog-diagnostics";
 import { AgentSequenceRecovery } from "./agent-sequence-recovery";
 import { AgentConsoleEnrollment } from "./agent-console-enrollment";
 import { collectionDiagnosis, missingAuditSetting } from "./collection-diagnosis";
+import { agentAvailability, agentCounts, agentObservations, isSilentAgent, useAgentSetup, type AgentObservation } from "./agent-state";
 import { statusSources } from "./status-view";
 
 export function AgentsPage() {
@@ -93,30 +94,30 @@ function agentUpdateState(update: NonNullable<AgentItem["update"]>): string {
   return t("agents.update.failed", { reason: t(message) });
 }
 
-const silent = (agent: AgentItem) => agent.status === "active" && (!agent.last_seen
-  || Date.now() - Date.parse(agent.last_seen) > Math.max(300, (agent.collection_policy?.interval_seconds ?? 60) * 3) * 1000);
-
-function agentCollectionState(agent: AgentItem, timeZone: string, source?: ReturnType<typeof statusSources>[number]):
+function agentCollectionState(agent: AgentItem, timeZone: string, observed?: AgentObservation, source?: ReturnType<typeof statusSources>[number]):
   { state: string; action: string; href?: string } {
   if (agent.status !== "active") return { state: t("agents.disabled"), action: EMPTY_VALUE };
-  if (silent(agent)) {
-    const state = agent.last_seen ? t("agents.silentSince", { date: formatDateTime(agent.last_seen, timeZone, { withYear: false }) }) : t("agents.notConnected");
+  const availability = agentAvailability(observed ?? agent);
+  if (availability.state === "offline") {
+    const state = availability.since ? t("agents.silentSince", { date: formatDateTime(availability.since, timeZone, { withYear: false }) }) : t("agents.notConnected");
     return { state, action: t("systemStatus.action.agent") };
+  }
+  if (availability.state === "silent") {
+    const state = availability.since ? t("systemStatus.source.silent", { name: agentHostName(agent),
+      time: formatDateTime(availability.since, timeZone, { withYear: false }) }) : source?.state ?? t("agents.notConnected");
+    return { state, action: source?.action ?? t("systemStatus.action.agent") };
   }
   if (!agent.assigned_modules.some((module) => typeof module === "string" || module.enabled)) {
     const role = computerRole(agent);
     return { state: t("agents.connectedWithoutCollection"), action: t("agents.enableCollection"),
       href: role ? `/app/admin/plugins/${rolePlugins[role]}` : "/app/admin/plugins" };
   }
+  if (source?.href) return { state: source.state, action: source.action };
   if (agent.collection_policy && agent.collection_policy.state !== "active") {
     return { state: t("collectionDiagnosis.paused"), action: t("collectionDiagnosis.resume") };
   }
-  const issue = collectionDiagnosis(agent, timeZone, agent.collection_policy?.interval_seconds);
-  const checkService = t("systemStatus.action.agent");
-  if (issue) return { ...issue, action: issue.action === checkService ? t("agents.checkCollection") : issue.action };
-  if (source?.href && source.action !== checkService) return { state: source.state, action: source.action };
-  if (source?.href && computerRole(agent) !== "workstation")
-    return { state: source.state, action: t("agents.checkCollection") };
+  const issue = source ? null : collectionDiagnosis(observed ?? agent, timeZone, agent.collection_policy?.interval_seconds);
+  if (issue) return issue;
   const count = auditDisabled(agent);
   if (count && !dcAuditFailure(agent)) return { state: t("agents.auditOffStatus", { count }), action: t("collectionDiagnosis.auditAction") };
   return { state: t("agents.working"), action: EMPTY_VALUE };
@@ -148,12 +149,15 @@ function dcAuditFailure(agent: AgentItem) {
   return null;
 }
 const moduleId = (module: AgentItem["assigned_modules"][number]) => typeof module === "string" ? module : module.module_id;
-function computers(items: AgentItem[]) {
+function computers(items: AgentItem[], observations: Map<string, AgentObservation>) {
   const hosts = new Map<string, AgentItem>();
   for (const item of items) {
     const previous = hosts.get(item.host_id);
-    if (!previous || item.status === "active" && previous.status !== "active" || item.status === previous.status &&
-      Date.parse(item.last_seen ?? item.created_at ?? "1970-01-01") > Date.parse(previous.last_seen ?? previous.created_at ?? "1970-01-01")) hosts.set(item.host_id, item);
+    const preferred = observations.get(item.host_id)?.id;
+    if (previous && previous.id === preferred) continue;
+    if (!previous || item.id === preferred || item.status === "active" && previous.status !== "active" ||
+      item.status === previous.status && Date.parse(item.last_seen ?? item.created_at ?? "1970-01-01") >
+        Date.parse(previous.last_seen ?? previous.created_at ?? "1970-01-01")) hosts.set(item.host_id, item);
   }
   return [...hosts.values()];
 }
@@ -167,10 +171,16 @@ function AgentsContent() {
   const openPasswordDomain = params.get("configure") === "password-domain";
   const inventory = useInfiniteQuery({ queryKey: ["admin-agents", "pages", agentId], initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) => api.agents(agentId, pageParam), getNextPageParam: (page) => page.next_cursor ?? undefined, refetchInterval: 15_000 });
-  const setup = useQuery({ queryKey: ["setup-status"], queryFn: api.setupStatus, retry: false, refetchInterval: 30_000 });
-  const health = !setup.isError && !setup.data?.agent_collection?.diagnostics ? setup.data?.agent_collection : null;
-  const sources = new Map(statusSources(health, setup.data?.domains ?? [], timeZone).map((row) => [row.id, row]));
-  const collectionState = (agent: AgentItem) => agentCollectionState(agent, timeZone, sources.get(agent.id));
+  const setup = useAgentSetup();
+  const health = setup.isError ? null : setup.data?.agent_collection;
+  const observations = agentObservations(health);
+  const sources = new Map(statusSources(health?.diagnostics ? null : health, setup.data?.domains ?? [], timeZone).map((row) => [row.id, row]));
+  const observed = (agent: AgentItem) => observations.get(agent.host_id || agent.id);
+  const collectionState = (agent: AgentItem) => {
+    const observation = observed(agent);
+    return agentCollectionState(agent, timeZone, observation, sources.get(observation?.id ?? agent.id));
+  };
+  const counts = agentCounts(health);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const linkedAgentFocused = useRef(false);
   useEffect(() => {
@@ -204,6 +214,7 @@ function AgentsContent() {
         setAuditSaved({ id: body.agent_id, at: new Date().toISOString() });
       }
       void client.invalidateQueries({ queryKey: ["admin-agents"] });
+      void client.invalidateQueries({ queryKey: ["setup-status"] });
     } });
   const changePolicy = (kind: "modules" | "policy", body: Record<string, unknown>) => action.mutate({ kind, body });
   const actionError = action.error;
@@ -215,13 +226,13 @@ function AgentsContent() {
     : actionErrorMessage === PASSWORD_DETECTION_DOMAIN_UNAVAILABLE ? "agents.passwordDomain.unavailable" : "agents.actionError";
   const date = (value?: string | null) => formatDateTime(value, timeZone);
   const inventoryItems = inventory.data?.pages.flatMap((page) => page.items) ?? [];
-  const items = computers(inventoryItems.filter((agent) => agent.status !== "replaced"));
+  const items = computers(inventoryItems.filter((agent) => agent.status !== "replaced"), observations);
   const oldAgents = inventoryItems.filter((agent) => agent.status === "replaced" && !agent.removal).map((agent) => ({ ...agent, name: agentHostName(agent) }));
   const selected = inventoryItems.find((item) => item.id === selectedId);
   const rejections = inventory.data?.pages[0]?.rejected_enrollments ?? [];
   const groups = {
     all: [...items.filter((item) => item.status === "active"), ...rejections],
-    silent: items.filter(silent),
+    silent: items.filter((item) => item.status === "active" && isSilentAgent(observed(item) ?? item)),
     auditOff: items.filter((item) => item.status === "active" && (auditDisabled(item) ?? 0) > 0),
     disabled: items.filter((item) => item.status !== "active"),
   };
@@ -262,7 +273,8 @@ function AgentsContent() {
   return <section className="sli-ds-report">
     <PageHeader title={t("agents.title")} actions={addButton}/>
     <FilterChips label={t("agents.title")} value={filter}
-      items={quickFilters.map((key) => ({ key, label: t(`agents.quick.${key}`), count: String(groups[key].length) }))}
+      items={quickFilters.map((key) => ({ key, label: t(`agents.quick.${key}`), count: String(key === "all" ? counts?.total ?? groups.all.length - rejections.length
+        : key === "silent" ? counts?.silent ?? groups.silent.length : groups[key].length) }))}
       onChange={(key) => { const next = quickFilters.find((item) => item === key); if (next) setQuickFilter(next); }}/>
     {inventory.isLoading ? <StateView state="loading"/> : inventory.isLoadingError ? <div><p role="alert">{t("agents.loadError")}</p><button className="sli-ds-button" onClick={() => void inventory.refetch()}>{t("state.retry")}</button></div>
       : groups[filter].length ? <div className="sli-ds-report__views"><DataTable key={filter} localPagination columns={columns} rows={groups[filter]}

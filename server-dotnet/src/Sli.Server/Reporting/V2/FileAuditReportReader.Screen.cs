@@ -12,19 +12,32 @@ public sealed partial class FileAuditReportReader
     {
         var agents = await session.QueryAsync("""
             select a.id::text as agent_id,c.source_id as source_instance_id,a.registration_host_name as source_name,
-                a.policy_revision as audit_policy_revision,a.file_audit as audit, m.config as assigned,c.cached_shares
-            from public.sli_file_audit_smb_catalog c join public.sli_agents a
-                on a.id=c.agent_id and c.source_id=coalesce(a.source_host_id,a.host_id)::text
+                a.policy_revision as audit_policy_revision,a.file_audit as audit, m.config as assigned,c.cached_shares,
+                case a.rights_probe->>'windows_product_type'
+                    when 'WinNT' then true when 'ServerNT' then false when 'LanmanNT' then false
+                    else coalesce(a.machine_role='workstation',false)
+                end as workstation
+            from public.sli_agents a
+            left join (
+                select c.agent_id,c.source_id,c.cached_shares
+                from public.sli_file_audit_smb_catalog c join public.sli_agents registered on registered.id=c.agent_id
+                    and c.source_id=coalesce(registered.source_host_id,registered.host_id)::text
+                where registered.status='active' and c.supported_until>clock_timestamp()
+                    and c.cached_at is not null and jsonb_array_length(c.cached_shares)>0
+                order by c.agent_id
+                limit 1001
+            ) c on a.id=c.agent_id
             left join lateral (
                 select item->'config' as config from jsonb_array_elements(a.assigned_modules) item
                 where item->>'module_id'='sli.file-audit' and item->'enabled'='true'::jsonb
                     and coalesce(item#>>'{config,source_kind}','server')='server'
                 limit 1
             ) m on true
-            where a.status='active' and c.supported_until>clock_timestamp() and c.cached_at is not null
-                and jsonb_array_length(c.cached_shares)>0
-            order by a.id limit 1001
-            """, ct);
+            where c.agent_id is not null or a.id in (select agent_id from jsonb_to_recordset($1::jsonb) r(agent_id uuid))
+            order by c.agent_id nulls last, a.id
+            """, ct, configured);
+        var workstations = agents.OfType<JsonObject>().Where(row => row.Flag("workstation"))
+            .Select(row => Text(row, "agent_id")).ToHashSet(StringComparer.Ordinal);
         var byAgent = configured.OfType<JsonObject>().ToLookup(row => (Text(row, "agent_id"), Text(row, "source_instance_id")));
         var matched = new HashSet<JsonObject>();
         var roots = new JsonArray();
@@ -45,6 +58,7 @@ public sealed partial class FileAuditReportReader
                     ["collection_scope_id"] = FileAuditCatalog.ScopeId(source, name, path),
                     ["share_name"] = name, ["path"] = path,
                 };
+                root["workstation"] = server.Flag("workstation") || Text(root, "source_kind") == "workstation";
                 root["source_name"] = SourceName(previous) ?? Text(server, "source_name");
                 var scope = Text(root, "collection_scope_id")!;
                 var audit = server["audit"];
@@ -85,7 +99,9 @@ public sealed partial class FileAuditReportReader
         foreach (var root in configured.OfType<JsonObject>())
         {
             if (matched.Contains(root)) continue;
-            roots.Add(root.DeepClone());
+            var copy = root.Copy();
+            copy["workstation"] = workstations.Contains(Text(root, "agent_id")) || Text(root, "source_kind") == "workstation";
+            roots.Add(copy);
             if (roots.Count == 1001) break;
         }
         return roots;
