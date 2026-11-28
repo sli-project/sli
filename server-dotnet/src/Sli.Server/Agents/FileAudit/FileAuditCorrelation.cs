@@ -129,14 +129,18 @@ internal static class FileAuditCorrelation
         }
         else if(id==4663) {
             if(S(f["outcome"])!="success") return []; var mask=N(f["access_mask"]);
-            if((mask&1)!=0 && objectType!="directory") operations.Add("read"); if((mask&6)!=0) operations.Add("write"); if((mask&0x10000)!=0) operations.Add("delete_right");
-            if(operations.Count>0 && path is not null && HasHandle(f))
+            if((mask&0x10007)!=0 && path is not null && HasHandle(f))
             {
                 var boundary=Related(item,contexts).Where(x=>I(x["event_id"]) is 4656 or 4658 or 4660).MaxBy(x=>I(x["record_id"]));
                 if(boundary is not null && I(boundary["event_id"])==4656 && S(boundary["facts"]!["outcome"])=="success"
                     && S(boundary["path"]) is { } openPath && UnicodeCaseFold.Fold(openPath)==UnicodeCaseFold.Fold(path))
+                {
                     evidence.Add(Ref(boundary,"handle_context"));
+                    string? openKind = S(boundary["signed_object_kind"]);
+                    if (objectType == "unknown" && openKind is "file" or "directory") objectType = openKind;
+                }
             }
+            if((mask&1)!=0 && objectType!="directory") operations.Add("read"); if((mask&6)!=0) operations.Add("write"); if((mask&0x10000)!=0) operations.Add("delete_right");
         }
         else operations.Add(id switch { 4656 or 5140 or 5145 or 5168=>"access_check",4659=>"delete_right",4670=>"permissions",5142 or 5143 or 5144=>"share_change",4907=>"audit_change",_=>"unknown" });
         string? ip=null,ipSource=null;

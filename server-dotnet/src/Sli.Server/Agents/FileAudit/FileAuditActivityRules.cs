@@ -30,13 +30,15 @@ internal static class FileAuditActivityRules
         foreach(var snapshot in rows) { var kinds=snapshot["objects"]!.AsArray().OfType<JsonObject>().Where(x=>FoldPath(S(x["path"])!)==path).Select(x=>S(x["object_type"])!).Distinct().ToList(); if(kinds.Count==1) return (kinds[0],snapshot); }
         return ("unknown",null);
     }
-    public static JsonArray Evaluate(JsonArray actions,JsonObject config,string agent,string source,JsonArray snapshots,JsonObject? calendar)
+    public static (JsonArray Results, int DistinctFiles, bool MissingKinds) Evaluate(
+        JsonArray actions,JsonObject config,string agent,string source,JsonArray snapshots,JsonObject? calendar)
     {
         var zone=calendar is null ? null : WorkingTime.Validate(calendar);
         var roots=config["roots"]!.AsArray().OfType<JsonObject>().ToDictionary(x=>S(x["collection_scope_id"])!);
         var eligible=new Dictionary<string,(JsonObject Action,JsonObject? Snapshot)>();
         var orderedActions=actions.OfType<JsonObject>().OrderBy(x=>T(x["observed_at"])).ThenBy(x=>S(x["action_id"]),StringComparer.Ordinal);
         var knownKinds=new Dictionary<(string Scope,string Subject,string Path),string>();
+        bool missingKinds = false;
         foreach(var item in orderedActions) {
             string scope=S(item["collection_scope_id"])!,op=S(item["operation"])!,subject=S(item["subject_sid"]) ?? "",path=S(item["path"]) ?? "",state=S(item["correlation_state"])!;
             if(S(item["agent_id"])!=agent || S(item["source_instance_id"])!=source || !roots.TryGetValue(scope,out var root) || subject.Length==0 || config["service_account_exclusions"]!.AsArray().Any(x=>S(x)==subject) || S(item["outcome"])!="success" || op is not ("read" or "write" or "rename" or "delete" or "delete_right") || item["evidence"] is not JsonArray evidence || evidence.Count==0 || path.Length==0 || state is "ambiguous" or "not_attempted" || op=="delete" && state!="complete" || op=="read" && !root["important"]!.GetValue<bool>()) continue;
@@ -46,6 +48,7 @@ internal static class FileAuditActivityRules
                 kind=knownKinds.GetValueOrDefault((scope,subject,FoldPath(S(item["old_path"]) ?? path)),"unknown");
             if(kind=="unknown") (kind,snapshot)=Inventory(item,snapshots);
             if(kind is "file" or "directory") knownKinds[(scope,subject,FoldPath(path))]=kind;
+            if(kind=="unknown" && op is "write" or "rename" or "delete") missingKinds = true;
             if(kind!="file" || op=="delete_right") continue;
             string id=S(item["action_id"])!;
             if(eligible.TryGetValue(id,out var old) && !PythonMetadataEquality.Equal(old.Action,item)) throw new InvalidDataException("file_audit_action_replay_conflict");
@@ -58,6 +61,7 @@ internal static class FileAuditActivityRules
             result.Add(Finding("file-audit.out-of-hours",agent,source,S(item["collection_scope_id"])!,S(item["subject_sid"])!,S(item["observed_at"])!,[item],snapshot is null?[]:[snapshot],details));
         }
         int seconds=config["mass_operation_seconds"]!.GetValue<int>(),threshold=config["mass_operation_files"]!.GetValue<int>();
+        int distinctFiles = 0;
         foreach(var group in ordered.GroupBy(x=>(Scope:S(x.Action["collection_scope_id"])!,Subject:S(x.Action["subject_sid"])!,
             Read:S(x.Action["operation"])=="read"))) {
             var window=new List<(JsonObject Action,JsonObject? Snapshot)>(); (List<(JsonObject Action,JsonObject? Snapshot)> Rows,int Count)? selected=null;
@@ -70,11 +74,13 @@ internal static class FileAuditActivityRules
                 window.RemoveAll(x=>T(x.Action["observed_at"])<cutoff);
                 window.Add(row);
                 int count=DistinctFiles(window.Select(x=>x.Action));
+                if (!group.Key.Read) distinctFiles = Math.Max(distinctFiles,count);
                 if(count>=threshold) selected=(window.ToList(),count); else Emit();
             }
             Emit();
         }
-        return new JsonArray(result.OrderBy(x=>S(x["result_id"]),StringComparer.Ordinal).Select(x=>(JsonNode?)x).ToArray());
+        return (new JsonArray(result.OrderBy(x=>S(x["result_id"]),StringComparer.Ordinal).Select(x=>(JsonNode?)x).ToArray()),
+            distinctFiles,missingKinds);
     }
 
     private static int DistinctFiles(IEnumerable<JsonObject> window)

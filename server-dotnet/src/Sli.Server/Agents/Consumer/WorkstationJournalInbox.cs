@@ -28,8 +28,9 @@ internal static class WorkstationJournalInbox
         var scope = await WorkstationJournalAdmission.ReadAsync(db, tx, agentId, envelope.SourceInstanceId, envelope.PolicyRevision, ct)
             ?? throw new WorkstationPendingException("module_disabled");
 
+        bool transportGap;
         await using (var receipt = new NpgsqlCommand("""
-            select envelope::text,envelope_sha256 from sli_agent_receipts
+            select envelope::text,envelope_sha256,(receipt->'transport_gap'='true'::jsonb) is true from sli_agent_receipts
             where packet_id=@packet and agent_id=@agent and module_id='sli.workstations' and receipt->>'status'='committed'
             """, db, tx))
         {
@@ -39,9 +40,10 @@ internal static class WorkstationJournalInbox
             if (!await stored.ReadAsync(ct) || !WorkstationJsonEquality.Equals(JsonNode.Parse(stored.GetString(0)), row.Envelope)
                 || stored.GetString(1) != Packets.Digest(row.Envelope) || envelope.PayloadSha256 != Packets.Digest(row.Packet))
                 throw new WorkstationPendingException("agent_packet_attestation_invalid");
+            transportGap = stored.GetBoolean(2);
         }
         JsonArray verified;
-        try { verified = AgentWorkstationValidator.Validate(envelope, row.Packet, WorkstationPolicy.Parse(scope.Config), sourceId); }
+        try { verified = AgentWorkstationValidator.Validate(envelope, row.Packet, WorkstationPolicy.Parse(scope.Config), sourceId, transportGap); }
         catch (ProtocolException) { throw new WorkstationPendingException("agent_packet_attestation_invalid"); }
         if (!WorkstationJsonEquality.Equals(verified, row.Rows) || !WorkstationJournalAdmission.MatchesRows(scope, verified))
             throw new WorkstationPendingException("agent_packet_attestation_invalid");

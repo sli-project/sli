@@ -19,7 +19,7 @@ public sealed class DomainEventRowsTests(ITestOutputHelper output)
     static JsonObject Event(int code) => new() { ["event_db_id"] = 1, ["event_id"] = code, ["time_created_utc"] = AdJson.Iso(Attempt) };
 
     [Fact]
-    public async Task Domain_changes_group_one_object_and_initiator_before_counts_and_paging()
+    public async Task Domain_changes_group_one_object_initiator_and_operation_before_paging()
     {
         await using var fixture = new SqlPostgresFixture();
         await fixture.StartAsync(Ct);
@@ -34,25 +34,25 @@ public sealed class DomainEventRowsTests(ITestOutputHelper output)
             "{}", new Dictionary<string, string?>());
         await ShortEventAdmissionPostgresTests.WriteAsync(fixture,
             [Change(1, 4720, 2, 1001, 1002), Change(2, 4722, 5, 1001, 1002), Change(3, 4722, 7, 1001, 1003),
-             Change(4, 4722, 8, 1004, 1002), Change(5, 4722, 62, 1001, 1002)], Ct);
+             Change(4, 4722, 8, 1004, 1002), Change(5, 4722, 62, 1001, 1002),
+             Change(6, 4722, 6, 1001, 1002)], Ct);
         await using var db = new NpgsqlConnection(fixture.Dsn("adlog_user"));
         await db.OpenAsync(Ct);
         var filters = new JsonObject { ["changes_view"] = "all", ["repeat_mode"] = "collapsed" };
         var request = Request(limit: 1, filters: filters) with { Domain = 1 };
         var first = await AdSecurity.ReadAsync(db, request, Ct, null!);
-        Assert.Equal(4, first["filtered_count"]!.GetValue<long>());
-        Assert.Equal(4, first["change_counts"]!["all"]!.GetValue<long>());
+        Assert.Equal(5, first["filtered_count"]!.GetValue<long>());
+        Assert.Equal(6, first["change_counts"]!["all"]!.GetValue<long>());
         Assert.True(first["change_columns"]!["field"]!.GetValue<bool>());
         Assert.False(first["change_columns"]!["result"]!.GetValue<bool>());
         var all = await AdSecurity.ReadAsync(db, request with { Limit = 50 }, Ct, null!);
-        Assert.Equal(new long[] { 5, 4, 3, 2 }, all["items"]!.AsArray().Select(row => row!["event_db_id"]!.GetValue<long>()));
+        Assert.Equal(new long[] { 5, 4, 3, 6, 1 }, all["items"]!.AsArray().Select(row => row!["event_db_id"]!.GetValue<long>()));
         var series = all["items"]![3]!;
         Assert.Equal(2, series["repeat_count"]!.GetValue<long>());
-        Assert.True(series["repeat_mixed_operations"]!.GetValue<bool>());
         var expanded = (JsonObject)filters.DeepClone();
         expanded["batch"] = series["event_db_id"]!.DeepClone();
         var members = await AdSecurity.ReadAsync(db, request with { Limit = 50, Filters = expanded }, Ct, null!);
-        Assert.Equal(new long[] { 2, 1 }, members["items"]!.AsArray().Select(row => row!["event_db_id"]!.GetValue<long>()));
+        Assert.Equal(new long[] { 6, 2 }, members["items"]!.AsArray().Select(row => row!["event_db_id"]!.GetValue<long>()));
     }
 
     [Fact]
