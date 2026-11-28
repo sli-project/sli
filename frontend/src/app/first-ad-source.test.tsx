@@ -125,7 +125,7 @@ it.each(["domain", "domain_id"])("keeps a direct %s on the AD state report when 
 
 it.each([
   ["ad.users.v2", "all", "privileged"],
-  ["ad.computers.v6", "computers", "changes"],
+  ["ad.computers.v6", "checks", "computers"],
 ])("retains both direct selectors when switching denied %s tabs", async (reportKey, initialTab, nextTab) => {
   const previous = window.location.pathname + window.location.search + window.location.hash;
   window.history.replaceState(null, "", "/app/report/" + reportKey + "?domain=7&domain_id=8");

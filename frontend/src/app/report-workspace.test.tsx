@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fixture from "../../../config/navigation_v3.json";
 import type { NavigationRegistryDto } from "../api/report-v2-types";
+import { parseShellSearch, stringifyShellSearch } from "./navigation";
 
 const state = vi.hoisted(() => ({ grants: [] as string[], status: "получены", catalogFails: false }));
 vi.mock("./App", () => ({
@@ -33,7 +34,7 @@ async function renderWorkspace(reportKey: string, query = "", disabled = false) 
   window.history.replaceState(null, "", `/app/report/${reportKey}${query}`);
   const root = createRootRoute();
   const route = createRoute({ getParentRoute: () => root, path: "/report/$reportKey", component: () => <ReportWorkspacePage reportKey={reportKey}/> });
-  const router = createRouter({ routeTree: root.addChildren([route]), basepath: "/app",
+  const router = createRouter({ routeTree: root.addChildren([route]), basepath: "/app", parseSearch: parseShellSearch, stringifySearch: stringifyShellSearch,
     history: createMemoryHistory({ initialEntries: [`/app/report/${reportKey}${query}`] }) });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><RouterProvider router={router}/></QueryClientProvider>);
@@ -61,16 +62,23 @@ describe("registry report workspaces", () => {
     expect(screen.queryByTestId("report")).toBeNull();
   });
 
-  it("keeps a domain_id deep link when switching from computers to logons", async () => {
+  it("keeps the domain and shared period when switching to logons and back", async () => {
     state.grants = ["ad.computers.v6", "ad.computer-logons"];
-    const router = await renderWorkspace("ad.computers.v6", "?domain_id=8");
+    const router = await renderWorkspace("ad.computers.v6", "?domain_id=8&period=custom&from=2026-11-01&to=2026-11-10");
     expect((await screen.findByTestId("report")).textContent).toBe("ad.computers.v6");
     expect(screen.queryByRole("tablist")).toBeNull();
     expect(screen.queryByRole("tab", { name: "Компьютеры" })).toBeNull();
     fireEvent.click(screen.getByRole("tab", { name: "Входы на компьютеры" }));
     await waitFor(() => expect(screen.getByTestId("report").textContent).toBe("ad.computer-logons"));
-    expect(String((router.state.location.search as Record<string, unknown>).domain_id)).toBe("8");
-    expect(new URLSearchParams(router.state.location.searchStr).get("domain_id")).toBe("8");
+    expect(Object.fromEntries(new URLSearchParams(router.state.location.searchStr))).toMatchObject({
+      domain: "8", period: "custom", from: "2026-11-01", to: "2026-11-10",
+    });
+    expect(new URLSearchParams(router.state.location.searchStr).has("domain_id")).toBe(false);
+    fireEvent.click(screen.getByRole("tab", { name: "Требуют проверки" }));
+    await waitFor(() => expect(screen.getByTestId("report").textContent).toBe("ad.computers.v6"));
+    expect(Object.fromEntries(new URLSearchParams(router.state.location.searchStr))).toMatchObject({
+      domain: "8", period: "custom", from: "2026-11-01", to: "2026-11-10", tab: "checks",
+    });
   });
 
   it("gives a logons-only reader a working computers entry without mounting the computer report", async () => {

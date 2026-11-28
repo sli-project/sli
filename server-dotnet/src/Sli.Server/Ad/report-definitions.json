@@ -2589,6 +2589,12 @@
           "kind": "text"
         },
         {
+          "key": "check",
+          "label": "Проверка",
+          "kind": "text",
+          "hidden": true
+        },
+        {
           "key": "object_guid",
           "label": "Computer",
           "kind": "text",
@@ -3251,6 +3257,7 @@
       "domain": [],
       "view": [],
       "q": [],
+      "check": [],
       "type": [],
       "object_guid": [],
       "enabled": [],

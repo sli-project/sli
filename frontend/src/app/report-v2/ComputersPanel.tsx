@@ -12,6 +12,7 @@ import { tableColumns } from "./DetailSection";
 import { withReturnTo } from "./legacy";
 import { ReportState } from "./ReportState";
 import { computerRole } from "../../plugins/ad/ComputerChecks";
+import { AgentStatus, formatAgentStatus } from "../../plugins/ad/ReportAdditions";
 
 type Row = Record<string, unknown>;
 type ObservationRow = Row & { observationKey: string };
@@ -30,15 +31,6 @@ const record = (value: unknown) => (value && typeof value === "object" ? value :
 const dash = () => t("table.noValue");
 const severities = ["critical", "high", "medium", "low", "info"] as const;
 const path = (report: string, filters: Record<string, string>) => `/app/report/${report}?${new URLSearchParams(filters)}`;
-const domainOf = (row: Row) => {
-  const domain = id(row.domain_id);
-  return domain ? { domain } : {} as Record<string, string>;
-};
-
-export function computerEmpty() {
-  return <p role="status">{dash()}</p>;
-}
-
 export function LogonComputerName({ row }: { row: Row }) {
   const name = text(row.display_name) ?? dash();
   const type = row.computer_type;
@@ -60,9 +52,9 @@ export function ComputerLogonsEmpty({ state }: { state: unknown }) {
   }
 }
 
-export function computerLogonsLink(row: Row) {
+export function computerLogonsLink(row: Row, period?: URLSearchParams) {
   const domain = id(row.domain_id);
-  return path("ad.computer-logons", { ...(domain ? { domain_id: domain } : {}), q: text(row.dns_host_name) ?? text(row.display_name) ?? "" });
+  return path("ad.computer-logons", { ...Object.fromEntries(period ?? []), ...(domain ? { domain } : {}), q: text(row.dns_host_name) ?? text(row.display_name) ?? "" });
 }
 
 function eventHref(value: unknown) {
@@ -70,26 +62,37 @@ function eventHref(value: unknown) {
   return event ? withReturnTo(`/app/events/${event}`, `${window.location.pathname}${window.location.search}`) : null;
 }
 
-function eventLink(row: Row) {
-  const href = eventHref(row.source_event_id);
-  return href ? <a href={href} onClick={(event) => event.stopPropagation()}>#{String(row.source_event_id)}</a> : dash();
+function matchText(value: string, query: string) {
+  const match = query ? value.toLocaleLowerCase().indexOf(query.toLocaleLowerCase()) : -1;
+  if (match < 0) return value;
+  return <>{value.slice(0, match)}<mark>{value.slice(match, match + query.length)}</mark>{value.slice(match + query.length)}</>;
 }
 
-export function computerInventoryColumns(columns: ReportColumnDto[], timeZone: string, select: (row: Row) => void): TableColumn<Row>[] {
+export function computerInventoryColumns(columns: ReportColumnDto[], timeZone: string, select: (row: Row) => void, query = ""): TableColumn<Row>[] {
   const displayed = ["display_name", "computer_type", "operating_system", "enabled", "ou_path", "last_logon_utc", "ip_addresses", "laps_state", "sli_agent"];
-  return tableColumns(columns, timeZone).filter((column) => displayed.includes(column.key)).sort((a, b) => displayed.indexOf(a.key) - displayed.indexOf(b.key))
+  const q = query.trim();
+  return tableColumns(columns, timeZone)
+    .filter(({ key }) => displayed.includes(key))
+    .sort((a, b) => displayed.indexOf(a.key) - displayed.indexOf(b.key))
     .map((column) => {
       const overrides: Record<string, Partial<TableColumn<Row>>> = {
-        display_name: { render: (row) => <button type="button" className="sli-ds-table__link" onClick={(event) => {
-          event.stopPropagation(); select(row);
-        }}>{typeof row.enabled === "boolean" ? <span role="img"
-          aria-label={t(row.enabled ? "reports.computers.enabled" : "reports.computers.disabled")}>{row.enabled ? "✓" : "−"} </span> : null}{text(row.display_name) ?? dash()}</button> },
+        display_name: { render: (row) => {
+          const name = text(row.display_name) ?? dash();
+          const dns = text(row.dns_host_name);
+          const matchesDns = dns && q && dns.toLocaleLowerCase().includes(q.toLocaleLowerCase()) && !name.toLocaleLowerCase().includes(q.toLocaleLowerCase());
+          return <><button type="button" className="sli-ds-table__link" onClick={(event) => {
+            event.stopPropagation(); select(row);
+          }}>{typeof row.enabled === "boolean" ? <span role="img"
+            aria-label={t(row.enabled ? "reports.computers.enabled" : "reports.computers.disabled")}>{row.enabled ? "✓" : "−"} </span> : null}{matchText(name, q)}</button>
+            {matchesDns && dns ? <small className="sli-ds-muted">{matchText(dns, q)}</small> : null}</>;
+        } },
         computer_type: { label: t("reports.ad.computers.role"), render: (row) => computerRole(row.computer_type) },
         operating_system: { render: (row) => computerOs(row) ?? dash() },
-        last_logon_utc: { label: t("reports.computers.last_logon"), render: (row) => <ComputerLastLogon row={row}/>, sortable: false },
-        ip_addresses: { label: t("reports.computers.dns"), render: (row) => addressText(row) ?? dash() },
+        last_logon_utc: { label: t("reports.computers.last_logon"),
+          render: (row) => computerLastLogon(row, (stamp) => formatZonedDateTime(stamp, timeZone)), sortable: false },
+        ip_addresses: { label: t("reports.computers.dns"), render: (row) => matchText(addressText(row) ?? dash(), q) },
         laps_state: { label: t("reports.computers.laps"), kind: "datetime", value: (row) => record(row.laps).expiration_utc, render: undefined },
-        sli_agent: { label: t("reports.computers.agent"), render: (row) => agentSignal(row, timeZone) },
+        sli_agent: { label: t("reports.computers.agent"), render: (row) => formatAgentStatus(row, timeZone) },
       };
       return { ...column, ...overrides[column.key], hiddenByDefault: column.key === "display_name" ? undefined : false };
     });
@@ -97,8 +100,7 @@ export function computerInventoryColumns(columns: ReportColumnDto[], timeZone: s
 
 const computerOs = (row: Row) => typeof row.operating_system === "string" && !/^(unknown|none|null|неизвестно)$/i.test(row.operating_system)
   ? text(row.operating_system) : undefined;
-function ComputerLastLogon({ row, withSource = false }: { row: Row; withSource?: boolean }) {
-  const { formatDateTime } = useDateFormatters();
+function computerLastLogon(row: Row, formatDateTime: (stamp: string) => string, withSource = false) {
   const stamp = text(row.last_logon_utc) ?? text(row.ad_last_logon_utc);
   if (stamp) {
     const source = row.last_logon_source;
@@ -114,20 +116,7 @@ function addressText(row: Row) {
   return Array.isArray(values) ? values.filter((value): value is string => typeof value === "string").join(", ") || undefined : undefined;
 }
 
-function agentSignal(row: Row, timeZone: string) {
-  const agent = record(row.sli_agent);
-  if (agent.state === "absent") return dash();
-  if (agent.state !== "installed" && agent.state !== "silent") return t("reports.computers.agent_unknown");
-  const stamp = text(agent.last_seen_utc);
-  const signal = stamp
-    ? t(agent.state === "silent" ? "reports.computers.agent_silent" : "reports.computers.agent_connected", {
-      time: formatZonedDateTime(stamp, timeZone, { withYear: false }),
-    }) : t("agents.notConnected");
-  return [text(agent.version), signal].filter(Boolean).join(" · ");
-}
-
-function ComputerFacts({ row }: { row: Row }) {
-  const { formatDateTime } = useDateFormatters();
+function ComputerImportant({ row }: { row: Row }) {
   const access = useEffectiveAccess();
   const entity = id(row.entity_id);
   const domain = id(row.domain_id);
@@ -140,7 +129,25 @@ function ComputerFacts({ row }: { row: Row }) {
     retry: false,
   });
   const counts = problems.data?.coverage.open_by_severity;
-  const usable = counts && Boolean(allowed) && !problems.isError;
+  const reasons = (Array.isArray(row.reasons) ? row.reasons : []).map(record)
+    .filter((reason) => !reason.code || ["unsupported_os", "unconstrained_delegation", "laps_expired", "stale_activity"].includes(String(reason.code)))
+    .flatMap((reason) => text(reason.label) ?? []);
+  return <>
+    {reasons.length ? <ul>{reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul> : null}
+    {counts && allowed ? <FactList facts={[{ label: t("reports.computers.open_problems"), value: <a href={path("security.problems", filters)}>
+          {severities.some((level) => counts[level]) ? severities.filter((level) => counts[level]).map((level, index) => <span key={level}>
+            {index ? " · " : ""}<SeverityBadge severity={level} label={`${level === "info" ? `● ${t("reports.computers.info")}`
+              : level === "critical" ? t("reports.computers.critical") : t(`shell.severity.${level}`)} ${formatNumber(counts[level] ?? 0)}`}/>
+          </span>) : "0"}
+        </a> }]}/> : null}
+    {problems.isError ? <ReportState state="error" subject={t("reports.computers.open_problems")} onRetry={() => void problems.refetch()}/>
+      : !counts && problems.isFetching ? <ReportState state="loading"/>
+      : !reasons.length && !counts ? <p>{t("reports.computers.no_review_reasons")}</p> : null}
+  </>;
+}
+
+function ComputerFacts({ row }: { row: Row }) {
+  const { formatDateTime } = useDateFormatters();
   const dns = record(row.dns_ip);
   const laps = record(row.laps);
   const agent = record(row.sli_agent);
@@ -153,13 +160,7 @@ function ComputerFacts({ row }: { row: Row }) {
         { label: t("reports.computers.ou"), value: text(row.ou_path) },
         { label: t("reports.ad.computers.role"), value: computerRole(row.computer_type) },
         { label: t("reports.computers.os"), value: computerOs(row) },
-        { label: t("reports.computers.last_logon"), value: <ComputerLastLogon row={row} withSource/> },
-        ...(usable ? [{ label: t("reports.computers.open_problems"), value: <a href={path("security.problems", filters)}>
-          {severities.some((level) => counts[level]) ? severities.filter((level) => counts[level]).map((level, index) => <span key={level}>
-            {index ? " · " : ""}<SeverityBadge severity={level} label={`${level === "info" ? `● ${t("reports.computers.info")}`
-              : level === "critical" ? t("reports.computers.critical") : t(`shell.severity.${level}`)} ${formatNumber(counts[level] ?? 0)}`}/>
-          </span>) : "0"}
-        </a> }] : []),
+        { label: t("reports.computers.last_logon"), value: computerLastLogon(row, formatDateTime, true) },
       ]}/>
     </section>
     {address ? <section>
@@ -169,77 +170,44 @@ function ComputerFacts({ row }: { row: Row }) {
     </section> : null}
     {text(laps.expiration_utc) ? <section>
       <h3 className="sli-ds-section-title">{t("reports.computers.laps")}</h3>
-      <FactList facts={[{ label: t("reports.computers.attribute"), value: text(laps.source_attribute) },
-        { label: t("reports.computers.expiration"), value: <>{formatDateTime(text(laps.expiration_utc))}
+      <FactList facts={[{ label: t("reports.computers.expiration"), value: <>{formatDateTime(text(laps.expiration_utc))}
           {laps.state === "expired" ? ` · ${t("reports.v2.ad.computers.v6.columns.laps_state.labels.expired")}` : null}</> }]}/>
     </section> : null}
     {["installed", "silent", "absent"].includes(String(agent.state)) ? <section>
       <h3 className="sli-ds-section-title">{t("reports.computers.agent")}</h3>
       <FactList facts={[
-        { label: t("reports.computers.registration"), value: t(agent.state === "absent" ? "reports.computers.no_registration" : "reports.computers.registered") },
-        ...(agent.last_seen_utc ? [{ label: t("reports.computers.signal"), value: formatDateTime(text(agent.last_seen_utc)) }] : []),
-        ...(agent.version ? [{ label: t("reports.computers.agent_version"), value: text(agent.version) }] : []),
+        { label: t("reports.computers.registration"), value: <AgentStatus row={row}/> },
       ]}/>
     </section> : null}
   </>;
 }
 
-const hostEvents = {
-  "4697": "events.semantic.Security:Microsoft-Windows-Security-Auditing:4697.title",
-  "4698": "events.semantic.Security:Microsoft-Windows-Security-Auditing:4698.title",
-  "4699": "events.semantic.Security:Microsoft-Windows-Security-Auditing:4699.title",
-  "4700": "events.semantic.Security:Microsoft-Windows-Security-Auditing:4700.title",
-  "4701": "events.semantic.Security:Microsoft-Windows-Security-Auditing:4701.title",
-  "4702": "events.semantic.Security:Microsoft-Windows-Security-Auditing:4702.title",
-  "7045": "events.semantic.System:Service Control Manager:7045.title",
-} as const;
-
-function ComputerChanges({ row, columns, timeZone }: { row: Row; columns: ReportColumnDto[]; timeZone: string }) {
-  const guid = text(row.object_guid);
-  const params = new URLSearchParams({ ...domainOf(row), tab: "changes", object_guid: guid ?? "", limit: "50", tz: timeZone });
-  const query = useInfiniteQuery({
-    queryKey: ["report-v2", "computer-changes", params.toString()],
-    queryFn: ({ pageParam }) => {
-      const page = new URLSearchParams(params);
-      if (pageParam) page.set("cursor", pageParam);
-      return api.reportV2Data("ad.computers.v6", page);
-    },
-    enabled: Boolean(guid),
-    initialPageParam: null as string | null,
-    getNextPageParam: (page) => page.has_more ? page.next_cursor : null,
+function ComputerChangesLink({ entity, domain, period, timeZone }: { entity: string; domain: string; period: URLSearchParams; timeZone: string }) {
+  const report = "security.events.chains";
+  const filters = { ...Object.fromEntries(period), domain, entity_id: entity, changes_view: "all", repeat_mode: "collapsed" };
+  const { data } = useQuery({
+    queryKey: ["report-v2", "computer-domain-changes", filters, timeZone],
+    queryFn: () => api.reportV2Data(report, new URLSearchParams({ ...filters, tz: timeZone, limit: "1" })),
     retry: false,
   });
-  const rows = query.data?.pages.flatMap((page) => page.items) ?? [];
-  const state = query.data?.pages[0]?.state;
-  if (query.isLoading) return <ReportState state="loading"/>;
-  if (state === "denied" || query.error instanceof ApiResponseError && query.error.status === 403) return <ReportState state="denied"/>;
-  if (query.isError || state === "error") return <ReportState state="error" subject={t("reports.computers.changes")} onRetry={() => void query.refetch()}/>;
-  const changeColumns = tableColumns(columns.filter((column) =>
-    (column.path === "observed_at_utc" || ["change_type", "before", "after", "actor"].includes(column.key))
-    && (column.key !== "actor" || rows.some((change) => change.actor))), timeZone).map((column) => column.key === "change_type" ? {
-    ...column, render: (row: Row) => {
-      const hostEvent = row.change_type === "host_event" && hostEvents[String(row.event_id) as keyof typeof hostEvents];
-      if (hostEvent) return <>{t(hostEvent)}{row.host_object ? ` · ${String(row.host_object)}` : null}</>;
-      if (row.change_type === "membership_added" || row.change_type === "membership_removed")
-        return <>{t(`reports.computers.${row.change_type}`)}{row.group_name ? ` · ${String(row.group_name)}` : null}</>;
-      return column.render ? column.render(row) : column.value?.(row) as string ?? dash();
-    },
-    } : column.key === "actor" ? { ...column, label: t("reports.computers.initiator") } : column);
-  if (rows.some((change) => change.source_event_id)) changeColumns.push({ key: "source_event_id", label: t("reports.computers.source_event"), render: eventLink });
-  return rows.length ? <DataTable caption={t("reports.computers.changes")} columns={changeColumns}
-    rows={rows} rowKey={(change) => String(change.row_id)} hasMore={query.hasNextPage} loadingMore={query.isFetchingNextPage} onLoadMore={() => void query.fetchNextPage()}/> : computerEmpty();
+  const total = data?.state === "ok" || data?.state === "empty" ? data.filtered_count : null;
+  return <a className="sli-ds-button" href={path(report, filters)}>
+    {total == null ? t("reports.computers.domain_changes") : t("reports.computers.domain_changes_count", { count: formatNumber(total) })} →
+  </a>;
 }
 
 function Observations({ row, params, strip }: { row: Row; params: string; strip: boolean }) {
   const entity = id(row.entity_id);
+  const domain = id(row.domain_id);
   const { formatDateTime } = useDateFormatters();
   const [selectedKey, selectObservation] = useState<string>();
   const query = useInfiniteQuery({
-    queryKey: ["report-v2", "computer-observations", entity, params],
+    queryKey: ["report-v2", "computer-observations", entity, domain, params],
     queryFn: ({ pageParam }) => {
       const url = new URLSearchParams(params);
       url.delete("sort");
       url.delete("direction");
+      if (domain && !url.has("domain") && !url.has("domain_id")) url.set("domain", domain);
       url.set("limit", "50");
       if (pageParam) url.set("cursor", pageParam);
       return api.reportV2Detail("ad.computer-logons", entity!, url);
@@ -298,7 +266,7 @@ function Observations({ row, params, strip }: { row: Row; params: string; strip:
   </>;
 }
 
-function StoredLogons({ computer, params, timeZone }: { computer: string; params: string; timeZone: string }) {
+function StoredLogons({ computer, destination, params, timeZone }: { computer: string; destination: string; params: string; timeZone: string }) {
   const [pageSize, setPageSize] = useState(50);
   const [index, setIndex] = useState(0);
   const query = useInfiniteQuery({
@@ -320,9 +288,16 @@ function StoredLogons({ computer, params, timeZone }: { computer: string; params
   if (query.isLoading) return <ReportState state="loading"/>;
   if (page?.state === "denied" || query.error instanceof ApiResponseError && query.error.status === 403) return <ReportState state="denied"/>;
   if (query.isError || page?.state === "error") return <ReportState state="error" subject={subject} onRetry={() => void query.refetch()}/>;
+  const host = (value: string) => value.trim().replace(/\.$/, "").toLowerCase();
+  const sourceOf = (row: Row) => {
+    const source = text(row.source);
+    const name = text(row.workstation_name) ?? source?.split(" / ")[0];
+    if (name && host(name) === host(destination)) return text(row.ip_address) ?? source?.split(" / ")[1];
+    return source;
+  };
   const rows: StoredLogonRow[] = (page?.items ?? []).map((row) => ({
     row_id: String(row.row_id), observed_at_utc: text(row.observed_at_utc), user_name: text(row.user_name),
-    logon_type: text(row.logon_type), source: text(row.source),
+    logon_type: text(row.logon_type), source: sourceOf(row),
     repeat_count: Number(row.repeat_count), source_event_id: id(row.source_event_id),
   }));
   const columns: TableColumn<StoredLogonRow>[] = [
@@ -340,7 +315,7 @@ function StoredLogons({ computer, params, timeZone }: { computer: string; params
       const label = t(key);
       return label === key ? row.logon_type : label;
     } },
-    { key: "source", label: t("reports.v2.ad.computer-logons.detail.columns.source.label") },
+    ...(rows.some((row) => row.source) ? [{ key: "source", label: t("reports.v2.ad.computer-logons.detail.columns.source.label") }] : []),
   ];
   return <DataTable caption={subject} columns={columns} rows={rows} rowKey={(row) => row.row_id} compact wrapCells="all"
     emptyContent={t("reports.states.empty.text")} showFooter={rows.length > 0}
@@ -354,38 +329,42 @@ function StoredLogons({ computer, params, timeZone }: { computer: string; params
       } : undefined }}/>
 }
 
-export function ComputerPanel({ row, logons, logonParams, changes, canCompare, onClose, timeZone }: {
-  row: Row; logons: boolean; logonParams: string; changes: ReportColumnDto[]; canCompare: boolean; onClose: () => void; timeZone: string;
+export function ComputerPanel({ row, logons, logonParams, period, onClose, timeZone }: {
+  row: Row; logons: boolean; logonParams: string; period?: URLSearchParams; onClose: () => void; timeZone: string;
 }) {
-  const [tab, setTab] = useState(canCompare && row.object_guid && row.change_type ? "changes" : "facts");
+  const [tab, setTab] = useState("important");
   const [expanded, setExpanded] = useState(false);
   const access = useEffectiveAccess();
   const canSee = (key: string) => access?.reports.some((report) => report.allowed && report.report_key === key);
   const logonsAllowed = row.computer_type === "workstation" && Boolean(id(row.entity_id)) && canSee("ad.computer-logons");
   const entity = id(row.entity_id);
+  const domain = id(row.domain_id);
   const name = text(row.display_name) ?? text(row.name) ?? dash();
   const computer = logons ? text(row.computer_key) : undefined;
   if (computer) return <DetailDrawer open inline inlineKeyboard={false} title={name} onClose={onClose}>
-    <StoredLogons key={JSON.stringify([computer, logonParams])} computer={computer} params={logonParams} timeZone={timeZone}/>
+    <StoredLogons key={JSON.stringify([computer, logonParams])} computer={computer} destination={name} params={logonParams} timeZone={timeZone}/>
   </DetailDrawer>;
   const observations = <Observations key={JSON.stringify([entity, logonParams])} row={row} params={logonParams} strip={!logons}/>;
   const tabs = [
+    { key: "important", label: "reports.computers.important" },
     { key: "facts", label: "reports.computers.details" },
-    ...(canCompare && row.object_guid ? [{ key: "changes", label: "reports.computers.changes" }] : []),
     ...(logonsAllowed ? [{ key: "logons", label: "reports.computers.logons_tab" }] : []),
   ];
-  const footer = !logons && tab === "facts" ? <>
-    {logonsAllowed ? <a href={computerLogonsLink(row)} className="sli-ds-button">{t("reports.computers.logons_link")}</a> : null}
+  const changesPeriod = new URLSearchParams(logonParams);
+  changesPeriod.delete("tz");
+  const footer = !logons ? <>
+    {logonsAllowed ? <a href={computerLogonsLink(row, period)} className="sli-ds-button">{t("reports.computers.logons_link")}</a> : null}
     {entity && access?.capabilities.includes("objects.computers") ? <a href={`/app/entities/${entity}`} className="sli-ds-button">{t("reports.computers.open_ad")}</a> : null}
     {entity && canSee("events.explorer") ? <a href={path("events.journal", { q: text(row.dns_host_name) ?? name })} className="sli-ds-button">{t("reports.computers.journal")}</a> : null}
-    {tabs.some((item) => item.key === "changes") ? <Button variant="primary" onClick={() => setTab("changes")}>{t("reports.computers.compare")}</Button> : null}
+    {entity && domain && canSee("security.events.chains") ?
+      <ComputerChangesLink entity={entity} domain={domain} period={changesPeriod} timeZone={timeZone}/> : null}
   </> : undefined;
   return <DetailDrawer open inline={!expanded} title={name} subtitle={logons ? t("reports.computers.observations") : text(row.dns_host_name)}
     onClose={expanded ? () => setExpanded(false) : onClose} footer={footer}
     inlineKeyboard={false} headerActions={!expanded ? <Button variant="ghost" aria-label={t("reports.computers.expand")} onClick={() => setExpanded(true)}>↗</Button> : undefined}>
     {logons ? observations : <Tabs items={tabs.map((item) => ({ ...item, label: t(item.label as MessageKey) }))} active={tab} onChange={setTab}>
       <TabList label={t("reports.computers.details")}/>
-      <TabPanel>{tab === "changes" ? <ComputerChanges row={row} columns={changes} timeZone={timeZone}/>
+      <TabPanel>{tab === "important" ? <ComputerImportant row={row}/>
         : tab === "logons" ? observations
         : <ComputerFacts row={row}/>}</TabPanel>
     </Tabs>}

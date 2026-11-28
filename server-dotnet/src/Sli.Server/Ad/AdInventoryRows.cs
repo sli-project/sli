@@ -207,7 +207,7 @@ internal static class AdInventoryRows
         long? directoryUac = rawUac is null or 0 ? ComputerUac(directory?["user_account_control"]) : null;
         long? uac = directoryUac ?? rawUac;
         row["user_account_control"] = uac;
-        string type = ((uac ?? 0) & 8192) != 0 ? "domain_controller" : collectedRole ??
+        string type = AdComputerPosture.IsDomainController(raw, uac) ? "domain_controller" : collectedRole ??
             (os?.Contains("server", StringComparison.OrdinalIgnoreCase) == true ? "server" :
              os?.Contains("windows", StringComparison.OrdinalIgnoreCase) == true ? "workstation" : "unknown");
         bool? enabled = directoryUac is > 0 ? (directoryUac.Value & 2) == 0
@@ -223,10 +223,7 @@ internal static class AdInventoryRows
         row["ip_addresses"] = Array((raw["ipv4s"] as JsonArray ?? []).Concat(raw["ipv6s"] as JsonArray ?? []).Select(n => n!.ToString())); row["ip_text"] = string.Join(", ", row["ip_addresses"]!.AsArray().Select(n => n!.ToString()));
         row["ad_site"] = Obj(new { state = raw.Text("adSite") is null ? "not_collected" : "observed", value = raw.Text("adSite") }); row["site_text"] = raw["adSite"]?.DeepClone(); row["ou_path"] = AdUsersSnapshot.Ou(raw.Text("distinguishedName"));
         row["evidence"] = new JsonObject { ["source_states"] = raw["sources"]?.DeepClone(), ["attribute_states"] = new JsonObject() };
-        var reasons = new List<JsonObject>();
-        void Reason(bool match, string code, string label) { if (match) reasons.Add(Obj(new { code, label })); }
-        Reason(type == "unknown", "unknown_type", "Тип объекта не определён"); Reason(enabled == true && age > threshold, "stale_activity", "Активность старше " + threshold + " дней"); Reason(enabled == true && age is null, "unavailable_activity", "Нет доступной даты активности"); Reason((raw.Int("userAccountControl") & 524288) != 0 || Bool(raw["trustedForDelegation"]) == true, "unconstrained_delegation", "Неограниченное делегирование");
-        row["reasons"] = Array(reasons); row["reason_text"] = string.Join(", ", reasons.Select(r => r.Text("label"))); row["quality_issues"] = new JsonArray(); row["quality_text"] = null; row["semantic_findings"] = new JsonArray();
+        row["quality_issues"] = new JsonArray(); row["quality_text"] = null; row["semantic_findings"] = new JsonArray();
         row["ad_last_logon_utc"] = directoryLogon is {} adLogon ? PythonIso(adLogon) : null;
 
         var eventLogon = Date(raw["eventLastSeen"]);
@@ -286,7 +283,7 @@ internal static class AdInventoryRows
         var reasons=new List<JsonObject>();JsonObject Add(string code){var r=(JsonObject)ComputerTemplates[code]!.DeepClone();reasons.Add(r);return r;}
         var end=AdComputerPosture.SupportEnd(row.Text("operating_system"),row.Text("operating_system_version"));
         if(end is not null&&at.Date>end.Value.Date){var r=Add("unsupported_os");string date=end.Value.ToString("yyyy-MM-dd",CultureInfo.InvariantCulture);r["observed"]=$"{row.Text("operating_system")}; окончание расширенной поддержки Microsoft: {date}.";r["support_end_date"]=date;r["operating_system"]=row["operating_system"]?.DeepClone();r["policy_version"]="microsoft-lifecycle-2026-10-16";}
-        if(Bool(row["delegation"]?["unconstrained"])==true)Add("unconstrained_delegation");
+        if (AdComputerPosture.UnconstrainedDelegationRisk(row) == true) Add("unconstrained_delegation");
         if(row["laps"]?.Text("state")=="expired"){var r=Add("laps_expired");r["observed"]=$"Плановый срок: {row["laps"]!.Text("expiration_utc")}.";r["expiration_utc"]=row["laps"]!["expiration_utc"]?.DeepClone();}
         if(row["quality_issues"]!.AsArray().Any(i=>i!.Text("code") is "source_failed" or "source_error"))Add("source_error");
         if(row.Text("computer_type")=="unknown")Add("unknown_type");
@@ -310,18 +307,29 @@ internal static class AdInventoryRows
         }
         row["reasons"]=Array(reasons);row["reason_text"]=string.Join(", ",reasons.Select(r=>r.Text("label")));
     }
+    static string Fold(string value) => string.Join(' ', value.Normalize(System.Text.NormalizationForm.FormKC)
+        .ToLowerInvariant().Replace('ё', 'е').Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+    internal static bool MatchesComputerSearch(JsonObject raw, string? query, JsonNode? dns = null)
+    {
+        if (string.IsNullOrWhiteSpace(query)) return true;
+        string needle = Fold(query);
+        return new[] { raw.Text("name"), raw.Text("dnsHostName") }
+            .Concat(((dns ?? AdComputerPosture.Dns(raw))["addresses"] as JsonArray ?? []).Select(address => address?.ToString()))
+            .Any(value => value is not null && Fold(value).Contains(needle, StringComparison.Ordinal));
+    }
+
     public static bool Matches(AdV2Request request, JsonObject raw, JsonObject row, bool users)
     {
-        string Fold(string value)=>string.Join(' ',value.Normalize(System.Text.NormalizationForm.FormKC).ToLowerInvariant().Replace('ё','е').Split((char[]?)null,StringSplitOptions.RemoveEmptyEntries));
-        string? q = request.Params.Text("q"); if(q is not null)
+        string? q = request.Params.Text("q");
+        if (users && q is not null)
         {
-            string text = users
-                ? string.Join(' ', new[] { "display_name", "account_display_name", "sam", "upn", "mail", "phones", "department", "company", "title", "manager", "ou", "employee_id", "sid", "guid" }
+            string text = string.Join(' ', new[] { "display_name", "account_display_name", "sam", "upn", "mail", "phones", "department", "company", "title", "manager", "ou", "employee_id", "sid", "guid" }
                     .Select(row.Text).Concat(new[] { "direct_groups", "watch_groups", "privilege_basis" }
-                        .SelectMany(key => (row[key] as JsonArray ?? []).Select(group => group?.ToString()))))
-                : string.Join(' ',new[]{"display_name","natural_key","dns_host_name","distinguished_name","ou_path","operating_system","operating_system_version","operating_system_build","object_guid","object_sid","canonical_name","location","managed_by","description","site_text"}.Select(row.Text).Concat((row["ip_addresses"] as JsonArray??[]).Select(n=>n?.ToString())).Concat((row["service_principal_names"] as JsonArray??[]).Select(n=>n?.ToString())).Concat((row["reasons"] as JsonArray??[]).SelectMany(r=>new[]{"code","label","observed","condition","qualification","limitation","next_action"}.Select(r!.Text))).Concat((row["quality_issues"] as JsonArray??[]).SelectMany(r=>new[]{r!.Text("code"),r.Text("label")})));
+                        .SelectMany(key => (row[key] as JsonArray ?? []).Select(group => group?.ToString()))));
             if(!Fold(text).Contains(Fold(q),StringComparison.Ordinal))return false;
         }
+        if (!users && !MatchesComputerSearch(raw, q, row["dns_ip"])) return false;
         foreach (string key in users ? new[] { "department", "company", "ou" } : new[] { "os", "os_version", "os_family", "ou", "ad_site", "type", "enabled" })
         {
             string field = key switch { "os" => "operating_system", "os_version" => "operating_system_version", "os_family" => "operating_system_family", "ou" when !users => "ou_path", "ad_site" => "site_text", "type" => "computer_type", "enabled" => "account_state", "activity" => "activity_state", _ => key };

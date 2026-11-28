@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Sli.Server.Ad;
 using Sli.Server.Infrastructure;
@@ -10,6 +11,20 @@ namespace Sli.Server.Tests.Ad;
 
 public sealed class AdComputerLogonActivityTests
 {
+    [Fact]
+    public void Logons_accept_the_computers_domain_and_keep_the_exact_period_and_scope()
+    {
+        var request = new DefaultHttpContext().Request;
+        request.QueryString = new("?domain=2&period=custom&from=2026-11-01T00:00:00Z&to=2026-11-08T00:00:00Z");
+        var parsed = AdV2Endpoints.Parse(request, "ad.computer-logons", "view", [2, 3]);
+        Assert.Equal(new long[] { 2 }, parsed.Domains);
+        Assert.Equal(DateTimeOffset.Parse("2026-11-01T00:00:00Z"), parsed.Params["period"]!.Time("from_utc"));
+        Assert.Equal(DateTimeOffset.Parse("2026-11-08T00:00:00Z"), parsed.Params["period"]!.Time("to_utc"));
+        Assert.Throws<AdAccessException>(() => AdV2Endpoints.Parse(request, "ad.computer-logons", "view", [3]));
+        request.QueryString = new("?domain=2&domain_id=3");
+        Assert.Throws<AdInputException>(() => AdV2Endpoints.Parse(request, "ad.computer-logons", "view", [2, 3]));
+    }
+
     [Fact]
     public async Task Stored_logons_count_at_the_destination_and_page_groups_within_the_granted_domain()
     {

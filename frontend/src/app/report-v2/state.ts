@@ -4,7 +4,7 @@ import { reportEnumText } from "../../i18n/report-metadata";
 import { t } from "../../i18n";
 import { withDomain } from "../domain-navigation";
 
-export const AD_DOMAIN_REPORTS: ReadonlySet<string> = new Set(["ad.users.v2", "ad.computers.v6", "ad.infrastructure", "security.events.chains"]);
+export const AD_DOMAIN_REPORTS: ReadonlySet<string> = new Set(["ad.users.v2", "ad.computers.v6", "ad.computer-logons", "ad.infrastructure", "security.events.chains"]);
 const DOMAIN_SELECTORS = ["domain", "domain_id"] as const;
 
 /** VPN source branches load independently; NPS policy tabs do not need Accounting. */
@@ -98,11 +98,13 @@ export function valuesFromSearch(definition: ReportDefinitionDto, search: URLSea
       }
     }
   }
-  if (definition.key === "ad.computer-logons" && !search.has("domain_id") && search.has("domain"))
-    values.domain_id = search.get("domain") ?? undefined;
-  if (definition.key === "ad.computers.v6" && values.domain_id && !values.domain && definition.params.some((param) => param.key === "domain" && !param.hidden)) {
-    values.domain = values.domain_id;
-    delete values.domain_id;
+  if (["ad.computers.v6", "ad.computer-logons"].includes(definition.key)) {
+    const canonical = definition.params.some((param) => param.key === "domain" && !param.hidden);
+    const domain = values.domain ?? values.domain_id;
+    if (domain && canonical && (!values.domain || !values.domain_id || values.domain === values.domain_id)) {
+      values.domain = domain;
+      delete values.domain_id;
+    }
   }
   return values;
 }
@@ -150,7 +152,7 @@ export function apiParams(definition: ReportDefinitionDto, values: FilterValues,
   if (definition.key === "security.events.chains" && options.view === "events") {
     for (const key of ["caller", "failure_code", "min_repeats", "failure_window", "persistence_type", "persistence_path", "persistence_change", "persistence_rarity", "activity_type", "minimum_delay", "revocation_window", "identity_scope"]) params.delete(key);
   }
-  if (definition.key === "ad.gpo.v2" && options.view !== "changes") {
+  if (definition.key === "ad.computers.v6" || definition.key === "ad.gpo.v2" && options.view !== "changes") {
     for (const key of ["period", "from", "to"]) params.delete(key);
   }
   params.set("tz", options.timeZone);
@@ -163,7 +165,7 @@ export function apiParams(definition: ReportDefinitionDto, values: FilterValues,
 export function valuesReady(definition: ReportDefinitionDto, values: FilterValues, view?: string): boolean {
   if (definition.key === "security.events.chains" && ["persistence-changes", "account-revocation", "lockout-recurring", "chains"].includes(view ?? "") && !values.domain) return false;
   return definition.params.every((param) => {
-    if (definition.key === "ad.gpo.v2" && view !== "changes" && param.kind === "period") return true;
+    if (param.kind === "period" && (definition.key === "ad.computers.v6" || definition.key === "ad.gpo.v2" && view !== "changes")) return true;
     const value = values[param.key];
     if (param.kind === "period") {
       const period = value as PeriodValue | undefined;
