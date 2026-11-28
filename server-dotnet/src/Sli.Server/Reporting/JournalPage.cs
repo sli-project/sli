@@ -11,6 +11,7 @@ internal sealed record JournalOptions(bool Collapse, long? Expand, long? Before,
     internal long? ServerId { get; init; }
     internal string? SourceInstanceId { get; init; }
     internal string? SourcePlugin { get; init; }
+    internal string? StationProgram { get; init; }
     internal bool PageOnly { get; init; }
 }
 
@@ -64,6 +65,12 @@ internal static class JournalPage
             if (!technical) sql.Predicates.Add("false");
             sql.Predicates.Add("event.method#>>'{$origin,plugin_id}'=" + sql.Parameter(sourcePlugin));
         }
+        if (options.StationProgram is { Length: > 0 } program)
+            sql.Predicates.Add(workstation && security && options.ServerId is not null
+                ? "event.event_id=4688 and event.channel='Security' and event.provider_name='Microsoft-Windows-Security-Auditing' and "
+                  + Fold("replace(event.fields->>'NewProcessName','/',chr(92))") + "="
+                  + Fold("replace(" + sql.Parameter(program) + "::text,'/',chr(92))")
+                : "false");
         if (search.Length > 0)
         {
             string term = Fold(sql.Parameter(search));
