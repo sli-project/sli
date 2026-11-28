@@ -197,7 +197,8 @@ public partial class OperationsFiles
             string? mount = PostgresMount(DriveInfo.GetDrives().Select(drive => drive.Name));
             if (mount is null) return null;
             var disk = ReadPostgresDiskSpace(PostgresDataPath(), mount);
-            return new() { ["mount_point"] = mount, ["used_bytes"] = disk.Total - disk.TotalFree, ["free_bytes"] = disk.Available };
+            return new() { ["mount_point"] = mount, ["total_bytes"] = disk.Total,
+                ["used_bytes"] = disk.Total - disk.TotalFree, ["free_bytes"] = disk.Available };
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException) { return null; }
     }

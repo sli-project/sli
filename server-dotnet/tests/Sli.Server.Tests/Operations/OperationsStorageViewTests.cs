@@ -41,6 +41,30 @@ public sealed class OperationsStorageViewTests
         Assert.Equal(81L, (long?)volume?["free_bytes"]);
     }
 
+    [Theory]
+    [InlineData(24, 22, 26, 100, 18d)]
+    [InlineData(6, 22, 26, 100, null)]
+    [InlineData(24, 26, 26, 100, null)]
+    [InlineData(24, 30, 26, 100, null)]
+    [InlineData(24, 22, 26, 120, null)]
+    public void ForecastUsesMeasuredGrowthOnTheSameVolume(
+        int elapsedHours, int previousUsed, int latestUsed, int previousTotal, double? expected)
+    {
+        string root = Directory.CreateTempSubdirectory("sli-storage-test-").FullName;
+        try
+        {
+            var files = new LifecycleFiles(root);
+            var now = OperationsEndpointTests.Now.UtcDateTime;
+            static JsonObject Volume(long total, long used, long free) => new()
+            { ["mount_point"] = "/fixture/history", ["total_bytes"] = total, ["used_bytes"] = used, ["free_bytes"] = free };
+            DatabaseSizeHistory.Record(files, now.AddHours(-elapsedHours), 10, Volume(previousTotal, previousUsed, 70));
+            DatabaseSizeHistory.Record(files, now, 10, Volume(100, latestUsed, 74));
+            Assert.Equal(expected, DatabaseSizeHistory.VolumeForecastDays(root, now, Volume(100, latestUsed + 2, 72)));
+            Assert.Null(DatabaseSizeHistory.VolumeForecastDays(root, now.AddHours(13), Volume(100, latestUsed + 3, 71)));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     sealed class VolumeFiles(IConfiguration config) : OperationsFiles(config)
     {
         public string? MeasuredPath { get; private set; }

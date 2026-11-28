@@ -78,7 +78,10 @@ describe("registry compatibility redirects", () => {
   });
 
   it("opens the event journal with a trimmed query from the shell", () => {
-    expect(globalSearchTarget(" synthetic ")).toEqual({ to: "/report/events.journal", search: { q: "synthetic" } });
+    expect(globalSearchTarget(" synthetic ", "period=24h&view=attention")).toEqual({ to: "/report/events.journal", search: { period: "24h", q: "synthetic" } });
+    expect(globalSearchTarget(" ", "period=custom&from=2026-11-26&to=2026-11-28&tz=UTC")).toEqual({
+      to: "/report/events.journal", search: { period: "custom", from: "2026-11-26", to: "2026-11-28", tz: "UTC" },
+    });
     expect(globalSearchTarget(" ")).toEqual({ to: "/report/events.journal", search: {} });
   });
 

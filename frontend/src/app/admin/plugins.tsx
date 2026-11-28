@@ -1,6 +1,6 @@
 import { useId, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Dialog, Heading, Modal, ModalOverlay } from "react-aria-components";
+import { Button as MenuButton, Dialog, Heading, Menu, MenuItem, MenuTrigger, Modal, ModalOverlay, Popover } from "react-aria-components";
 import { api, ApiResponseError, type PluginState } from "../../api/client";
 import { Button, DataTable, PageHeader, StateView } from "../../design-system";
 import { t } from "../../i18n";
@@ -8,7 +8,7 @@ import { FieldError } from "./gate";
 import { formatDateTime } from "../../shared/date-time";
 import { useEffectiveAccess, useTimeZone } from "../App";
 import { AccessRequestStateView, useAccessRequest } from "../access-request-state";
-import { moduleLastData, moduleName, moduleRows, moduleSources, moduleStatusId, moduleStatusText } from "./plugin-status";
+import { moduleLastData, moduleName, moduleRows, moduleSources, moduleStatusText } from "./plugin-status";
 
 export function PluginsRoute() {
   const access = useEffectiveAccess();
@@ -31,11 +31,10 @@ export function PluginsPage() {
     {!plugins.isError && plugins.data ? <DataTable
       labelledBy={titleId} rows={moduleRows(plugins.data.items)} rowKey={(item) => item.plugin_id}
       showFooter={false} density="compact" columns={[
-        { key: "name", label: t("plugins.module"), width: "20%", wrap: true, render: moduleName },
-        { key: "status", label: t("systemStatus.state"), width: "24%", wrap: true, render: (item) =>
-          <a href={`/app/admin/status#${moduleStatusId(item)}`}>{moduleStatusText(item, timeZone)}</a> },
-        { key: "sources", label: t("systemStatus.sources"), width: "12%", wrap: true, render: (item) => <span>{moduleSources(item)}</span> },
-        { key: "lastData", label: t("plugins.lastData"), width: "18%", kind: "datetime", render: (item) => {
+        { key: "name", label: t("plugins.module"), width: "19%", wrap: true, render: moduleName },
+        { key: "status", label: t("systemStatus.state"), width: "22%", wrap: true, render: (item) => moduleStatusText(item, timeZone) },
+        { key: "sources", label: t("systemStatus.sources"), width: "16%", wrap: true, render: (item) => <span>{moduleSources(item)}</span> },
+        { key: "lastData", label: t("plugins.lastData"), width: "17%", kind: "datetime", render: (item) => {
           const time = moduleLastData(item);
           return time ? <time dateTime={time}>{formatDateTime(time, timeZone)}</time> : <span>{formatDateTime(null, timeZone)}</span>;
         } },
@@ -80,12 +79,16 @@ function PluginActions({ item, canManage }: { item: PluginState; canManage: bool
     <a className="sli-ds-button" href={`/app/admin/plugins/${item.plugin_id}`}>
       {t("plugins.open")}
     </a>
-    {canManage ? <>{" "}<Button
-      disabled={change.isPending || !item.installed || (!item.enabled && (!item.configured || item.component_runtime !== "stopped"))}
-      onClick={() => {
-        if (item.enabled) setConfirming(item);
-        else change.mutate({ target: item, enabled: true });
-      }}>{t(item.enabled ? "plugins.disable" : "plugins.enable")}</Button></> : null}
+    {canManage ? <>{" "}{item.enabled ? <MenuTrigger>
+      <MenuButton className="sli-ds-button" aria-label={t("plugins.actionsFor", { name })}
+        isDisabled={change.isPending || !item.installed}>{t("plugins.actions")}</MenuButton>
+      <Popover className="sli-ds-suggestions sli-ds-select__menu" placement="bottom end">
+        <Menu>
+          <MenuItem className="sli-ds-suggestions__item" onAction={() => setConfirming(item)}>{t("plugins.disable")}</MenuItem>
+        </Menu>
+      </Popover>
+    </MenuTrigger> : <Button disabled={change.isPending || !item.installed || !item.configured || item.component_runtime !== "stopped"}
+      onClick={() => change.mutate({ target: item, enabled: true })}>{t("plugins.enable")}</Button>}</> : null}
     {change.error ? <FieldError error={new Error(errorMessage)}/> : null}
     <ModalOverlay className="sli-ds-modal" isOpen={canManage && Boolean(confirming)} isDismissable onOpenChange={(open) => { if (!open) setConfirming(null); }}>
       <Modal className="sli-ds-modal__panel"><Dialog aria-describedby={descriptionId}>

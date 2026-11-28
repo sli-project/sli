@@ -382,12 +382,14 @@ body { margin: 0; overflow-x: hidden; background: var(--sli-bg); color: var(--sl
 .sli-ds-shell__scrim { display: none; }
 .sli-ds-shell__topbar { grid-area: topbar; position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: var(--sli-space-4); padding: var(--sli-cell-pad-x) var(--sli-space-6); background: var(--sli-shell-surface); border-bottom: 1px solid var(--sli-row-separator); min-width: 0; }
 .sli-ds-shell__menu-button { display: none; }
-.sli-ds-shell__search { display: flex; align-items: center; gap: var(--sli-space-2); flex: 1 1 var(--sli-search-width); max-width: var(--sli-search-width); min-width: 0; height: var(--sli-control-height); padding: 0 var(--sli-space-3); border: 1px solid var(--sli-border); border-radius: var(--sli-radius-md); background: var(--sli-surface-1); color: var(--sli-text-muted); }
+.sli-ds-shell__search { position: relative; display: flex; align-items: center; gap: var(--sli-space-2); flex: 1 1 var(--sli-search-width); max-width: var(--sli-search-width); min-width: 0; height: var(--sli-control-height); padding: 0 var(--sli-space-3); border: 1px solid var(--sli-border); border-radius: var(--sli-radius-md); background: var(--sli-surface-1); color: var(--sli-text-muted); }
 .sli-ds-shell__search:focus-within { border-color: var(--sli-focus); outline: var(--sli-focus-width) solid var(--sli-focus); outline-offset: var(--sli-focus-offset); }
 .sli-ds-shell__search-submit { flex: none; min-height: 0; padding: 0; color: inherit; }
 .sli-ds-shell__search input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--sli-text); font: inherit; }
 .sli-ds-shell__search input:focus-visible { outline: none; }
 .sli-ds-shell__search input::placeholder { color: var(--sli-text-muted); }
+.sli-ds-shell__search-results { position: absolute; inset-block-start: calc(100% + var(--sli-space-1)); inset-inline: 0; width: auto; }
+.sli-ds-shell__search-results a { display: block; }
 .sli-ds-shell__label-title { font-size: var(--sli-text-md); max-width: 18ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sli-ds-shell__control { min-height: var(--sli-control-height); }
 .sli-ds-domain > summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: var(--sli-space-2); max-width: 100%; }

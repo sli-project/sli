@@ -81,11 +81,13 @@ public sealed partial class OperationsService
         foreach (string name in new[] { "used", "free" })
             if (disk?[name + "_bytes"] is {} bytes)
             { measurements[name + "_bytes"] = Copy(bytes); measurements[name + "_human"] = Human(N(bytes)); }
+        var postgresVolume = files.PostgresVolume();
         return new() { ["api_version"] = "v1", ["generated_at_utc"] = Generated, ["read_only"] = true,
             ["storage"] = new JsonObject {
                 ["agent_inbox_capacity"] = inboxLimits?.CapacityStatus(),
                 ["retired_clickhouse_data"] = OperatingSystem.IsLinux() && Directory.Exists("/srv/sli-db/clickhouse"),
-                ["postgres_volume"] = files.PostgresVolume(),
+                ["postgres_volume"] = postgresVolume,
+                ["postgres_volume_forecast_days"] = DatabaseSizeHistory.VolumeForecastDays(files.DataRoot, now.UtcDateTime, postgresVolume),
                 ["disk_pressure"] = new JsonObject { ["disk"] = measurements },
                 ["footprint"] = new JsonObject { ["components"] = components,
                     ["backups"] = new JsonObject { ["last_backup_at_utc"] = Copy(footprint["backups"]?["last_backup_at_utc"]),

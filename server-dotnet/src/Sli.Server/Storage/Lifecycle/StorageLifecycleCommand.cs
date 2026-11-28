@@ -27,7 +27,9 @@ public static class StorageLifecycleCommand
         string root = LifecycleConfiguration.FindRoot(); var config = new LifecycleConfiguration(root, Environment.GetEnvironmentVariable);
         var files = new LifecycleFiles(config.DataRoot(root));
         await using var runtime = new LifecycleRuntime(config.Get, files);
-        return await new StorageLifecycleWorker(runtime, files).RunAsync(options, output, ct);
+        var operations = new Operations.OperationsFiles(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Sli:ProjectRoot"] = root }).Build());
+        return await new StorageLifecycleWorker(runtime, files, readVolume: operations.PostgresVolume).RunAsync(options, output, ct);
     }
     sealed record LifecycleRun(Func<LifecycleOptions, Action<JsonObject>, CancellationToken, Task<int>> Runner, LifecycleOptions Options, TextWriter Output, TextWriter Error);
     sealed class LifecycleService(LifecycleRun run, IHostApplicationLifetime lifetime) : BackgroundService

@@ -18,6 +18,8 @@ const symbols: Array<[string, ReactNode]> = [
   ["code", <><path d="m8 9-3 3 3 3M16 9l3 3-3 3M14 5l-4 14"/></>],
   ["calendar", <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></>],
   ["computer", <><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8m-4-4v4"/></>],
+  ["laptop", <><rect x="5" y="4" width="14" height="12" rx="2"/><path d="M5 16 2 20h20l-3-4"/></>],
+  ["bell", <path d="M18 8a6 6 0 0 0-12 0c0 6-3 6-3 8h18c0-2-3-2-3-8ZM10 20a2 2 0 0 0 4 0"/>],
   ["sliders", <><path d="M4 6h8m4 0h4M4 12h2m4 0h10M4 18h10m4 0h2"/><circle cx="14" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="16" cy="18" r="2"/></>],
   ["refresh", <path d="M20 12a8 8 0 1 1-2.4-5.7L20 9m0-5v5h-5"/>],
   ["chevron-down", <path d="m6 9 6 6 6-6"/>],

@@ -1,16 +1,17 @@
 import { AccessRequestContext } from "./access-request-state";
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, Outlet, useLocation, useNavigate, useRouter } from "@tanstack/react-router";
+import { Link, Outlet, useLocation, useRouter } from "@tanstack/react-router";
 import { api } from "../api/client";
-import { Button, Icon, IconSprite, OverlayProvider, StateView, useOverlays } from "../design-system";
-import { LOCALES, getLocale, setLocale, t, type Locale, type MessageKey } from "../i18n";
-import { buildNavigation, globalSearchTarget, isActivePath, journalSearchPath, previewModulePath } from "./navigation";
+import { Icon, IconSprite, OverlayProvider, StateView, useOverlays } from "../design-system";
+import { t, type MessageKey } from "../i18n";
+import { buildNavigation, isActivePath, journalSearchPath, previewModulePath } from "./navigation";
 import { AdminRelatedLinks, adminNavigationPath } from "./admin/navigation-pages";
 import { THEME_PREFERENCES, setTheme, storedTheme, type ThemePreference } from "./theme";
 import { DomainSwitcher } from "./DomainSwitcher";
 import { selectedDomain } from "./domain-navigation";
 import { PageHeaderContext } from "../design-system/PageHeader";
+import { HeaderSearch } from "./HeaderSearch";
 
 import { DEFAULT_TIME_ZONE, TimeZoneContext } from "../shared/time-zone";
 export { DEFAULT_TIME_ZONE, useTimeZone } from "../shared/time-zone";
@@ -48,7 +49,6 @@ function ShellContent() {
   const queryClient = useQueryClient();
   const location = useLocation();
   const { history } = useRouter();
-  const navigate = useNavigate();
   const { toast } = useOverlays();
   const [timeZone, setStoredTimeZone] = useState(storedTimeZone);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -58,9 +58,7 @@ function ShellContent() {
   const previousPathnameRef = useRef(location.pathname);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [theme, setThemeState] = useState<ThemePreference>(storedTheme);
-  const locale = getLocale();
   const chooseTheme = (value: ThemePreference) => { setTheme(value); setThemeState(value); };
-  const chooseLocale = (value: Locale) => { if (value !== locale) setLocale(value); };
   const [committedSearch, setCommittedSearch] = useState(location.searchStr);
   useLayoutEffect(() => {
     // Home and report pages initialize their filters from the browser URL.
@@ -69,8 +67,6 @@ function ShellContent() {
   }, [history, location.searchStr]);
   const search = new URLSearchParams(committedSearch);
   const journalQuery = isActivePath(journalSearchPath, location.pathname) ? search.get("q") : null;
-  const [query, setQuery] = useState(journalQuery ?? "");
-  useEffect(() => { setQuery(journalQuery ?? ""); }, [journalQuery]);
   const logout = useMutation({
     mutationFn: api.logout,
     onSuccess: () => {
@@ -95,7 +91,6 @@ function ShellContent() {
     : relatedPath === "/admin/status" ? adminItems.find((item) => item.id === "admin-status")?.path ?? relatedPath
     : ["/admin/language-time", "/admin/update", "/admin/activity"].includes(relatedPath) ? "/settings" : relatedPath;
   const inAdminZone = adminItems.some((item) => isActivePath(item.path, navigationPath));
-  const notifications = adminItems.find((item) => item.id === "notifications");
   const sidebarSections = inAdminZone ? adminSections : workSections;
   const isHome = location.pathname === "/";
   const isReport = location.pathname.startsWith("/report/");
@@ -106,12 +101,6 @@ function ShellContent() {
   const workspaceAccess = access.data?.capabilities.includes("workspace.view") ? access.data : undefined;
   const domainControl = workspaceAccess && isReport ? (id?: string) => <DomainSwitcher access={workspaceAccess} domain={id}/> : undefined;
   const scopeKey = isHome ? committedSearch : JSON.stringify([selectedDomain(committedSearch), search.get("scope")]);
-  const openSearch = (rawValue: string) => {
-    const target = globalSearchTarget(rawValue);
-    void navigate({ to: target.to, search: target.search as never });
-    setMobileMenuOpen(false);
-  };
-  const submitSearch = (event: FormEvent) => { event.preventDefault(); openSearch(query); };
   useEffect(() => {
     if (mobileMenuOpen) requestAnimationFrame(() => sidebarRef.current?.querySelector<HTMLElement>('a,button,[tabindex]:not([tabindex="-1"])')?.focus());
   }, [mobileMenuOpen]);
@@ -183,11 +172,9 @@ function ShellContent() {
       <div className="sli-ds-shell__scrim" aria-hidden="true" onClick={() => { setMobileMenuOpen(false); requestAnimationFrame(() => mobileMenuButtonRef.current?.focus()); }}/>
       <header className="sli-ds-shell__topbar">
         <button className="sli-ds-button sli-ds-shell__menu-button" data-variant="ghost" ref={mobileMenuButtonRef} type="button" aria-label={t("shell.menu.open")} aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen(true)}><Icon name="menu"/></button>
-        {!isProblemsQueue ? <form className="sli-ds-shell__search" role="search" onSubmit={submitSearch}>
-          <Button type="submit" variant="ghost" className="sli-ds-shell__search-submit" icon="search" aria-label={t("shell.search.submit")}/>
-          <input id="global-search" name="q" type="search" value={query} onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("shell.search.placeholder")} aria-label={t("shell.search.aria")}/>
-        </form> : null}
+        {!isProblemsQueue ? <HeaderSearch key={location.pathname} currentSearch={committedSearch} journalQuery={journalQuery}
+          onHome={isHome} canSearchObjects={capabilities.has("objects.view") || access.data?.resource_bound_capabilities?.includes("objects.view") === true}
+          onNavigate={() => setMobileMenuOpen(false)}/> : null}
         {isProblemsQueue && agents && agents.state !== "unavailable" && Number.isFinite(agents.active_agents) && Number.isFinite(agents.current_agents)
           ? <span className="sli-ds-shell__indicator">{t("problems.queue.agentStatus", { current: agents.current_agents, total: agents.active_agents })}</span> : null}
         <div className="sli-ds-shell__profile" ref={profileMenuRef}>
@@ -195,11 +182,9 @@ function ShellContent() {
             <span aria-hidden="true" className="sli-ds-shell__avatar">{initials}</span><span className="sli-ds-shell__label-title" title={username}>{username}</span><Icon name="chevron-down"/>
           </button>
           {profileMenuOpen ? <div className="sli-ds-shell__menu" role="menu">
-            {notifications ? <Link to={notifications.path} role="menuitem" className="sli-ds-button" data-variant="ghost" onClick={() => setProfileMenuOpen(false)}>{notifications.label}</Link> : null}
+            <Link to="/settings" role="menuitem" className="sli-ds-button" data-variant="ghost" onClick={() => setProfileMenuOpen(false)}>{t("shell.adminNav.locale")}</Link>
             <div className="sli-ds-shell__menu-title" role="presentation">{t("shell.profile.theme.title")}</div>
             {THEME_PREFERENCES.map((value) => <button key={value} type="button" className="sli-ds-button" data-variant="ghost" role="menuitemradio" aria-checked={theme === value} data-theme-option={value} onClick={() => chooseTheme(value)}><span className="sli-ds-shell__menu-mark" aria-hidden="true">{theme === value ? <Icon name="check"/> : null}</span>{t(`shell.profile.theme.${value}` as MessageKey)}</button>)}
-            <div className="sli-ds-shell__menu-title" role="presentation">{t("shell.profile.language.title")}</div>
-            {LOCALES.map((value) => <button key={value} type="button" className="sli-ds-button" data-variant="ghost" role="menuitemradio" aria-checked={locale === value} data-locale-option={value} lang={value} onClick={() => chooseLocale(value)}><span className="sli-ds-shell__menu-mark" aria-hidden="true">{locale === value ? <Icon name="check"/> : null}</span>{t(`shell.profile.language.${value}` as MessageKey)}</button>)}
             <div className="sli-ds-shell__menu-sep" role="separator"/>
             <button type="button" className="sli-ds-button" data-variant="ghost" role="menuitem" disabled={logout.isPending} onClick={() => logout.mutate()}><Icon name="logout"/>{logout.isPending ? t("shell.profile.loggingOut") : t("shell.profile.logout")}</button>
           </div> : null}
