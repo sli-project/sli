@@ -5,6 +5,8 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { ReportResultDto } from "../../api/report-v2-types";
 import { localeRuntime, setLocale } from "../../i18n";
 import { ComputerChecks } from "./ComputerChecks";
+import { formatDateTime } from "../../shared/date-time";
+import { DEFAULT_TIME_ZONE } from "../../shared/time-zone";
 
 afterEach(() => { cleanup(); setLocale("ru"); vi.restoreAllMocks(); });
 
@@ -26,7 +28,7 @@ it("omits unassessed computer checks while retaining zero and supplied counts", 
     { ...base, key: "new", title: "New check", new_count: 2 },
   ]);
   const { container } = render(<QueryClientProvider client={new QueryClient()}>
-    <ComputerChecks result={result} onSelect={vi.fn()} onInventory={vi.fn()}/>
+    <ComputerChecks result={result} onSelect={vi.fn()} params="domain=8"/>
   </QueryClientProvider>);
   expect(screen.queryByText("Unassessed check")).toBeNull();
   expect(screen.queryByText("Unassessed hygiene")).toBeNull();
@@ -38,16 +40,17 @@ it("omits unassessed computer checks while retaining zero and supplied counts", 
   expect(container.textContent).not.toContain("≥");
 });
 
-it("labels the first computer assessment in the selected language", () => {
+it("shows the date of an assessment without a comparison", () => {
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
-  const result = page([{ key: "first", title: "First check", total: 1, new_count: null,
+  const observed = "2026-11-13T12:00:00Z";
+  const result = page([{ last_seen_utc: observed, key: "first", title: "First check", total: 1, new_count: null,
     status: "no_comparison", status_text: "Нет сравнения с прошлым снимком" }]);
-  for (const [locale, expected] of [["ru", "Первая проверка"], ["en", "First check"]] as const) {
+  for (const locale of ["ru", "en"] as const) {
     setLocale(locale);
     const { container, unmount } = render(<QueryClientProvider client={new QueryClient()}>
-      <ComputerChecks result={result} onSelect={vi.fn()} onInventory={vi.fn()}/>
+      <ComputerChecks result={result} onSelect={vi.fn()} params="domain=8"/>
     </QueryClientProvider>);
-    expect(container.querySelector(".sli-ds-review-list__status")?.textContent).toBe(expected);
+    expect(container.querySelector(".sli-ds-review-list__status")?.textContent).toBe(formatDateTime(observed, DEFAULT_TIME_ZONE));
     expect(container.textContent).not.toContain("Нет сравнения с прошлым снимком");
     unmount();
   }

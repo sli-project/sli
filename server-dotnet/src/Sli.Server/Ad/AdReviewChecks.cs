@@ -10,7 +10,7 @@ internal static class AdReviewChecks
     static bool? And(bool? a,bool? b)=>a==false||b==false?false:a==true&&b==true?true:null;
     static bool? Over(double? age,int threshold)=>age.HasValue?age>threshold:null;
     static double? Age(JsonNode? value,DateTimeOffset at)=>AdInventoryRows.Date(value) is {} stamp&&stamp<=at?(at-stamp).TotalDays:null;
-    public static Dictionary<string,bool?> Evaluate(bool users,JsonObject raw,DateTimeOffset at,JsonObject? previous=null,bool previousComplete=false,IReadOnlyList<JsonObject>? events=null,JsonObject? exceptions=null)
+    public static Dictionary<string,bool?> Evaluate(bool users,JsonObject raw,DateTimeOffset at,JsonObject? previous=null,bool previousComplete=false,IReadOnlyList<JsonObject>? events=null,JsonObject? exceptions=null,JsonObject? computer=null)
     {
         if(users)
         {
@@ -27,10 +27,12 @@ internal static class AdReviewChecks
             var checks=new Dictionary<string,bool?>(){["disabled_logon"]=enabled==true?false:disabledLogon&&enabled==false?true:null,["new_privileged"]=And(privilege,old is null?null:!old.Value),["reversible_password"]=AdInventoryRows.Bool(raw["allowReversiblePasswordEncryption"]),["inactive_privileged"]=And(privilege,enabled==false||inactive==true?true:enabled is null||inactive is null?null:false),["spn_privileged"]=And(privilege,spnKnown?raw["servicePrincipalNames"]!.AsArray().Count>0:null),["privileged_password_never_expires"]=And(privilege,AdInventoryRows.Bool(raw["passwordNeverExpires"])),["locked_out"]=AdInventoryRows.Bool(raw["lockedOut"]),["service_interactive_logon"]=raw.Text("serviceAccountType") is not null&&interactive?true:raw.Text("serviceAccountType") is null&&spnKnown&&raw["objectClasses"] is JsonArray?false:null,["kerberos_no_preauth"]=AdInventoryRows.Bool(raw["doesNotRequirePreAuth"]),["inactive_enabled"]=And(enabled,inactive),["old_password"]=Over(Age(raw["passwordLastSet"],at),365),["password_never_expires"]=AdInventoryRows.Bool(raw["passwordNeverExpires"])}; if(raw.Text("serviceAccountType") is not null&&exceptions?[raw.Text("sid")?.ToUpperInvariant()??""] is not null){checks["old_password"]=false;checks["inactive_enabled"]=false;}return checks;
         }
         var expiration=AdInventoryRows.Date(raw["lapsPasswordExpiration"])??AdInventoryRows.Date(raw["legacyLapsPasswordExpiration"]);
-        bool? delegation=raw["userAccountControl"] is not null?(raw.Int("userAccountControl")&524288)!=0:AdInventoryRows.Bool(raw["trustedForDelegation"]);
+        computer ??= AdComputerPosture.ReviewObject(raw, at);
+        bool? delegation = AdComputerPosture.UnconstrainedDelegationRisk(computer);
         var support=AdComputerPosture.SupportEnd(raw.Text("osName"),raw.Text("osVersion"));
-        string? agentState=raw["sli_agent"]?.Text("state");
-        return new(){["unconstrained_delegation"]=delegation,["unsupported_os"]=support is null?null:at.Date>support.Value.Date,["new_computer"]=Age(raw["whenCreated"],at) is {} created?created<1:null,["laps"]=expiration is null?null:expiration<at,["rbcd"]=AdInventoryRows.Bool(raw["resourceBasedDelegationPresent"]),["no_sli_agent"]=agentState=="absent"?true:agentState is "installed" or "silent"?false:null,["inactive_enabled"]=And(AdInventoryRows.Bool(raw["enabled"]),Over(Age(raw["lastLogonTimestamp"],at),90)),["old_machine_password"]=Over(Age(raw["passwordLastSet"],at),60)};
+        string? agentState = computer["sli_agent"]?.Text("state") ?? raw["sli_agent"]?.Text("state");
+        bool? enabledComputer = AdInventoryRows.Bool(computer["enabled"]);
+        return new(){["unconstrained_delegation"]=delegation,["unsupported_os"]=support is null?null:at.Date>support.Value.Date,["new_computer"]=Age(raw["whenCreated"],at) is {} created?created<1:null,["laps"]=expiration is null?null:expiration<at,["rbcd"]=AdInventoryRows.Bool(raw["resourceBasedDelegationPresent"]),["no_sli_agent"]=And(enabledComputer,agentState=="absent"?true:agentState is "installed" or "silent"?false:null),["inactive_enabled"]=And(AdInventoryRows.Bool(raw["enabled"]),Over(Age(raw["lastLogonTimestamp"],at),90)),["old_machine_password"]=Over(Age(raw["passwordLastSet"],at),60)};
     }
     static bool? Privilege(JsonObject raw)=>AdInventoryRows.Privileged(raw)?true:raw["memberships"]?.Text("status") is "observed" or "complete"?false:null;
     internal static bool UsesAccountRows(AdV2Request request) =>
@@ -81,6 +83,7 @@ internal static class AdReviewChecks
         var accountCounts = new Dictionary<string, int>();
         if(request.Params.Text("check") is {} requested&&!Templates[kind]!.AsObject().ContainsKey(requested))throw new AdInputException("report_check_invalid");
         var matched=Templates[kind]!.AsObject().ToDictionary(p=>p.Key,_=>new List<JsonObject>());var unknown=matched.Keys.ToDictionary(k=>k,_=>0);int population=0;
+        int noAgentPopulation = 0;
         var oldCounts=matched.Keys.ToDictionary(k=>k,_=>0);var baseCounts=matched.Keys.ToDictionary(k=>k,_=>0);
         var matchedIdentities=matched.Keys.ToDictionary(k=>k,_=>new HashSet<(long,string)>());var baseIdentities=matched.Keys.ToDictionary(k=>k,_=>new HashSet<(long,string)>());
         var oldKnown=matched.Keys.ToDictionary(k=>k,_=>true);var baseKnown=matched.Keys.ToDictionary(k=>k,_=>true);
@@ -101,6 +104,8 @@ internal static class AdReviewChecks
         var agents=new AdComputerPosture.AgentIndex(users?null:await AdComputerPosture.AgentsAsync(db,request.Domains,ct));
         var unassessed=new HashSet<(long,string)>();var affected=new HashSet<(long,string)>();var domainCoverage=new List<JsonObject>();
         bool allComplete=true;
+        int remainingComputerRows = AdV2Store.ComputerInventoryLimit;
+        bool computerInventoryTruncated = !users && AdV2Store.ComputerInventoryTruncated(sources);
         foreach(var source in sources)
         {
             string family=users?"users_v2":"computers_v6",collection=users?"users":"objects";
@@ -111,18 +116,28 @@ internal static class AdReviewChecks
             var predecessor=accountRows||previous is null?null:await AdV2Store.PreviousSnapshot(db,previous,family,ct);
             var baselinePredecessor=baseline is null?null:await AdV2Store.PreviousSnapshot(db,baseline,family,ct);
             string Identity(JsonObject r)=>(r.Text("objectGuid")??r.Text("sid")??r.Text("entityId")??"").ToLowerInvariant();
-            bool Matches(JsonObject r)=>request.Params.Text("q") is not {} q||new[]{r.Text(users?"samAccountName":"name"),r.Text(users?"displayName":"name"),r.Text("ou")}.Any(s=>s?.Contains(q,StringComparison.OrdinalIgnoreCase)==true);
+            bool Matches(JsonObject r) => users
+                ? request.Params.Text("q") is not {} q || new[] { r.Text("samAccountName"), r.Text("displayName"), r.Text("ou") }
+                    .Any(value => value?.Contains(q, StringComparison.OrdinalIgnoreCase) == true)
+                : AdInventoryRows.MatchesComputerSearch(r, request.Params.Text("q"));
             JsonObject[] Objects(JsonObject? s)=>s?["snapshot"]?[collection] is JsonArray array?array.OfType<JsonObject>().Where(r=>Identity(r).Length>0).GroupBy(Identity).Select(g=>(JsonObject)g.Last().DeepClone()).ToArray():[];
             var currentObjects=Objects(source);var previousObjects=Objects(previous);var baseObjects=Objects(baseline);
+            var inventoryIdentities = computerInventoryTruncated
+                ? ((JsonArray?)source["snapshot"]?["objects"] ?? []).Take(remainingComputerRows).OfType<JsonObject>().Select(Identity).ToHashSet()
+                : null;
+            if (computerInventoryTruncated)
+                remainingComputerRows = Math.Max(0, remainingComputerRows - ((JsonArray?)source["snapshot"]?["objects"] ?? []).Count);
             var before=previousObjects.ToDictionary(Identity);var beforeOld=Objects(predecessor).ToDictionary(Identity);var beforeBase=Objects(baselinePredecessor).ToDictionary(Identity);
             foreach(string key in matched.Keys){oldKnown[key]&=complete&&Complete(previous,users);baseKnown[key]&=since.HasValue&&complete&&Complete(baseline,users);}
-            JsonObject Prepare(JsonObject raw,JsonObject role,bool historical)
+            JsonObject? PrepareComputer(JsonObject raw, JsonObject role, bool historical)
             {
-                if(!users){var row=AdInventoryRows.Computer(raw,source,role.Text("observed_at_utc")!,new());raw["sli_agent"]=AdComputerPosture.Agent(row,source.Int("domain_id"),agents,historical?role.Time("observed_at_utc"):null);}
-                return raw;
+                if (users) return null;
+                var row = AdInventoryRows.Computer(raw, role, role.Text("observed_at_utc")!, new());
+                row["sli_agent"] = AdComputerPosture.Agent(row, source.Int("domain_id"), agents, historical ? role.Time("observed_at_utc") : null);
+                return row;
             }
             foreach(var (objects,role,older,olderSource,counts,known) in accountRows ? [] : new[]{(previousObjects,previous,beforeOld,predecessor,oldCounts,oldKnown),(baseObjects,baseline,beforeBase,baselinePredecessor,baseCounts,baseKnown)})
-                if(role is not null)foreach(var raw in objects.Where(Matches))foreach(var (key,value) in Evaluate(users,Prepare(raw,role,true),role.Time("observed_at_utc"),older.GetValueOrDefault(Identity(raw)),Complete(olderSource,users),Related(raw,users,source.Int("domain_id"),eventIndex).Where(e=>e.Time("time_created_utc")<=role.Time("observed_at_utc")).ToArray(),exceptions))
+                if(role is not null)foreach(var raw in objects.Where(Matches))foreach(var (key,value) in Evaluate(users,raw,role.Time("observed_at_utc"),older.GetValueOrDefault(Identity(raw)),Complete(olderSource,users),Related(raw,users,source.Int("domain_id"),eventIndex).Where(e=>e.Time("time_created_utc")<=role.Time("observed_at_utc")).ToArray(),exceptions,PrepareComputer(raw,role,true)))
                     if(value is null)known[key]=false;else if(value==true){counts[key]++;if(ReferenceEquals(counts,baseCounts))baseIdentities[key].Add((source.Int("domain_id"),Identity(raw)));}
             foreach(var raw in currentObjects.Where(Matches))
             {
@@ -130,7 +145,10 @@ internal static class AdReviewChecks
                     stateFilter != (AdInventoryRows.Bool(raw["enabled"]) switch { true => "enabled", false => "disabled", _ => "unknown" }))
                     continue;
                 population++;var at=source.Time("observed_at_utc");string identity=Identity(raw);var related=Related(raw,users,source.Int("domain_id"),eventIndex);
-                var assessments=Evaluate(users,Prepare(raw,source,false),at,before.GetValueOrDefault(identity),Complete(previous,users),related,exceptions);
+                var computer = PrepareComputer(raw, source, false);
+                bool inInventory = inventoryIdentities?.Contains(identity) != false;
+                if (computer is not null && inInventory && AdInventoryRows.Bool(computer["enabled"]) != false) noAgentPopulation++;
+                var assessments=Evaluate(users,raw,at,before.GetValueOrDefault(identity),Complete(previous,users),related,exceptions,computer);
                 if (accountRows)
                 {
                     var reasons = assessments.Where(pair => pair.Value == true).Select(pair =>
@@ -156,13 +174,19 @@ internal static class AdReviewChecks
                 }
                 foreach(var (key,value) in assessments)
                 {
+                    if (key == "no_sli_agent" && !inInventory) continue;
                     if(value is null){unknown[key]++;unassessed.Add((source.Int("domain_id"),identity));continue;}if(value!=true)continue;
                     affected.Add((source.Int("domain_id"),identity));
                     matchedIdentities[key].Add((source.Int("domain_id"),identity));
                     var item=Obj(new{entity_id=users?(long?)raw.Int("entityId"):source["entity_ids"]?[raw.Text("objectGuid")??""]?.GetValue<long>(),name=users?raw.Text("samAccountName")??raw.Text("displayName"):raw.Text("name"),observed_at_utc=Iso(at),domain_id=source.Int("domain_id"),domain_name=source.Text("fqdn"),computer_type=users?null:raw.Text("deviceType")});
                     item["change"]=Change(related,key,raw);
                     if(users){var activity=AdInventoryRows.Activity(raw);item["enabled"]=raw["enabled"]?.DeepClone();item["sam"]=raw["samAccountName"]?.DeepClone();item["activity_at"]=activity.Value?.DeepClone();item["ou"]=raw["ou"]?.DeepClone();item["password_last_set"]=raw["passwordLastSet"]?.DeepClone();item["membership_paths"]=raw["memberships"]?["paths"]?.DeepClone();}
-                    else{var computer=AdInventoryRows.Computer(raw,source,Iso(at),new());foreach(string field in new[]{"operating_system","last_logon_utc","ou_path","laps_state","enabled"})item[field]=computer[field]?.DeepClone();item["sli_agent"]=raw["sli_agent"]?.DeepClone();item["dns_ip"]=AdComputerPosture.Dns(raw);}
+                    else if (computer is not null)
+                    {
+                        foreach (string field in new[]{"computer_type","operating_system","dns_host_name","last_logon_utc","last_logon_source","ou_path","laps","laps_state","enabled","sli_agent"})
+                            item[field] = computer[field]?.DeepClone();
+                        item["dns_ip"] = AdComputerPosture.Dns(raw);
+                    }
                     matched[key].Add(item);
                 }
             }
@@ -171,14 +195,16 @@ internal static class AdReviewChecks
         foreach(var (key,template) in accountRows ? new JsonObject() : Templates[kind]!.AsObject())
         {
             var row=(JsonObject)template!.DeepClone();row["id"]=kind+":"+key;row["key"]=key;row["section"]=row.Text("severity")=="low"?"hygiene":"review";
-            bool uncertain=missing||unknown[key]>0;
-            int? total=population-unknown[key]>0||matched[key].Count>0||allComplete&&!uncertain?matched[key].Count:null;
+            bool uncertain=missing||unknown[key]>0||key=="no_sli_agent"&&computerInventoryTruncated;
+            int checkPopulation = key == "no_sli_agent" ? noAgentPopulation : population;
+            int? total=checkPopulation-unknown[key]>0||matched[key].Count>0||allComplete&&!uncertain?matched[key].Count:null;
+            if (key == "no_sli_agent" && total == 0 && (uncertain || !allComplete)) total = null;
             int? old=oldKnown[key]&&!uncertain?oldCounts[key]:null;int? delta=old.HasValue?matched[key].Count-old.Value:null;
             string status=delta is null?total is null?"not_evaluated":"no_comparison":delta>0?"new":delta<0?"decreased":"unchanged";
             row["total"]=total;row["new_count"]=baseKnown[key]&&!uncertain?JsonValue.Create(matchedIdentities[key].Except(baseIdentities[key]).Count()):null;row["previous_total"]=old;row["delta"]=delta;row["status"]=status;
             var envelope=Message("status."+status,Math.Abs(delta??0));row["status_text"]=envelope["text"]!.DeepClone();row["presentation_messages"]!["status_text"]=envelope;
             foreach(var (field,code) in new[]{("severity_text","severity."+row.Text("severity")),("section_text",row.Text("severity")=="low"?"hygiene":"tab")}){var msg=Message(code);row[field]=msg["text"]!.DeepClone();row["presentation_messages"]![field]=msg;}
-            row["not_evaluated_count"]=missing?null:JsonValue.Create(unknown[key]);row["assessed_count"]=population-unknown[key];row["is_lower_bound"]=!allComplete||uncertain;row["objects"]=Array(request.Params.Text("check")==key?matched[key]:matched[key].Take(3));row["remaining_objects"]=Math.Max(0,matched[key].Count-3);row["last_seen_utc"]=matched[key].Select(o=>o.Text("observed_at_utc")).Order().LastOrDefault();row["change"]=matched[key].Select(o=>o["change"]).Where(o=>o is not null).OrderBy(o=>o!.Text("at_utc")).LastOrDefault()?.DeepClone();rows.Add(row);
+            row["not_evaluated_count"]=missing?null:JsonValue.Create(unknown[key]);row["assessed_count"]=checkPopulation-unknown[key];row["is_lower_bound"]=!allComplete||uncertain;row["objects"]=Array(request.Params.Text("check")==key?matched[key]:matched[key].Take(3));row["remaining_objects"]=Math.Max(0,matched[key].Count-3);row["last_seen_utc"]=matched[key].Select(o=>o.Text("observed_at_utc")).Order().LastOrDefault();row["change"]=matched[key].Select(o=>o["change"]).Where(o=>o is not null).OrderBy(o=>o!.Text("at_utc")).LastOrDefault()?.DeepClone();rows.Add(row);
         }
         if(!accountRows && request.Params.Text("check") is {} check)rows=matched[check];
         rows=rows.OrderBy(r=>r.Text("severity") switch{"high"=>0,"medium"=>1,_=>2}).ThenByDescending(r=>r.Int("new_count")).ThenByDescending(r=>r.Int("total")).ThenBy(r=>r.Text("id"),StringComparer.Ordinal).ToList();

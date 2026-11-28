@@ -64,7 +64,7 @@ public sealed class AdV2Store(IPostgresConnectionFactory connections, IConfigura
         {
             bool users = request.Key == "ad.users.v2";
             var sources = await Snapshots(db, users ? "users_v2" : "computers_v6", request.Domains, ct,
-                computerDirectoryFacts: request.Key == "ad.computers.v6" && request.Tab is not ("changes" or "checks"));
+                computerDirectoryFacts: request.Key == "ad.computers.v6" && request.Tab != "changes");
             if (users && request.Action == "detail") result = await AdUserCard.ReadAsync(db, request, sources, fields, configuration, ct);
             else if (request.Key == "ad.computer-logons") result = await AdLogonReports.ReadAsync(db, request, sources, ct);
             else if(users&&request.Tab is "disabled_active" or "temporary_memberships") result=await AdUsersActivity.QueryAsync(db,request,sources,fields,ct,configuration);
@@ -265,13 +265,13 @@ public sealed class AdV2Store(IPostgresConnectionFactory connections, IConfigura
               and is_semantic_finding_published_v1(finding.id) order by finding.last_seen_utc desc,finding.id desc limit 201
             """,ct,sources.Where(s=>s["entity_ids"] is JsonObject).SelectMany(s=>s["entity_ids"]!.AsObject()).Select(p=>p.Value!.GetValue<long>()).Take(5000).ToArray());
         var semanticIndex=semantic.GroupBy(s=>s.Int("entity_id")).ToDictionary(g=>g.Key,g=>g.ToArray());
-        bool inputTruncated=sources.Sum(s=>(s["snapshot"]?["objects"] as JsonArray??[]).Count)>5000;
+        bool inputTruncated = ComputerInventoryTruncated(sources);
         foreach (var source in sources.Where(s => s["snapshot"] is not null))
         {
             var snapshot = source["snapshot"]!; string observed = snapshot["metadata"]!.Text("completed_at")!;
             foreach (var node in snapshot["objects"]!.AsArray())
             {
-                if(allRows.Count>=5000)break;
+                if (allRows.Count >= ComputerInventoryLimit) break;
                 var raw = (JsonObject)node!.DeepClone();
                 var row = AdInventoryRows.Computer(raw, source, observed, request.Params);
                 row["dns_ip"]=AdComputerPosture.Dns(raw);row["sli_agent"]=AdComputerPosture.Agent(row,source.Int("domain_id"),agents);row["semantic_findings"]=Array(semanticIndex.GetValueOrDefault(row.Int("entity_id"),[]));if(request.QualifyNames)row["display_name"]=source.Text("fqdn")+"\\"+row.Text("display_name");
@@ -300,6 +300,10 @@ public sealed class AdV2Store(IPostgresConnectionFactory connections, IConfigura
         Page(result, request, rows);
         return result;
     }
+    internal const int ComputerInventoryLimit = 5000;
+    internal static bool ComputerInventoryTruncated(List<JsonObject> sources) =>
+        sources.Sum(source => (source["snapshot"]?["objects"] as JsonArray)?.Count ?? 0) > ComputerInventoryLimit;
+
     internal static JsonArray ComputerMetrics(List<JsonObject> rows) => Array(new[]
     {
         ("all", "Всего в AD", rows.Count, Obj(new { view = "all" })),
@@ -341,10 +345,13 @@ public sealed class AdV2Store(IPostgresConnectionFactory connections, IConfigura
             var comparer=Comparer<JsonNode?>.Create(Compare);IOrderedEnumerable<JsonObject> ordered=request.Descending?present.OrderByDescending(Value,comparer):present.OrderBy(Value,comparer);
             if(computer)ordered=request.Descending?ordered.ThenByDescending(r=>r.Text("display_name"),StringComparer.OrdinalIgnoreCase).ThenByDescending(r=>r.Int("entity_id")):ordered.ThenBy(r=>r.Text("display_name"),StringComparer.OrdinalIgnoreCase).ThenBy(r=>r.Int("entity_id"));
             rows=ordered.Concat(rows.Where(r=>Value(r) is null).OrderBy(r=>computer?r.Text("display_name"):null,StringComparer.OrdinalIgnoreCase).ThenBy(r=>computer?r.Int("entity_id"):0)).ToList();
+            if (computer && request.Sort is null)
+                rows = rows.OrderBy(row => AdInventoryRows.Bool(row["enabled"]) == false).ToList();
         }
-        int offset=0;if(request.Cursor is {} cursor){if(computer){long entity=AdCursors.ComputerDecode(cursor,sort!,direction);int index=rows.FindIndex(r=>r.Int("entity_id")==entity);if(index<0)throw new AdInputException("invalid_computers_v6_cursor");offset=index+1;}else if(!int.TryParse(cursor,out offset)||offset<0)throw new AdInputException("report_cursor_invalid");}
+        string? cursorSort = computer && request.Sort is null ? "enabled_first" : sort;
+        int offset=0;if(request.Cursor is {} cursor){if(computer){long entity=AdCursors.ComputerDecode(cursor,cursorSort!,direction);int index=rows.FindIndex(r=>r.Int("entity_id")==entity);if(index<0)throw new AdInputException("invalid_computers_v6_cursor");offset=index+1;}else if(!int.TryParse(cursor,out offset)||offset<0)throw new AdInputException("report_cursor_invalid");}
         var page = rows.Skip(offset).Take(request.Limit).ToArray(); bool more = offset + page.Length < rows.Count;
-        result["items"] = Array(materialize is null ? page : page.Select(materialize)); result["filtered_count"] = rows.Count; result["has_more"] = more; result["next_cursor"] = more ? computer?AdCursors.ComputerEncode(sort!,direction,page[^1].Int("entity_id")):(offset + page.Length).ToString(CultureInfo.InvariantCulture) : null;
+        result["items"] = Array(materialize is null ? page : page.Select(materialize)); result["filtered_count"] = rows.Count; result["has_more"] = more; result["next_cursor"] = more ? computer?AdCursors.ComputerEncode(cursorSort!,direction,page[^1].Int("entity_id")):(offset + page.Length).ToString(CultureInfo.InvariantCulture) : null;
     }
     internal const string AdUsersSemanticSql = """
         select linked.entity_id,count(distinct finding.id) as finding_count from findings_active finding

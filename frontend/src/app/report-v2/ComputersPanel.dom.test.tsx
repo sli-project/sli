@@ -11,11 +11,13 @@ import { DataTable } from "../../design-system";
 import type { ReportColumnDto } from "../../api/report-v2-types";
 import { ComputerPanel, computerInventoryColumns } from "./ComputersPanel";
 
-vi.mock("../App", () => ({ useEffectiveAccess: () => null }));
+const access = vi.hoisted(() => ({ reports: [] as { report_key: string; allowed: boolean }[], capabilities: [] as string[] }));
+vi.mock("../App", () => ({ useEffectiveAccess: () => access }));
 vi.mock("../../shared/time-zone", () => ({ useTimeZone: () => ({ timeZone: "UTC" }) }));
 
 afterEach(() => {
   cleanup();
+  access.reports = [];
   vi.restoreAllMocks();
 });
 
@@ -25,9 +27,10 @@ it("shows observed computer facts and uses dashes for missing inventory cells", 
   const logon = "2026-01-12T10:49:00Z";
   const keys = ["display_name", "computer_type", "operating_system", "last_logon_utc"];
   const columns = keys.map((key): ReportColumnDto => ({ key, path: key, label: key, kind: "text" }));
+  const rows = [{ ...workstation, operating_system: "Windows 11 Pro", last_logon_utc: logon },
+    { entity_id: 8, display_name: "PC-EMPTY", computer_type: "unknown" }];
   render(<DataTable caption="Computers" columns={computerInventoryColumns(columns, "UTC", vi.fn())}
-    rows={[{ ...workstation, operating_system: "Windows 11 Pro", last_logon_utc: logon },
-      { entity_id: 8, display_name: "PC-EMPTY", computer_type: "unknown" }]}
+    rows={rows}
     rowKey={(row) => String(row.entity_id)}/>);
   const filled = within(screen.getByRole("row", { name: /PC-TEST/ }));
   expect(filled.getByText(t("reports.v2.ad.computers.v6.columns.computer_type.labels.workstation"))).toBeTruthy();
@@ -40,18 +43,19 @@ it("shows the agent version and last contact in the inventory", () => {
   const stamp = "2026-01-12T10:49:00Z";
   const time = formatZonedDateTime(stamp, "UTC", { withYear: false });
   const columns: ReportColumnDto[] = [{ key: "sli_agent", path: "sli_agent", label: "SLI agent", kind: "text" }];
-  render(<DataTable caption="Computers" columns={computerInventoryColumns(columns, "UTC", vi.fn())}
-    rows={[
+  const rows = [
       { entity_id: 1, sli_agent: { state: "installed", version: "1.2.3", last_seen_utc: stamp } },
       { entity_id: 2, sli_agent: { state: "silent", version: "2.3.4", last_seen_utc: stamp } },
       { entity_id: 3, sli_agent: { state: "absent" } },
       { entity_id: 4, sli_agent: { state: "unknown" } },
-    ]} rowKey={(row) => String(row.entity_id)}/>);
+    ];
+  render(<DataTable caption="Computers" columns={computerInventoryColumns(columns, "UTC", vi.fn())}
+    rows={rows} rowKey={(row) => String(row.entity_id)}/>);
   expect(screen.getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
     `1.2.3 · ${t("reports.computers.agent_connected", { time })}`,
     `2.3.4 · ${t("reports.computers.agent_silent", { time })}`,
+    t("reports.ad.additions.agent.absent"),
     "—",
-    t("reports.computers.agent_unknown"),
   ]);
 });
 
@@ -72,37 +76,57 @@ it("uses the available last logon in the computer card when the replicated times
   const client = new QueryClient();
   const { container } = render(<QueryClientProvider client={client}>
     <ComputerPanel row={{ ...workstation, ad_last_logon_utc: null, last_logon_utc: lastLogon, last_logon_source: "domain_controllers" }}
-      logons={false} logonParams="" changes={[]} canCompare={false} onClose={() => {}} timeZone="UTC"/>
+      logons={false} logonParams="" onClose={() => {}} timeZone="UTC"/>
   </QueryClientProvider>);
+  expect(screen.getByRole("tab", { name: t("reports.computers.important"), selected: true })).toBeTruthy();
+  fireEvent.click(screen.getByRole("tab", { name: t("reports.computers.details") }));
   expect(screen.getByText(t("reports.computers.last_logon"))).toBeTruthy();
   expect(screen.getByText(`${formatDateTime(lastLogon, true, "UTC")} · ${t("reports.computers.last_logon_source.domain_controllers")}`)).toBeTruthy();
   expect(container.textContent).not.toContain("lastLogonTimestamp");
 });
 
-it("labels the computer card shortcut by the tab it opens", () => {
+it("links to the exact computer's domain changes and uses the destination report count", async () => {
+  access.reports = [{ report_key: "security.events.chains", allowed: true }];
+  const read = vi.spyOn(api, "reportV2Data").mockResolvedValue({ ...page([]), filtered_count: 12 });
+  const from = "2026-01-01T00:00:00Z";
+  const to = "2026-01-05T00:00:00Z";
+  const params = new URLSearchParams({ period: "custom", from, to, tz: "UTC" });
   render(<QueryClientProvider client={new QueryClient()}>
-    <ComputerPanel row={{ ...workstation, object_guid: "test-computer-guid" }} logons={false}
-      logonParams="" changes={[]} canCompare onClose={() => {}} timeZone="UTC"/>
+    <ComputerPanel row={{ ...workstation, domain_id: 7 }} logons={false}
+      logonParams={params.toString()} onClose={() => {}} timeZone="UTC"/>
   </QueryClientProvider>);
-  fireEvent.click(screen.getByRole("button", { name: "Посмотреть изменения" }));
-  expect(screen.getByRole("tab", { name: t("reports.computers.changes"), selected: true })).toBeTruthy();
+  const link = await screen.findByRole("link", { name: /12/ });
+  const url = new URL(link.getAttribute("href")!, "http://example.test");
+  expect(url.pathname).toBe("/app/report/security.events.chains");
+  expect(Object.fromEntries(url.searchParams)).toEqual({
+    period: "custom", from, to, domain: "7", entity_id: "7", changes_view: "all", repeat_mode: "collapsed",
+  });
+  const [report, request] = read.mock.calls[0];
+  expect(report).toBe("security.events.chains");
+  expect(Object.fromEntries(request)).toEqual({ ...Object.fromEntries(url.searchParams), limit: "1", tz: "UTC" });
+  expect(screen.queryByRole("tab", { name: /changes|изменения/i })).toBeNull();
 });
 
-it("shows the service installed on the selected computer with its original event", async () => {
-  const read = vi.spyOn(api, "reportV2Data").mockResolvedValue(page([{
-    row_id: "service-81", change_type: "host_event", event_id: 7045, host_object: "ExampleService", source_event_id: 81,
-  }]));
-  const changes: ReportColumnDto[] = [{ key: "change_type", path: "change_type", label: "Change", kind: "state" }];
+it("hides value-less columns and highlights the field that matched the inventory search", () => {
+  const rows = [{ ...workstation, computer_type: "unknown", dns_host_name: "pc-test.example.test" }];
+  const columns = ["display_name", "computer_type", "operating_system"].map((key): ReportColumnDto =>
+    ({ key, path: key, label: key, kind: "text" }));
+  render(<DataTable caption="Computers" columns={computerInventoryColumns(columns, "UTC", vi.fn(), "example")}
+    rows={rows} rowKey={() => "7"}/>);
+  expect(screen.getAllByRole("columnheader")).toHaveLength(1);
+  expect(screen.getByText("example", { selector: "mark" })).toBeTruthy();
+});
+
+it("hides the source column for local logons", async () => {
+  const local = { ...observation("101", "53"), source: "pc-test.", workstation_name: "pc-test.", repeat_count: 1 };
+  vi.spyOn(api, "reportV2Detail").mockResolvedValue(page([local]));
   render(<QueryClientProvider client={new QueryClient()}>
-    <ComputerPanel row={{ ...workstation, domain_id: 7, object_guid: "test-computer-guid" }}
-      logons={false} logonParams="" changes={changes} canCompare onClose={() => {}} timeZone="UTC"/>
+    <ComputerPanel row={{ ...workstation, computer_key: "host-1-cGMtdGVzdA" }} logons
+      logonParams="period=7d" onClose={() => {}} timeZone="UTC"/>
   </QueryClientProvider>);
-  fireEvent.click(screen.getByRole("tab", { name: t("reports.computers.changes") }));
-  const service = await screen.findByText(`${t("events.semantic.System:Service Control Manager:7045.title")} · ExampleService`);
-  expect(within(service.closest("tr")!).getByRole("link").getAttribute("href")).toContain("/app/events/81");
-  const [report, params] = read.mock.calls[0];
-  expect(report).toBe("ad.computers.v6");
-  expect(params.get("object_guid")).toBe("test-computer-guid");
+  const table = await screen.findByRole("table");
+  expect(within(table).queryByRole("columnheader", { name: t("reports.v2.ad.computer-logons.detail.columns.source.label") })).toBeNull();
+  expect(within(table).getAllByRole("row")).toHaveLength(2);
 });
 
 it("keeps individual observations selected by row ID through paging and resets on a new result", async () => {
@@ -116,7 +140,7 @@ it("keeps individual observations selected by row ID through paging and resets o
     .mockResolvedValueOnce(page([newFirst, unlinked]));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const panel = (params: string) => <QueryClientProvider client={client}>
-    <ComputerPanel row={workstation} logons logonParams={params} changes={[]} canCompare={false} onClose={() => {}} timeZone="UTC"/>
+    <ComputerPanel row={workstation} logons logonParams={params} onClose={() => {}} timeZone="UTC"/>
   </QueryClientProvider>;
   const view = render(panel("user=test&period=7d"));
 
@@ -161,7 +185,7 @@ it("keeps identical observations on separate selectable rows for an older respon
   vi.spyOn(api, "reportV2Detail").mockResolvedValue(page([legacy, { ...legacy }]));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}>
-    <ComputerPanel row={workstation} logons logonParams="" changes={[]} canCompare={false} onClose={() => {}} timeZone="UTC"/>
+    <ComputerPanel row={workstation} logons logonParams="" onClose={() => {}} timeZone="UTC"/>
   </QueryClientProvider>);
   const table = await screen.findByRole("table", { name: t("reports.computers.observations") });
   const rows = within(table).getAllByRole("row").slice(1);
@@ -179,7 +203,7 @@ it("shows grouped stored logons and pages them independently of the computer lis
   render(<QueryClientProvider client={client}>
     <ComputerPanel row={{ ...workstation, computer_key: "host-1-cGMtdGVzdA" }} logons
       logonParams="period=custom&from=2026-01-01T00%3A00%3A00Z&to=2026-01-15T00%3A00%3A00Z&service_logons=yes&limit=100"
-      changes={[]} canCompare={false} onClose={() => {}} timeZone="UTC"/>
+      onClose={() => {}} timeZone="UTC"/>
   </QueryClientProvider>);
   const table = await screen.findByRole("table");
   const row = within(table).getAllByRole("row")[1];

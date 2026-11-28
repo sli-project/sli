@@ -1,6 +1,8 @@
 import { useDateFormatters } from "../../design-system/useDateFormatters";
 import { t } from "../../i18n";
 import { formatDateTime } from "../../design-system";
+import { formatDateTime as formatZonedDateTime } from "../../shared/date-time";
+import { useTimeZone } from "../../shared/time-zone";
 
 type Row = Record<string, unknown>;
 const object = (value: unknown): Row => value && typeof value === "object" ? value as Row : {};
@@ -11,20 +13,21 @@ export function dnsColumnLabel(rows: Row[], timeZone?: string) {
   return dates.length === 1 ? t("reports.ad.additions.dns_on", { date: dates[0] }) : t("reports.ad.additions.dns_label");
 }
 
-export function AgentStatus({ row, compact = false }: { row: Row; compact?: boolean }) {
+export function formatAgentStatus(row: Row, timeZone: string): string {
   const agent = object(row.sli_agent);
   const state = agent.state;
-  const missing = t("table.noValue");
-  if (compact) return state === "absent" || state === "silent"
-    ? <span role="img" aria-label={t(`reports.ad.additions.agent.${state}`)} title={t(`reports.ad.additions.agent.${state}`)}> ⚠</span> : null;
-  if (state === "absent") return <>{t("reports.ad.additions.agent.absent")}</>;
-  if (state !== "installed" && state !== "silent") return <span title={t("reports.ad.additions.agent.unknown_reason")}>{missing}</span>;
-  const age = typeof agent.age_seconds === "number" ? agent.age_seconds : null;
-  return <span>{state === "silent"
-    ? t("reports.ad.additions.agent.silent_days", { count: age === null ? missing : Math.floor(age / 86400) })
-    : t("reports.ad.additions.agent.installed")}
-    {" · "}{text(agent.version) ?? missing}
-    {state === "installed" ? <> · {age === null ? missing : t("reports.ad.additions.agent.signal_minutes", { count: Math.floor(age / 60) })}</> : null}</span>;
+  if (state === "absent") return t("reports.ad.additions.agent.absent");
+  if (state !== "installed" && state !== "silent") return t("table.noValue");
+  const stamp = text(agent.last_seen_utc);
+  const label = stamp
+    ? t(state === "silent" ? "reports.computers.agent_silent" : "reports.computers.agent_connected", { time: formatZonedDateTime(stamp, timeZone, { withYear: false }) })
+    : t(state === "silent" ? "reports.ad.additions.agent.silent" : "reports.computers.registered");
+  return [text(agent.version), label].filter(Boolean).join(" · ");
+}
+
+export function AgentStatus({ row }: { row: Row }) {
+  const { timeZone } = useTimeZone();
+  return formatAgentStatus(row, timeZone);
 }
 
 export function DnsIp({ row }: { row: Row }) {

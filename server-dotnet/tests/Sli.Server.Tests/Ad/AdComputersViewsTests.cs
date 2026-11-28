@@ -86,6 +86,9 @@ public sealed class AdComputersViewsTests(AdComputersViewsTests.Data data) : ICl
             Assert.Equal("unknown", rows[2]!["sli_agent"]!["state"]!.ToString());
             Assert.Null(rows[2]!["sli_agent"]!["version"]);
             Assert.Equal("3.4.5", rows[3]!["sli_agent"]?["version"]?.ToString());
+            var checks = await data.Read(Request("checks"));
+            var withoutAgent = checks["items"]!.AsArray().Single(row => row?["key"]?.ToString() == "no_sli_agent");
+            Assert.Null(withoutAgent!["total"]);
         }
         finally
         {
@@ -239,12 +242,52 @@ public sealed class AdComputersViewsTests(AdComputersViewsTests.Data data) : ICl
     {
         var obj = Computer(); obj["userAccountControl"] = 524288;
         await data.Seed(2, obj);
+        var controller = Computer();
+        controller["name"] = "synthetic-dc";
+        controller["userAccountControl"] = 8192 | 524288;
+        await data.Seed(3, controller);
         Assert.Equal("OU=synthetic", AdComputerPosture.ReviewObject(obj, At)["ou_path"]!.ToString());
-        var result = await data.Read(Request("checks"));
+        var result = await data.Read(Request("checks", domains: [2, 3]));
         var check = result["items"]!.AsArray().Single(r => r!["key"]!.ToString() == "unconstrained_delegation")!;
         var preview = Assert.Single(check["objects"]!.AsArray())!;
         Assert.Equal("Windows Server 2022", preview["operating_system"]!.ToString());
         Assert.Equal("OU=synthetic", preview["ou_path"]!.ToString());
+        Assert.Equal(2, preview["domain_id"]!.GetValue<long>());
+        var inventory = await data.Read(Request("computers", domains: [2, 3]));
+        var controllerRow = inventory["items"]!.AsArray().Single(row => row?["computer_type"]?.ToString() == "domain_controller")!;
+        Assert.True(controllerRow["delegation"]!["unconstrained"]!.GetValue<bool>());
+        Assert.DoesNotContain(controllerRow["reasons"]!.AsArray(), reason => reason?["code"]?.ToString() == "unconstrained_delegation");
+    }
+
+    [Fact]
+    public async Task Inventory_puts_disabled_accounts_after_enabled_accounts_before_paging_and_searches_name_dns_or_ip()
+    {
+        var disabled = Computer();
+        disabled["name"] = "LAB-SIM-001";
+        disabled["enabled"] = false;
+        disabled["description"] = "synthetic-user";
+        await data.Seed(2, disabled);
+        var enabled = Computer();
+        enabled["name"] = "synthetic-workstation";
+        enabled["dnsHostName"] = "operator-workstation.example.test";
+        enabled["ipv4s"] = new JsonArray("192.0.2.10");
+        enabled["sources"] = new JsonObject
+        {
+            ["dns"] = new JsonObject { ["status"] = "observed", ["observed_at"] = AdInventoryRows.PythonIso(data.Stamp) }
+        };
+        await data.Seed(3, enabled);
+
+        var request = Request("computers", domains: [2, 3], limit: 1);
+        var first = await data.Read(request);
+        Assert.Equal("synthetic-workstation", first["items"]![0]!["display_name"]!.ToString());
+        var second = await data.Read(request with { Limit = 1, Domains = [2, 3], Cursor = first["next_cursor"]!.ToString() });
+        Assert.Equal("LAB-SIM-001", second["items"]![0]!["display_name"]!.ToString());
+        var matched = await data.Read(request with { Params = new() { ["q"] = "OPERATOR-WORKSTATION" } });
+        Assert.Equal("synthetic-workstation", Assert.Single(matched["items"]!.AsArray())!["display_name"]!.ToString());
+        var byAddress = await data.Read(request with { Params = new() { ["q"] = "192.0.2.10" } });
+        Assert.Equal("synthetic-workstation", Assert.Single(byAddress["items"]!.AsArray())!["display_name"]!.ToString());
+        var unmatched = await data.Read(request with { Params = new() { ["q"] = "synthetic-user" } });
+        Assert.Empty(unmatched["items"]!.AsArray());
     }
 
     [Fact]

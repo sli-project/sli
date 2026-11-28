@@ -1,32 +1,22 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, fireEvent } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { localeRuntime, setLocale } from "../../i18n";
 import { AgentStatus, DnsIp, LastWorkplace, dnsColumnLabel } from "./ReportAdditions";
-import { computerTableColumns } from "./ComputerChecks";
-import { DataTable } from "../../design-system";
 
 beforeEach(() => { vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined); });
 afterEach(() => { cleanup(); setLocale("ru"); vi.restoreAllMocks(); });
 
-it("shows installed version and minutes, silent days and unknown without a zero", () => {
-  setLocale("ru");
-  const { rerender } = render(<AgentStatus row={{ sli_agent: { state: "installed", version: "1.2.3", age_seconds: 180 } }}/>);
-  expect(screen.getByText("Стоит · 1.2.3 · Сигнал 3 мин назад")).toBeTruthy();
-  rerender(<AgentStatus row={{ sli_agent: { state: "silent", version: "1.2.3", age_seconds: 259200 } }}/>);
-  expect(screen.getByText("Молчит 3 дн. · 1.2.3")).toBeTruthy();
-  rerender(<AgentStatus row={{}}/>);
+it("shows agent versions with their contact state and leaves an unresolved match blank", () => {
+  const stamp = "2026-10-17T03:00:00Z";
+  render(<><div><AgentStatus row={{ sli_agent: { state: "installed", version: "1.2.3", last_seen_utc: stamp } }}/></div>
+    <div><AgentStatus row={{ sli_agent: { state: "silent", version: "2.3.4", last_seen_utc: stamp } }}/></div>
+    <div><AgentStatus row={{ sli_agent: { state: "absent" } }}/></div>
+    <div><AgentStatus row={{ sli_agent: { state: "unknown" } }}/></div></>);
+  expect(screen.getByText(/1\.2\.3 · На связи/)).toBeTruthy();
+  expect(screen.getByText(/2\.3\.4 · Нет связи с/)).toBeTruthy();
+  expect(screen.getByText("Нет агента")).toBeTruthy();
   expect(screen.getByText("—")).toBeTruthy();
-});
-
-it("keeps a visible accessible missing-agent icon by the mobile computer name", () => {
-  setLocale("ru");
-  const select = vi.fn();
-  const row = { entity_id: 1, display_name: "synthetic-host", sli_agent: { state: "absent" } };
-  render(<DataTable caption="Synthetic" columns={computerTableColumns([{ key: "display_name", path: "display_name", label: "Computer", kind: "text" }], select)} rows={[row]} rowKey={() => "1"}/>);
-  expect(screen.getByRole("img", { name: "Нет агента SLI" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "synthetic-host" }));
-  expect(select).toHaveBeenCalledWith(row);
 });
 
 it("labels DNS with its observation date and uses a dash for missing addresses", () => {

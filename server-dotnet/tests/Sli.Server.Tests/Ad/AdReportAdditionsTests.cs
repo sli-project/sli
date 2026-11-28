@@ -90,6 +90,8 @@ public sealed class AdReportAdditionsTests
     {
         var raw = Computer(1); raw["sli_agent"] = Obj(new { state });
         Assert.Equal(expected, AdReviewChecks.Evaluate(false, raw, Now)["no_sli_agent"]);
+        raw["enabled"] = false;
+        Assert.False(AdReviewChecks.Evaluate(false, raw, Now)["no_sli_agent"]);
     }
 
     [Fact] public async Task Optional_readers_fail_closed_without_private_details_and_keep_transaction_usable()
@@ -164,13 +166,24 @@ public sealed class AdReportAdditionsTests
             update sli_agents set last_seen=now()-interval '3 days';
             """, Ct);
         await Snapshot(db, false, 2, Now.AddDays(-1), [Computer(1)]);
-        await Snapshot(db, false, 3, Now, [Computer(1), Computer(2), Computer(3)]);
+        var disabled = Computer(4);
+        disabled["enabled"] = false;
+        await Snapshot(db, false, 3, Now, [Computer(1), Computer(2), Computer(3), disabled]);
         var result = await Store(pg).ReadAsync(Request("ad.computers.v6", "checks") with { Principal = new("session", 1, "operator") }, _ => true, Ct);
         var check = result["items"]!.AsArray().Single(r => r!.Text("key") == "no_sli_agent")!;
         Assert.Equal(2, check.Int("total")); Assert.Equal(1, check.Int("new_count")); Assert.Equal("medium", check.Text("severity")); Assert.Null(check["change"]);
         Assert.All(check["objects"]!.AsArray(), o => Assert.Equal("absent", o!["sli_agent"]!.Text("state")));
         Assert.NotNull(check["objects"]![0]!["dns_ip"]);
         Assert.Equal("192.0.2.1", check["objects"]![0]!["dns_ip"]!["addresses"]![0]!.ToString());
+        var inventory = await Store(pg).ReadAsync(Request("ad.computers.v6", "computers"), _ => true, Ct);
+        string?[] enabledWithoutAgent = inventory["items"]!.AsArray()
+            .Where(item => AdInventoryRows.Bool(item?["enabled"]) == true && item?["sli_agent"]?.Text("state") == "absent")
+            .Select(item => item!.Text("display_name")).Order().ToArray();
+        var request = new DefaultHttpContext().Request;
+        request.QueryString = new("?domain=2&tab=checks&check=no_sli_agent");
+        var matches = await Store(pg).ReadAsync(AdV2Endpoints.Parse(request, "ad.computers.v6", "view", [2]), _ => true, Ct);
+        Assert.Equal(enabledWithoutAgent, matches["items"]!.AsArray().Select(item => item!.Text("name")).Order());
+        Assert.Equal(enabledWithoutAgent.Length, check.Int("total"));
         await PostCollectionPostgres.Sql(db, "drop table sli_agents", Ct);
         result = await Store(pg).ReadAsync(Request("ad.computers.v6", "checks"), _ => true, Ct);
         check = result["items"]!.AsArray().Single(r => r!.Text("key") == "no_sli_agent")!;
@@ -288,6 +301,9 @@ public sealed class AdReportAdditionsTests
                 create table ad_context_entity_aliases(entity_id bigint,domain_id bigint,alias_type text,alias_value text,normalized_value text);
                 insert into ad_context_entity_aliases values(1,2,'object_guid','00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001');
                 create table ad_context_entity_versions(entity_id bigint,source_section text,valid_to_utc timestamptz,attributes_json jsonb);
+                alter table ad_context_entity_versions add column source_run_id uuid, add column last_observed_at_utc timestamptz, add column valid_from_utc timestamptz;
+                alter table ad_context_runs add column run_id uuid, add column bundle_sha256 bytea;
+                create table ad_context_evidence(source_run_id uuid,evidence_key text);
                 create table sli_agents(id uuid,host_id uuid,source_agent_id uuid,source_host_id uuid,created_at timestamptz,last_seen timestamptz,status text,assigned_modules jsonb,
                     registration_host_name text,rights_probe jsonb not null default '{}');
                 insert into sli_agents(id,host_id,created_at,last_seen,status,assigned_modules)

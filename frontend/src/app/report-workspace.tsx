@@ -30,22 +30,29 @@ export function ReportWorkspacePage({ reportKey, journalSearch }: { reportKey: s
   const active = requested ? views.find((view) => view.id === requested) : views[0];
   if (!active || !entry) return <StateView state="denied"/>;
   if (reportKey === "vpn.connections") return <PluginReportPage reportKey={active.report_key}/>;
-  const select = (id: string) => {
-    // A different report has its own filters and internal tabs. Keep the domain scope.
-    const current = location.search as Record<string, unknown>;
-    const computerTab = active.report_key === "ad.computer-logons" && ["checks", "changes", "computers"].includes(id);
-    const search = { ...(current.domain_id !== undefined ? { domain_id: current.domain_id }
-      : current.domain !== undefined ? { domain: current.domain } : {}), nav_view: computerTab ? "computers" : id,
+  const select = (id: string, current = new URLSearchParams(location.searchStr)) => {
+    const computers = active.report_key === "ad.computers.v6" || active.report_key === "ad.computer-logons";
+    if (!computers) {
+      const domainId = current.get("domain_id");
+      const domain = current.get("domain");
+      const search = { ...(domainId ? { domain_id: domainId } : domain ? { domain } : {}), nav_view: id };
+      void navigate({ to: entry.path, search: search as never });
+      return;
+    }
+    const computerTab = active.report_key === "ad.computer-logons" && ["checks", "computers"].includes(id);
+    const domain = current.get("domain") ?? current.get("domain_id");
+    const domainId = domain && /^[1-9][0-9]*$/.test(domain) && Number.isSafeInteger(Number(domain)) ? Number(domain) : domain;
+    const scopeAndPeriod = ["scope", "period", "from", "to"].flatMap((key) => current.has(key) ? [[key, current.get(key)!]] : []);
+    const search = { ...Object.fromEntries(scopeAndPeriod), ...(domain ? { domain: domainId } : {}), nav_view: computerTab ? "computers" : id,
       ...(computerTab ? { tab: id } : {}) };
     void navigate({ to: entry.path, search: search as never });
   };
-  if (active.report_key === "ad.computers.v6") return <ReportRenderer reportKey={active.report_key}
+  if (active.report_key === "ad.computers.v6") return <ReportRenderer key={location.state.__TSR_key} reportKey={active.report_key} initialSearch={location.searchStr}
     additionalTabs={views.filter((view) => view.id !== active.id).map((view) => ({ key: view.id, label: t(view.label as MessageKey) }))}
     onAdditionalTab={select}/>;
-  if (active.report_key === "ad.computer-logons") return <ReportRenderer reportKey={active.report_key}
+  if (active.report_key === "ad.computer-logons") return <ReportRenderer key={location.state.__TSR_key} reportKey={active.report_key} initialSearch={location.searchStr}
     additionalTabs={views.some((view) => view.id === "computers") ? [
       { key: "checks", label: t("reports.computers.review") },
-      { key: "changes", label: t("reports.computers.changes") },
       { key: "computers", label: t("reports.computers.all") },
     ] : []} onAdditionalTab={select}/>;
   return <Tabs items={views.map((view) => ({ key: view.id, label: t(view.label as MessageKey) }))} active={active.id} onChange={select}>

@@ -38,16 +38,16 @@ import { preserveNavigationView } from "../navigation";
 import { FileAuditReport } from "../../plugins/file-audit/FileAuditReport";
 import { WorkstationsReport } from "../../plugins/workstations/WorkstationsReport";
 import { isFileAuditReport } from "../../plugins/file-audit/report";
-import { ComputerChecks, computerTableColumns } from "../../plugins/ad/ComputerChecks";
+import { ComputerChecks } from "../../plugins/ad/ComputerChecks";
 import { UserCheckFilters, userAccountCount, userTableColumns } from "../../plugins/ad/UserChecks";
 import { UserCard } from "../../plugins/ad/UserCard";
 import { gpoReportDefinition } from "../../plugins/ad/gpo-report";
 import { GpoPolicyReport } from "../../plugins/ad/GpoPolicyReport";
-import { ComputerPanel, computerEmpty, computerInventoryColumns, LogonComputerName } from "./ComputersPanel";
+import { ComputerPanel, computerInventoryColumns, LogonComputerName } from "./ComputersPanel";
 import { AdStateReport } from "./AdStateReport";
 
 type Row = Record<string, unknown>;
-type AdditionalTabs = { additionalTabs?: { key: string; label: string }[]; onAdditionalTab?: (key: string) => void };
+type AdditionalTabs = { additionalTabs?: { key: string; label: string }[]; onAdditionalTab?: (key: string, current: URLSearchParams) => void };
 const problemDescriptionColumns = ["what", "why", "next"];
 
 function queueWindow(period: PeriodValue, timeZone: string) {
@@ -161,10 +161,15 @@ export function ReportRenderer({ reportKey, initialSearch, ...tabs }: { reportKe
 }
 
 function ReportBody({ definition: sourceDefinition, initialSearch, additionalTabs = [], onAdditionalTab }: { definition: ReportDefinitionDto; initialSearch?: string } & AdditionalTabs) {
-  const definition = useMemo(() => {
+  const definition = useMemo<ReportDefinitionDto>(() => {
     if (sourceDefinition.key === "ad.gpo.v2") return gpoReportDefinition(sourceDefinition);
     if (sourceDefinition.key === "ad.computers.v6") return { ...sourceDefinition,
-      params: sourceDefinition.params.map((param) => param.key === "domain" ? { ...param, hidden: false } : param) };
+      views: sourceDefinition.views.filter((view) => view.key !== "changes"),
+      params: [...sourceDefinition.params.filter((param) => param.key !== "check")
+        .map((param) => param.key === "domain" ? { ...param, hidden: false } : param),
+        { key: "period", label: t("period.label"), kind: "period", default: "30d", presets: ["7d", "30d", "90d", "custom"] }] };
+    if (sourceDefinition.key === "ad.computer-logons") return { ...sourceDefinition,
+      params: sourceDefinition.params.map((param) => param.key === "domain_id" ? { ...param, key: "domain", hidden: false, options_from: "domain" } : param) };
     if (sourceDefinition.key !== "security.problems") return sourceDefinition;
     return {
       ...sourceDefinition,
@@ -195,9 +200,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   }, [computersScreen]);
   const [computerPageSize, setComputerPageSize] = useState(50);
   const [columnsTarget, setColumnsTarget] = useState<HTMLDivElement | null>(null);
-  const [logonPeriodTarget, setLogonPeriodTarget] = useState<HTMLDivElement | null>(null);
   const [compact, setCompact] = useState(true);
-  const [detailsVisible, setDetailsVisible] = useState(true);
   const [refreshWindow, setRefreshWindow] = useState(0);
   const gpoReport = definition.key === "ad.gpo.v2";
   const infrastructure = definition.key === "ad.infrastructure";
@@ -211,6 +214,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     if (independentUsers && ["active", "disabled"].includes(search.get("tab") ?? "")) initial.account_state = search.get("tab") === "disabled" ? "disabled" : "enabled";
     if (independentUsers && initial.domain_id && !initial.domain) { initial.domain = initial.domain_id; delete initial.domain_id; }
     if (independentUsers && initial.account_state === "unknown") delete initial.account_state;
+    if (computerReport && initial.view === "changes") initial.view = "all";
     return initial;
   });
   const [sort, setSort] = useState<SortState | null>(() => {
@@ -234,8 +238,8 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     let requested = search.get("tab");
     if (independentUsers && requested === "users") requested = "all";
     if (independentUsers && views.some((item) => item.key === "checks")) requested = requested === "active" || requested === "disabled" ? "all" : requested === "risk" || requested === "semantic" ? "checks" : requested;
-    if (computerReport && !requested && search.has("view")) return search.get("view") === "changes" ? "changes" : "computers";
-    return views.some((view) => view.key === requested) ? requested! : computerReport ? "computers" : views[0].key;
+    if (computerReport && !requested && search.has("view") && !["all", "changes"].includes(search.get("view")!)) return "computers";
+    return views.some((view) => view.key === requested) ? requested! : views[0].key;
   });
   const view = views.find((item) => item.key === activeView) ?? views[0];
   const userReview = independentUsers && view.key === "checks";
@@ -257,6 +261,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
       const saved = tabFilters.current[key] ?? { values: defaultValues(definition), sort: null };
       const next: FilterValues = { ...saved.values, domain: values.domain, domain_id: values.domain_id, scope: values.scope };
       if (independentUsers) next.q = values.q;
+      if (computerReport) next.period = values.period;
       const search = searchFromValues(definition, next, saved.sort);
       search.set("tab", key);
       window.history.pushState(window.history.state, "", `${window.location.pathname}?${search.toString()}`);
@@ -271,9 +276,10 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     const restore = () => {
       const search = new URLSearchParams(window.location.search);
       const tab = independentUsers && search.get("tab") === "users" ? "all" : search.get("tab");
-      setActiveView(views.some((item) => item.key === tab) ? tab! : computerReport ? "computers" : views[0].key);
+      setActiveView(views.some((item) => item.key === tab) ? tab! : views[0].key);
       const restored = valuesFromSearch(definition, search);
       if (independentUsers && restored.account_state === "unknown") delete restored.account_state;
+      if (computerReport && restored.view === "changes") restored.view = "all";
       setValues(restored);
       setSort(search.get("sort") ? { field: search.get("sort")!, direction: search.get("direction") === "desc" ? "desc" : "asc" } : null);
       setSelected(null);
@@ -316,9 +322,8 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   }, [definition.key, values.period]);
   const computerPeriod = useMemo(() => {
     const period = values.period as PeriodValue | undefined;
-    return computerLogons && period && period.preset !== "custom" ? periodBounds(period) : null;
-  }, [computerLogons, values.period, refreshWindow]);
-  const inventoryLogonWindow = useMemo(() => periodBounds({ preset: "30d" }), [refreshWindow]);
+    return computersScreen && period && period.preset !== "custom" ? periodBounds(period) : null;
+  }, [computersScreen, values.period, refreshWindow]);
   const baseParams = useMemo(() => {
     const params = apiParams(definition, values, { sort, timeZone, view: activeView, ...(computersScreen || independentUsers || domainEvents ? { limit: computersScreen ? computerPageSize : independentUsers ? userPageSize : 50 } : {}) });
     if (independentUsers) {
@@ -331,14 +336,14 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
       params.set("from", vpnPeriod.from);
       params.set("to", vpnPeriod.to);
     }
-    if (computerPeriod) {
+    if (computerLogons && computerPeriod) {
       params.set("period", "custom");
       params.set("from", computerPeriod.from);
       params.set("to", computerPeriod.to);
     }
     if (collectionTab) params.set("tab", collectionTab);
     return params.toString();
-  }, [definition, values, sort, timeZone, collectionTab, vpnPeriod, activeView, independentUsers, domainEvents, userPageSize, computerPeriod, computersScreen, computerPageSize]);
+  }, [definition, values, sort, timeZone, collectionTab, vpnPeriod, activeView, independentUsers, domainEvents, userPageSize, computerPeriod, computerLogons, computersScreen, computerPageSize]);
   const data = useInfiniteQuery({
     queryKey: ["report-v2", "data", definition.key, baseParams],
     queryFn: ({ pageParam }) => {
@@ -414,14 +419,19 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     return items.filter((row) => ["passed", "failed"].includes(String(row.qualification))
       || (row.actual_text != null && String(row.actual_text).trim() !== "" && row.actual_text !== "—"));
   }, [data.data, data.isPlaceholderData, independentUsers, userReview, infrastructure, view.key, view.source, userPage, computersScreen]);
-  const rowKey = (row: Row) => String(row[computerReport && view.key === "changes" ? "row_id" : definition.row_key] ?? JSON.stringify(row));
+  const rowKey = (row: Row) => String(row[definition.row_key] ?? JSON.stringify(row));
   const fullWidthComputerDetail = !wideComputers && (computerLogons || computerReport && view.key === "computers");
-  const activeComputer = computersScreen && detailsVisible ? (selected && rows.find((row) => rowKey(row) === rowKey(selected)))
-    || (view.key === "checks" ? selected : !fullWidthComputerDetail ? rows[0] : undefined) : undefined;
-  const chooseComputer = (row: Row) => { setDetailsVisible(true); setSelected(row); };
-  const compareView = views.find((item) => item.key === "changes" && item.access?.allowed !== false);
-  const cardLogonParams = new URLSearchParams(inventoryLogonWindow ? { period: "custom", from: inventoryLogonWindow.from,
-    to: inventoryLogonWindow.to, tz: timeZone } : { period: "30d", tz: timeZone });
+  const activeComputer = computersScreen && selected
+    ? view.key === "checks" ? selected : rows.find((row) => rowKey(row) === rowKey(selected)) : undefined;
+  const chooseComputer = (row: Row) => setSelected(row);
+  const cardPeriod = searchFromValues(definition, { period: values.period });
+  const cardLogonParams = new URLSearchParams(cardPeriod);
+  if (computerPeriod) {
+    cardLogonParams.set("period", "custom");
+    cardLogonParams.set("from", computerPeriod.from);
+    cardLogonParams.set("to", computerPeriod.to);
+  }
+  cardLogonParams.set("tz", timeZone);
   if (activeComputer?.domain_id) cardLogonParams.set("domain_id", String(activeComputer.domain_id));
   const [openedDeepLink, setOpenedDeepLink] = useState(false);
   useEffect(() => {
@@ -439,7 +449,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     independentUsers ? (["domain", "q"].includes(field.key)
       || field.key === "account_state" && userReview
       || ["account_state", "department", "ou"].includes(field.key) && (view.key === "all" || view.key === "privileged"))
-      : !computerReport || (field.key === "domain" || field.key === "domain_id" || field.key === "q" && view.key !== "checks"
+      : !computerReport || (field.key === "domain" || field.key === "domain_id" || field.key === "period" || field.key === "q" && view.key !== "checks"
         || view.key === "computers" && ["type", "enabled", "activity"].includes(field.key))).map((field) => {
       if (independentUsers && field.key === "q" && field.kind === "text") return { ...field,
         placeholder: t(view.key === "all" || view.key === "privileged" ? "reports.ad.users.list.search" : "reports.ad.users.list.search_account") };
@@ -450,7 +460,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
         label: t("reports.v2.ad.computer-logons.params.service_logons.label"), onValue: "yes", offValue: "no" };
       if (computersScreen && field.kind === "text" && ["q", "user"].includes(field.key)) {
         const label = field.key === "user" ? t("reports.computers.user") : computerLogons ? t("reports.computers.computer") : t("reports.computers.search");
-        return { ...field, label, placeholder: label };
+        return { ...field, label, placeholder: label, immediate: true };
       }
       if (computerReport && field.kind === "select" && ["type", "enabled", "activity"].includes(field.key)) {
         const counts = liveOptions?.[field.key];
@@ -462,8 +472,8 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     }), [definition, liveOptions, activeView, computerReport, computerLogons, computersScreen, independentUsers, userReview, view.key, first?.state]);
   const headerPeriodField = fields.find((field) => field.kind === "period");
   const hasDepartment = !independentUsers || !!values.department || !!liveOptions?.department?.length || rows.some((row) => Boolean(row.department));
-  const computerDomainField = computerReport ? fields.find((field) => field.kind === "select" && field.key === "domain") : undefined;
-  const bodyFields = fields.filter((field) => field !== computerDomainField && (computerLogons || field !== headerPeriodField) && (field.key !== "department" || hasDepartment))
+  const computerDomainField = computersScreen ? fields.find((field) => field.kind === "select" && field.key === "domain") : undefined;
+  const bodyFields = fields.filter((field) => field !== computerDomainField && field !== headerPeriodField && (field.key !== "department" || hasDepartment))
     .map((field) => independentUsers && field.kind === "select" ? { ...field, immediate: true } : field);
   const declaredColumns = useMemo(() => workstationColumns(definition.key, tableColumns(definition.columns.filter((column) =>
       (!problemQueue || !["actor_identifier", "entity_identifiers", "identity_sources", ...problemDescriptionColumns].includes(column.key))
@@ -533,8 +543,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   const exportHref = definition.export && ready && !viewDenied ? `/api/v2/reports/${encodeURIComponent(definition.key)}/export.csv?${exportParams.toString()}` : null;
   const exportsSelectedView = view === mainView || exportsByTab;
   const PageAction = definition.page_actions ? PAGE_ACTIONS[definition.page_actions] : undefined;
-  const defaultSort: SortState | null = computerLogons ? { field: "name", direction: "asc" }
-    : computerReport && view.key === "computers" ? { field: "display_name", direction: "asc" } : null;
+  const defaultSort: SortState | null = computerLogons ? { field: "name", direction: "asc" } : null;
   const activeSort = sort ?? defaultSort;
   const toggleSort = (field: string) => setSort({ field, direction: activeSort?.field === field && activeSort.direction === "asc" ? "desc" : "asc" });
   const pagination = (size: number) => ({
@@ -593,6 +602,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     value: values[headerPeriodField.key] as PeriodValue | undefined,
     presets: headerPeriodField.presets,
     bounds,
+    ...(computerLogons ? { showPrevious: false, showSelection: true } : {}),
     onChange: (value) => { setSelected(null); setValues((current) => ({ ...current, [headerPeriodField.key]: value })); },
   } : problemQueue ? {
     value: queueBounds ? { preset: queuePreset, ...queueBounds } : undefined,
@@ -604,7 +614,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   const namedViews = displayedViews.map((item) => {
     const itemBranch = viewBranches?.[item.key];
     const label = computersScreen ? t(computerLogons ? "reports.computers.logons" : item.key === "checks" ? "reports.computers.review"
-      : item.key === "changes" ? "reports.computers.changes" : "reports.computers.all") : item.title || item.key;
+      : "reports.computers.all") : item.title || item.key;
     const count = independentUsers && item.access?.allowed !== false && first && !data.error
       ? item.key === view.key ? item.key === "checks" ? first.coverage.affected_objects : first.filtered_count
         : view.key === "all" && item.key === "privileged" ? first.coverage.privileged_accounts : undefined : undefined;
@@ -615,17 +625,13 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
     label: computersScreen ? typeof first?.filtered_count === "number"
       ? t("reports.computers.page_of", { page: userPage + 1, total: Math.ceil(first.filtered_count / computerPageSize) })
       : t("reports.computers.page", { page: userPage + 1 }) : undefined };
-  const computerTable = computerReport ? computerInventoryColumns(definition.columns, timeZone, chooseComputer)
+  const computerTable = computerReport ? computerInventoryColumns(definition.columns, timeZone, chooseComputer, String(values.q ?? ""))
     : columns.map((column) => column.key === "name"
       ? { ...column, hiddenByDefault: undefined, render: (row: Row) => <LogonComputerName row={row}/> }
       : { ...column, hiddenByDefault: false });
-  const computerEmptyView = computerLogons && ready && first?.state === "empty" ?
+  const computerEmptyView = computersScreen && ready && first?.state === "empty" ?
     <DataTable caption={definition.title} columns={computerTable} rows={[]} rowKey={rowKey} compact
-      emptyContent={t("reports.states.empty.text")} showFooter={false}/> : computerReport && view.key === "changes" && ready
-    ? first && !data.isPlaceholderData && (state === "empty" || state === "ok" || state === "partial" || state === "stale")
-      ? <StateView state="empty" titleMessage={{ code: "reports.computers.changes_empty", params: {} }} detail={<></>}/>
-      : state === "not_collected" ? <p role="status">{t("reports.states.not_collected.title")}</p> : null
-    : computerReport ? computerEmpty() : null;
+      emptyContent={t("reports.states.empty.text")} showFooter={false}/> : null;
   const detailParams = new URLSearchParams(baseParams);
   for (const key of ["limit", "sort", "direction"]) detailParams.delete(key);
   if (first?.window.from_utc && first.window.to_utc_exclusive) {
@@ -637,21 +643,14 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
   const computerPanel = activeComputer && !["denied", "loading", "error", "unavailable", "not_collected", "empty"].includes(state)
     ? <ComputerPanel key={`${rowKey(activeComputer)}:${computerLogons ? logonParams : baseParams}:${refreshWindow}`}
       row={activeComputer} logons={computerLogons} logonParams={computerLogons ? logonParams : cardLogonParams.toString()}
-      changes={compareView?.columns ?? []} canCompare={Boolean(compareView)} onClose={() => setDetailsVisible(false)} timeZone={timeZone}/>
+      period={cardPeriod} onClose={() => setSelected(null)} timeZone={timeZone}/>
     : undefined;
-  const scopeInstant = computerLogons ? bounds?.to : typeof snapshotAt === "string" ? snapshotAt : undefined;
-  const computerScope = computersScreen && scopeInstant ? <span className="sli-ds-badge">
-    {first?.domains?.length === 1 && !bodyFields.some((field) => field.key === "domain") ? <>{first.domains[0].display_name} · </> : null}
-    {computerLogons && bounds ? t("reports.renderer.period_range", { from: formatDateTime(bounds.from), to: formatDateTime(bounds.to) })
-      : t("reports.renderer.snapshot_at", { time: formatDateTime(scopeInstant) })}
-    {isValidTimeZone(timeZone) && Number.isFinite(Date.parse(scopeInstant))
-      ? ` · ${formatClockWithOffset(new Date(scopeInstant), timeZone).zone}` : null}
-  </span> : undefined;
+  const title = computersScreen ? t("shell.nav.computers-report") : definition.title;
   return <ResultWindowContext.Provider value={first?.window}><Tabs items={computerLogons ? [...linkedViews, ...namedViews] : [...namedViews, ...linkedViews]} active={infrastructureChange && displayedViews.some((item) => item.key === "changes") ? "changes" : view.key} onChange={(key) => {
-    if (additionalTabs.some((item) => item.key === key)) onAdditionalTab?.(key);
+    if (additionalTabs.some((item) => item.key === key)) onAdditionalTab?.(key, searchFromValues(definition, values));
     else selectView(key);
   }}><ReportLayout
-    title={definition.title}
+    title={title}
     domain={String(values.domain ?? values.domain_id ?? "") || undefined} showDomain={!independentUsers}
     domainPicker={computerDomainField?.kind === "select" ? <Select label={computerDomainField.label}
       value={String(values.domain ?? values.domain_id ?? "")}
@@ -659,19 +658,18 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
         : [{ value: "", label: t("reports.filters.all_domains") }, ...computerDomainField.options]}
       onChange={(domain) => { setSelected(null); setValues({ ...values, domain: domain || undefined, domain_id: undefined, scope: domain ? undefined : "all" }); }}/> : undefined}
     controls={state === "denied" ? undefined : {
-      period: computerLogons ? undefined : headerPeriod,
-      updatedAt: !independentUsers && qualityResult && !computersScreen ? qualityResult.window.generated_at_utc ?? data.dataUpdatedAt : undefined,
+      period: computerReport ? undefined : headerPeriod,
+      updatedAt: computerReport && typeof snapshotAt === "string" ? snapshotAt
+        : !independentUsers && qualityResult && !computersScreen ? qualityResult.window.generated_at_utc ?? data.dataUpdatedAt : undefined,
       refreshing: data.isFetching,
       showRefreshLabel: computersScreen || independentUsers,
       onRefresh: ready ? () => {
         if (computersScreen) setRefreshWindow((value) => value + 1);
-        if (!computerPeriod) void data.refetch({ cancelRefetch: false });
+        if (!computerLogons || !computerPeriod) void data.refetch({ cancelRefetch: false });
         if (passwordCoverage.isEnabled) void passwordCoverage.refetch({ cancelRefetch: false });
       } : undefined,
     }}
-    crumbs={computerLogons
-      ? [{ label: t("shell.nav.computers-report"), href: "/app/report/ad.computers.v6" }, { label: t("reports.computers.logons_tab") }]
-      : computerReport ? [{ label: t("reports.computers.directory") }, { label: definition.title }]
+    crumbs={computersScreen ? [{ label: t("reports.computers.directory") }, { label: title }]
       : independentUsers ? [
       { label: t("shell.section.active-directory"), href: canLinkReport("ad.infrastructure") ? "/app/report/ad.infrastructure" : undefined },
       { label: definition.title },
@@ -696,9 +694,7 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
       </div> : null}
       {bodyFields.length ? <FilterBar fields={bodyFields} layout={independentUsers || computersScreen ? "inline" : undefined}
         primaryKeys={computersScreen ? undefined : gpoReport || infrastructure ? ["q", "period"] : independentUsers ? bodyFields.map((field) => field.key) : fields.length > 4 ? primaryFilterKeys(definition) : undefined}
-        applyInline={computersScreen} periodTarget={computerLogons ? logonPeriodTarget : undefined}
-        leadingControls={computerLogons ? <><div ref={setLogonPeriodTarget}/>{computerScope}</>
-          : computerScope ?? (userSnapshot ? <span className="sli-ds-chip">{userSnapshot}</span> : undefined)}
+        applyInline={computersScreen} leadingControls={userSnapshot ? <span className="sli-ds-chip">{userSnapshot}</span> : undefined}
         values={values} defaults={resetValues} onApply={(next) => {
           setSelected(null);
           const domainChanged = next.domain !== values.domain;
@@ -733,8 +729,8 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
       <div className="sli-ds-header__actions">
         <button type="button" className="sli-ds-chip" aria-pressed={compact} onClick={() => setCompact((value) => !value)}>{t("reports.computers.compact")}</button>
         <div ref={setColumnsTarget}/>
-        <button type="button" className="sli-ds-chip" aria-pressed={fullWidthComputerDetail ? Boolean(computerPanel) : detailsVisible}
-          onClick={() => fullWidthComputerDetail && !computerPanel && rows[0] ? chooseComputer(rows[0]) : setDetailsVisible((value) => !value)}>{t("reports.computers.toggle_details")}</button>
+        {computerPanel ? <button type="button" className="sli-ds-chip" aria-pressed="true"
+          onClick={() => setSelected(null)}>{t("reports.computers.toggle_details")}</button> : null}
       </div>
     </div> : independentUsers ? <div className="sli-ds-report__toolbar">
       <ViewTabs views={displayedViews}/>
@@ -801,11 +797,11 @@ function ReportBody({ definition: sourceDefinition, initialSearch, additionalTab
         selectedKey={selected ? String(selected[definition.row_key]) : null} columnsControlTarget={userColumnsTarget} wrapCells="all" {...userTablePaging}/>
         : <p>{t(state === "not_collected" ? "reports.ad.users.list.not_collected" : userReview ? "reports.ad.users.no_checks" : "reports.ad.users.list.empty")}</p>
       : computerReport && view.key === "checks"
-      ? <ComputerChecks result={first} onSelect={chooseComputer} onInventory={() => selectView("computers")}/>
+      ? <ComputerChecks result={first} onSelect={chooseComputer} params={baseParams}/>
       : fullWidthComputerDetail && computerPanel ? computerPanel
       : computersScreen
       ? rows.length ? <DataTable key={view.key} caption={view.title ?? definition.title}
-        columns={computerReport && view.key === "changes" ? computerTableColumns(view.columns ?? [], chooseComputer, [], timeZone) : computerTable}
+        columns={computerTable}
         rows={rows} rowKey={rowKey} onRowClick={chooseComputer} total={first?.filtered_count} selectedKey={activeComputer ? rowKey(activeComputer) : null}
         compact={compact} density={compact ? undefined : "comfortable"} wrapCells="all" pagination={listPagination} sort={activeSort}
         onSort={toggleSort} columnsControlTarget={columnsTarget}

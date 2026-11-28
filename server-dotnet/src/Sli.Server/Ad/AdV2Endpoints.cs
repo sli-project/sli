@@ -164,6 +164,7 @@ public static class AdV2Endpoints
         long? selected = SelectDomain(q);
         var declarations = d["params"]!.AsArray(); var names = declarations.Select(p => p!.Text("key")!).ToHashSet();
         string[] reserved = ["cursor", "limit", "sort", "direction", "tz", "tab", ..(names.Contains("period")?new[]{"from","to"}:System.Array.Empty<string>())];
+        if (key == "ad.computer-logons") names.Add("domain"); // The shared Computers workspace uses the existing validated domain alias.
         string? unknown = q.Keys.Except(names.Concat(reserved)).Order(StringComparer.Ordinal).FirstOrDefault();
         if (unknown is not null) throw new AdInputException("report_parameter_unknown:" + unknown);
         string zone = First("tz") ?? "UTC"; try { _ = TimeZoneInfo.FindSystemTimeZoneById(zone); } catch (TimeZoneNotFoundException) { throw new AdInputException("report_timezone_invalid"); }

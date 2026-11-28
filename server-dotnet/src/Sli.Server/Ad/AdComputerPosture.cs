@@ -21,10 +21,16 @@ internal static class AdComputerPosture
         }
         internal JsonObject[] Candidates(long domain,string? guid,long entity)=>guids.GetValueOrDefault((domain,(guid??"").Trim('{','}').ToLowerInvariant()),[]).Concat(entities.GetValueOrDefault((domain,entity),[])).Distinct(ReferenceEqualityComparer.Instance).Cast<JsonObject>().ToArray();
     }
+    internal static bool IsDomainController(JsonObject raw, long? uac) =>
+        (uac.GetValueOrDefault() & (8192 | 0x04000000)) != 0 ||
+        raw.Text("deviceType") == "domain_controller" ||
+        raw["classification"].Text("result") == "domain_controller" ||
+        raw["classification"].Text("value") == "domain_controller";
+
     internal static void Apply(JsonObject row,JsonObject raw,DateTimeOffset at,long? uac=null)
     {
         uac ??= AdInventoryRows.ComputerUac(raw["userAccountControl"]);
-        if((uac.GetValueOrDefault()&8192)!=0)row["computer_type"]="domain_controller";
+        if (IsDomainController(raw, uac)) row["computer_type"] = "domain_controller";
         bool? unconstrained=uac is not null?(uac.Value&524288)!=0:AdInventoryRows.Bool(raw["trustedForDelegation"]);
         bool? constrained=raw["allowedToDelegateTo"] is JsonArray targets?targets.Count>0:null;
         row["delegation"]=Obj(new{unconstrained,constrained,resource_based=AdInventoryRows.Bool(raw["resourceBasedDelegationPresent"])});row["trusted_for_delegation"]=unconstrained;row["constrained_delegation"]=constrained;
@@ -33,6 +39,8 @@ internal static class AdComputerPosture
         string state=expiration is null?"unknown":expiration<at?"expired":"metadata_present";
         row["laps"]=Obj(new{state,expiration_utc=expiration is null?null:AdInventoryRows.PythonIso(expiration.Value),source_attribute=modern is not null?"msLAPS-PasswordExpirationTime":expiration is not null?"ms-Mcs-AdmPwdExpirationTime":null});row["laps_state"]=state;
     }
+    internal static bool? UnconstrainedDelegationRisk(JsonObject computer) =>
+        computer.Text("computer_type") == "domain_controller" ? false : AdInventoryRows.Bool(computer["delegation"]?["unconstrained"]);
     internal static JsonObject ReviewObject(JsonObject raw,DateTimeOffset at)
     {
         var row=new JsonObject();foreach(var(from,to)in new[]{("objectGuid","object_guid"),("sid","object_sid"),("name","display_name"),("enabled","enabled"),("lastLogonTimestamp","last_logon_utc"),("passwordLastSet","password_last_set_utc"),("whenCreated","created_utc"),("osName","operating_system"),("osVersion","operating_system_version"),("deviceType","computer_type"),("ou","ou_path")})row[to]=raw[from]?.DeepClone();
