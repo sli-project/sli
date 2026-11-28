@@ -321,7 +321,7 @@
             {
               "id": "file-audit",
               "label": "file-audit.title",
-              "path": "/report/file-audit.actions",
+              "path": "/report/file-audit.overview",
               "icon": "report",
               "plugin_id": "sli.file-audit",
               "reports": [
@@ -346,21 +346,21 @@
               ],
               "views": [
                 {
-                  "id": "actions",
-                  "label": "file-audit.tabs.actions",
-                  "path": "/report/file-audit.actions",
-                  "report_key": "file-audit.actions",
-                  "reports": [
-                    "file-audit.actions"
-                  ]
-                },
-                {
                   "id": "overview",
                   "label": "file-audit.tabs.overview",
                   "path": "/report/file-audit.overview",
                   "report_key": "file-audit.overview",
                   "reports": [
                     "file-audit.overview"
+                  ]
+                },
+                {
+                  "id": "actions",
+                  "label": "file-audit.tabs.actions",
+                  "path": "/report/file-audit.actions",
+                  "report_key": "file-audit.actions",
+                  "reports": [
+                    "file-audit.actions"
                   ]
                 },
                 {

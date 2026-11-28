@@ -62,7 +62,7 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
                 """, ct))[0]!.AsObject();
             fileActivity = discovery.Flag("file_activity");
             var discovered = Array(discovery["roots"]);
-            bool catalog = tab == "overview" && context.Params.Text("source_kind", "server") == "server"
+            bool catalog = tab is "overview" or "audit-state" && context.Params.Text("source_kind", "server") == "server"
                 && discovery.Flag("catalog_available");
             if (catalog) discovered = await CatalogRootsAsync(session, discovered, ct);
             if (discovered.Count > 1000) return ReportResult.Create(context.Definition.Key, "partial", coverage: new() { ["state"] = "unknown", ["reason"] = "result_truncated" }, limitations: [new JsonObject { ["code"] = "root_limit", ["text"] = "Область превышает 1000 шар. Уточните назначенную область доступа." }]);
@@ -78,6 +78,17 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
                 && (context.Params["device_id"] is null || Text(r, "agent_id") == Text(context.Params, "device_id"))
                 && (selected.Count == 0 || selected.Any(x => x!.GetValue<string>() == ShareKey(r!))))
                 .Select(r => r!.DeepClone()).ToArray());
+            var from = DateTimeOffset.Parse(context.Params["period"]!["from_utc"]!.GetValue<string>(), CultureInfo.InvariantCulture).UtcDateTime;
+            var to = WindowEnd(context);
+            var overviewFacts = new Dictionary<string, JsonObject>();
+            if (tab == "overview")
+            {
+                readRoots = new JsonArray(readRoots.Where(root => ResourceMatches(root!, Text(context.Params, "path_search"),
+                    context.Params.Text("include_nested", "true") == "true")).Select(root => root!.DeepClone()).ToArray());
+                overviewFacts = await OverviewFactsAsync(session, readRoots, from, to, ct);
+                if (context.Params.Text("deviations_only") == "true")
+                    readRoots = new JsonArray(readRoots.Where(root => overviewFacts.ContainsKey(ShareKey(root!))).Select(root => root!.DeepClone()).ToArray());
+            }
             if (readRoots.Count == 0) data = new() { ["items"] = new JsonArray(), ["filtered_count"] = 0, ["has_more"] = false, ["after"] = null };
             else
             {
@@ -95,8 +106,6 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
                 var sql = tab == "overview" ? PermissionOverviewSql : actionEpisodes ? FileActionsSql
                     : actionRows && tab != "out-of-hours" ? PermissionChangesSql
                     : "select sli_plugin_file_audit.report_rows($1::jsonb,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10) as data";
-                var from = DateTimeOffset.Parse(context.Params["period"]!["from_utc"]!.GetValue<string>(), CultureInfo.InvariantCulture).UtcDateTime;
-                var to = WindowEnd(context);
                 if (context.Params["activity"] is { } activity) options["activity"] = activity.DeepClone();
                 Task<JsonArray> Read(JsonObject paging, int size) => session.QueryAsync(sql, ct, readRoots, tab, from, to,
                     Text(context.Params, "path"), context.Params.Text("include_nested", "true") == "true",
@@ -105,9 +114,12 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
                     : actionRows ? await ReadScreenActions(session, context, tab, options, Read, ct)
                     : (await Read(options, context.Paging.Limit))[0]!["data"]!.AsObject();
                 if (data["service_filter_version"]?.GetValue<int>() != 1) return Unreadable(context);
-                if (tab == "overview") await ResourceAuditAsync(session, context, Array(data["items"]), ct);
+                if (tab is "overview" or "audit-state") await ResourceAuditAsync(session, context, Array(data["items"]), ct);
                 if (actionRows) await LinkActionProblemsAsync(session, context, Array(data["items"]), tab, actionEpisodes, ct);
             }
+            if (tab == "overview")
+                foreach (var row in Array(data["items"]).OfType<JsonObject>())
+                    if (overviewFacts.TryGetValue(ShareKey(row), out var fact)) row["top_fact"] = fact;
             if (catalog)
             {
                 data["audit_resources"] = new JsonObject
@@ -128,11 +140,19 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
                     if (context.Action == "view" && (context.Access.Capabilities.IsOwner || context.Access.Capabilities.Decide("access.manage").Allowed)
                         && FileAuditAccess.Allowed(context.Access.Capabilities, context.Principal.Role, context.Principal.Type, context.Principal.Id,
                             Text(root, "agent_id")!, Text(root, "source_instance_id")!, Text(root, "collection_scope_id")!))
+                    {
                         row["audit_revision"] = root["audit_policy_revision"]?.DeepClone();
+                        if (tab == "audit-state" && root.Flag("catalog_checkable"))
+                            row["check_revision"] = root["audit_policy_revision"]?.DeepClone();
+                    }
                 }
             }
             await RestoreEvidenceAsync(context, readRoots, Array(data["items"]), ct);
-            if (tab == "mass-operations") await RansomDetails(session, context, roots, Array(data["items"]), ct);
+            if (tab == "mass-operations")
+            {
+                await RuleSeveritiesAsync(session, Array(data["items"]).OfType<JsonObject>().ToArray(), ct);
+                await RansomDetails(session, context, roots, Array(data["items"]), ct);
+            }
             await session.CommitAsync(ct);
         }
         catch (PostgresException e) when (e.SqlState == "57014")

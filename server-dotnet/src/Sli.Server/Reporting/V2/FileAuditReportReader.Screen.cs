@@ -68,10 +68,15 @@ public sealed partial class FileAuditReportReader
                 else if (assigned && (changing && !restoring && verified || retained is not null))
                     auditState = "enabled";
                 root["audit_state"] = auditState;
-                root["audit_checked_at"] = (receipt?["observed_at_utc"] ?? retained?["observed_at_utc"] ?? audit?["reported_at"])?.DeepClone();
+                root["audit_checked_at"] = (receipt?["observed_at_utc"] ?? retained?["observed_at_utc"])?.DeepClone();
                 root["audit_reason"] = reason;
                 root["audit_can_restore"] = assigned || restoring;
                 root["audit_policy_revision"] = server["audit_policy_revision"]?.DeepClone();
+                root["catalog_checkable"] = server["assigned"] is null && audit?["retired_apply"] is null
+                    && audit?["may_own_audit"]?.GetValue<bool>() != true
+                    && Text(audit, "state") != "pending"
+                    && (command is null || Text(command, "action") == "check")
+                    && Text(audit?["request"]?["config"], "source_kind") != "workstation";
                 root["catalog_configured"] = previous is not null;
                 roots.Add(root);
                 if (roots.Count == 1001) return roots;
@@ -130,7 +135,8 @@ public sealed partial class FileAuditReportReader
             left join lateral (
                 select a.rights_probe->>'agent_version' as current_version, scope->>'agent_version' as check_version,
                     case when configured.matches and a.file_audit->'retired_apply' is null
-                        and a.file_audit->>'may_own_audit' is distinct from 'true' then a.policy_revision end as check_revision,
+                        and a.file_audit->>'may_own_audit' is distinct from 'true'
+                        and a.file_audit->>'state' is distinct from 'pending' then a.policy_revision end as check_revision,
                     case when configured.matches and selected.includes then a.file_audit->>'state' end as check_state,
                     case when configured.matches and selected.includes and scope ? 'state' then jsonb_build_object(
                         'state',scope->'state','reason_code',scope->'reason_code',

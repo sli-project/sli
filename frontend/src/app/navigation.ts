@@ -97,7 +97,7 @@ export function buildNavigation(access: NavAccess, registry?: NavigationRegistry
   const enabled = new Set(registry.enabled_plugins);
   const order = (id: string) => betaOrder.get(id) ?? (registry.modules_preview ? previewOrder.get(id) : undefined);
   const destination = (entry: NavigationEntryDto): NavigationEntryDto => {
-    if (entry.id === "file-audit" && !access.reports.has("file-audit.actions")) {
+    if (entry.id === "file-audit" && !access.reports.has("file-audit.overview")) {
       const allowed = entry.views?.find(view => view.reports?.some(key => access.reports.has(key)));
       if (allowed) return { ...entry, path: allowed.path };
     }

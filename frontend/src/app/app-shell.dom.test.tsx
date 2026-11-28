@@ -127,7 +127,7 @@ describe("AppShell", () => {
     const regions = within(nav).getAllByRole("region");
     expect(regions.flatMap((region) => within(region).getAllByRole("link").map((link) => link.getAttribute("href")))).toEqual([
       "/", "/report/security.problems", "/report/security.events.chains", "/report/events.journal",
-      "/report/ad.infrastructure", "/report/ad.users.v2", "/report/ad.computers.v6", "/report/ad.gpo.v2", "/report/file-audit.actions", "/report/workstations.overview",
+      "/report/ad.infrastructure", "/report/ad.users.v2", "/report/ad.computers.v6", "/report/ad.gpo.v2", "/report/file-audit.overview", "/report/workstations.overview",
     ]);
     expect(within(nav).getByRole("link", { name: locale === "ru" ? "Изменения в домене" : "Domain changes" })).toBeTruthy();
     expect(within(nav).queryByRole("link", { name: locale === "ru" ? "Оповещения" : "Notifications" })).toBeNull();
