@@ -11,16 +11,29 @@ namespace Sli.Server.Ad;
 public static class AdSecurity
 {
     internal static readonly string[] ChangeViews = ["all", "accounts", "groups", "passwords", "audit"];
-    internal static int[] ChangeEventIds(bool maintenance = false) => AdReportStore.EventIds("security")
-        .Where(id => ChangeView(id) is not null)
-        .Concat(maintenance ? [4697, 5136, 7045] : new[] { 5136 }).Distinct().Order().ToArray();
-    internal static string? ChangeView(long id) => id is 4697 or 7045 ? "audit" : id == 5136 ? "accounts" : Family(id) switch
+    internal static Guid? OwnAuditGpo(IConfiguration? configuration, long domain)
     {
-        "account_lock" or "account_lifecycle" or "account_change" => "accounts",
-        "group_membership" or "group_lifecycle" => "groups",
-        "password_operation" => "passwords",
-        "audit_configuration" => "audit",
-        _ => null
+        var identity = configuration?.GetSection($"Sli:OwnActions:AuditGpo:{domain}");
+        return Guid.TryParse(identity?["Guid"], out var id) && id != Guid.Empty
+            && identity?["Name"] is { Length: > 0 and <= 256 } ? id : null;
+    }
+
+    internal static int[] ChangeEventIds() => AdReportStore.EventIds("security")
+        .Where(id => ChangeView(id) is not null)
+        .Concat([4739, 5136, 5137, 5141]).Distinct().Order().ToArray();
+    internal static string? ChangeView(long id) => id switch
+    {
+        5136 or 5137 or 5141 => "accounts",
+        4739 => "audit",
+        1102 => null,
+        _ => Family(id) switch
+        {
+            "account_lock" or "account_lifecycle" or "account_change" => "accounts",
+            "group_membership" or "group_lifecycle" => "groups",
+            "password_operation" => "passwords",
+            "audit_configuration" => "audit",
+            _ => null
+        }
     };
 
     internal static string? Family(long id) => AdHistory.Map("_SECURITY_EVENT_FAMILY_BY_EVENT_ID")[id.ToString()]?.GetValue<string>();
@@ -35,7 +48,7 @@ public static class AdSecurity
             string name = key switch { "target" => "target_account", "source" => "source_host", _ => key };
             if (key is "event_id" or "entity_id" or "event_db_id")
             {
-                if (!long.TryParse(value, out long id) || id <= 0 || key == "event_id" && Family(id) is null && !(changes && id is (4697 or 5136 or 7045))) throw new AdInputException("security_events_filter_invalid");
+                if (!long.TryParse(value, out long id) || id <= 0 || key == "event_id" && Family(id) is null && !(changes && (ChangeView(id) is not null || id is 4697 or 7045))) throw new AdInputException("security_events_filter_invalid");
                 filters[name] = id;
             }
             else filters[name] = key is "category" or "outcome" ? value.ToLowerInvariant() : value;
@@ -108,8 +121,12 @@ public static class AdSecurity
         foreach (var e in events)
         {
             long id = e.Int("event_id");
-            string? family = request.Filters["changes_view"] is not null && id is (4697 or 5136 or 7045)
-                ? id == 5136 ? "directory_change" : "service_change" : Family(id);
+            string? family = request.Filters["changes_view"] is not null ? id switch
+            {
+                5136 or 5137 or 5141 => "directory_change",
+                4739 => "domain_configuration",
+                _ => Family(id),
+            } : Family(id);
             if (family is null) throw new AdInputException("security_events_event_invalid");
             if(e["day"] is not null)throw new AdInputException("security_events_event_identity_invalid");
             if (e.Int("event_db_id") <= 0 || items.Any(i => i.Int("event_db_id") == e.Int("event_db_id"))) throw new AdInputException("security_events_event_identity_invalid");
@@ -196,6 +213,16 @@ public static class AdSecurity
                     directoryChange["observed_value"] = fields.WindowsText("AttributeValue");
                 row["source_native_change"] = directoryChange;
             }
+            else if (query.ChangeCounts && row.Int("event_id") == 4739)
+            {
+                var attributes = new JsonObject();
+                foreach (var (source, key) in new[] {
+                    ("MinPasswordLength", "minimum_password_length"), ("PasswordHistoryLength", "password_history_length"),
+                    ("LockoutThreshold", "lockout_threshold"),
+                })
+                    if (fields.WindowsText(source) is {} value) attributes[key] = value;
+                row["source_native_change"] = Obj(new { state = "observed", kind = "domain_policy_changed", attributes });
+            }
         }
         var result = Compose(request, rows.Where(r=>r["day"] is null).ToArray(), history, more, categories);
         if (counts is not null)
@@ -203,24 +230,24 @@ public static class AdSecurity
             result["change_counts"] = new JsonObject(ChangeViews.Select(key =>
                 KeyValuePair.Create(key, (JsonNode?)JsonValue.Create(counts.Int(key)))));
             result["filtered_count"] = counts.Int("display_count");
+            result["change_columns"] = Obj(new
+            {
+                field = counts["column_field"]!.GetValue<bool>(),
+                value = counts["column_value"]!.GetValue<bool>(),
+                result = counts["column_outcomes"] is JsonArray outcomes
+                    && outcomes.OfType<JsonObject>().Any(row => OutcomeValue(row) is "success" or "failure"),
+            });
             var sourceById = rows.ToDictionary(row => row.Int("event_db_id"));
             foreach (var item in result["items"]!.AsArray().OfType<JsonObject>())
             {
                 var source = sourceById[item.Int("event_db_id")];
-                if (source.Int("repeat_count") > 1 && source.Int("applied_subcategories") == 0 && request.Filters["batch"] is null)
+                if (source.Int("repeat_count") > 1 && request.Filters["batch"] is null)
                 {
                     item["repeat_count"] = source.Int("repeat_count");
                     item["first_seen_utc"] = source["first_seen_utc"]?.DeepClone();
                 }
                 item["channel"] = source["event_channel"]?.DeepClone();
-                if (source.Int("applied_subcategories") > 0)
-                {
-                    item["sli_audit_subcategories"] = source["applied_subcategories"]!.DeepClone();
-                    if (request.Filters["batch"] is null)
-                        item["change"] = Obj(new { state = "observed", kind = "audit_policy_changed" });
-                }
-                if (source.Text("sli_service") is not null) item["sli_service_install"] = true;
-                if ((source.Text("sli_service") ?? source.Text("sli_gpo")) is {} objectName)
+                if (source.Text("directory_object") is {} objectName)
                     item["affected_account"] = Obj(new { state = "observed", name = objectName });
             }
             if (request.IncludeChangeSnapshotValues)

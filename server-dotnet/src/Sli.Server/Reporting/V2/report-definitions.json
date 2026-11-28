@@ -2128,6 +2128,16 @@
         ]
       },
       {
+        "key": "hide_open_problem_evidence",
+        "label": "Hide evidence of open problems",
+        "kind": "choice",
+        "hidden": true,
+        "options": [
+          { "value": "on", "label": "On" },
+          { "value": "off", "label": "Off" }
+        ]
+      },
+      {
         "key": "expand",
         "label": "Repeat group",
         "kind": "int",

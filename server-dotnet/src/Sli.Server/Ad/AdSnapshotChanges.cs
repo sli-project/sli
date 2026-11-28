@@ -1,6 +1,8 @@
 using System.Text.Json.Nodes;
 using Npgsql;
 using Sli.Server.Access;
+using Sli.Server.Entities;
+using Sli.Server.Storage.EventReports;
 using Sli.Server.Storage.Lifecycle;
 using static Sli.Server.Ad.AdJson;
 
@@ -78,9 +80,12 @@ internal static class AdSnapshotChanges
             {
                 var account = currentObjects.OfType<JsonObject>()
                     .FirstOrDefault(row => Guid.TryParse(row.Text("objectGuid"), out var candidate) && candidate == target);
+                var period = new AdPeriod(nowUtc.AddDays(-30), nowUtc);
+                long domain = source.Int("domain_id");
                 if (account?.Text("sid") is {} sid)
-                    changes.AddRange(await ComputerMembershipAsync(db, request, target, account, sid, source.Int("domain_id"),
-                        new AdPeriod(nowUtc.AddDays(-30), nowUtc), ct, config));
+                    changes.AddRange(await ComputerMembershipAsync(db, request, target, account, sid, domain, period, ct, config));
+                if (account?.Text("dnsHostName") is { Length: > 0 } hostname)
+                    changes.AddRange(await ComputerHostChangesAsync(db, request.Access, target, hostname, domain, period, ct, config));
             }
             var previous=await AdV2Store.PreviousSnapshot(db,source,users?"users_v2":"computers_v6",ct);
             var currentAt=AdInventoryRows.Date(source["observed_at_utc"]);var previousAt=AdInventoryRows.Date(previous?["observed_at_utc"]);
@@ -127,6 +132,60 @@ internal static class AdSnapshotChanges
             var page=changes.Skip(offset).Take(request.Limit).ToArray();bool more=offset+page.Length<changes.Count;result["items"]=Array(page);result["filtered_count"]=state=="not_collected"?null:JsonValue.Create(changes.Count);result["has_more"]=more;result["next_cursor"]=more?page[^1].Text("row_id"):null;
         }
         result["collections"]!["changes"]=result["items"]!.DeepClone();return result;
+    }
+
+    internal static async Task<IEnumerable<JsonObject>> ComputerHostChangesAsync(NpgsqlConnection db, AccessDecision? access,
+        Guid computer, string hostname, long domain, AdPeriod period, CancellationToken ct, IConfiguration? config)
+    {
+        if (access is null) return [];
+        var controllers = await AdJson.ReadAsync(db, """
+            select id from servers where domain_id=$1 and role='domain_controller'
+                and (lower(trim(trailing '.' from fqdn))=$2 or lower(trim(trailing '.' from hostname))=$2)
+            limit 2
+            """, ct, domain, hostname.Trim().TrimEnd('.').ToLowerInvariant());
+        if (controllers.Count != 1) return [];
+        long server = controllers[0].Int("id");
+        var channels = new[] { "Security", "System" }.Where(channel =>
+        {
+            IReadOnlyList<IReadOnlyList<AccessResource>> resources = [[new("server", server), new("domain", domain), new("channel", Value: channel)]];
+            return ResourceAccessDecisions.ReportAction(access, "events.explorer", "view", resources, new HashSet<string> { "security", "technical" }).Allowed
+                && ResourceAccessDecisions.Capability(access.Capabilities, "events.view", resources).Allowed;
+        }).ToArray();
+        if (channels.Length == 0) return [];
+        bool ownActions = (await AdJson.ReadAsync(db,
+            "select to_regprocedure('public.sli_service_install421(bigint,timestamptz)') is not null as available", ct))
+            .Single()["available"]!.GetValue<bool>();
+        string excludeAgent = ownActions
+            ? "and case when event_id in (4697,7045) then public.sli_service_install421(id,time_created_utc) is null else true end"
+            : "";
+        string source = EntityShortSql.Source("$6", daily: false);
+        var events = await AdJson.ReadAsync(db, $"""
+            with short_events as ({source})
+            select id,event_id,time_created_utc,
+                left(nullif(fields->>'ServiceName',''),256) as service_name,
+                left(nullif(fields->>'TaskName',''),256) as task_name,
+                case when channel='Security' then left(nullif(method->'$principals'->>'SubjectUserName',''),256) end as initiator
+            from short_events
+            where domain_id=$1 and server_id=$2 and channel=any($3) and time_created_utc>=$4 and time_created_utc<$5
+                and ((event_id=7045 and channel='System' and provider_name='Service Control Manager')
+                  or (event_id in (4697,4698,4699,4700,4701,4702) and channel='Security'
+                      and provider_name='Microsoft-Windows-Security-Auditing'))
+                {excludeAgent}
+            order by time_created_utc desc,id desc
+            """, ct, domain, server, channels, period.Start, period.End, EventReadService.ShortBoundary(config));
+        return events.Select(row => Obj(new
+        {
+            row_id = $"{domain}:{computer}:host:{row.Int("id")}",
+            object_guid = computer.ToString(),
+            display_name = hostname,
+            domain_id = domain,
+            change_type = "host_event",
+            event_id = row.Int("event_id"),
+            observed_at_utc = Iso(row.Time("time_created_utc")),
+            actor = row.Text("initiator"),
+            host_object = row.Text("service_name") ?? row.Text("task_name"),
+            source_event_id = row.Int("id"),
+        }));
     }
 
     static async Task<List<JsonObject>> ComputerMembershipAsync(NpgsqlConnection db, AdV2Request request, Guid computer,

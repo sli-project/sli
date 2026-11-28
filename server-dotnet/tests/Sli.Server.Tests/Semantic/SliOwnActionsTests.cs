@@ -1,11 +1,13 @@
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
+using Sli.Server.Access;
 using Sli.Server.Ad;
 using Sli.Server.Reporting.V2;
 using Sli.Server.Semantic;
 using Sli.Server.Semantic.Password;
 using Sli.Server.Tests.Agents;
+using Sli.Server.Tests.Reporting;
 using Sli.Server.Tests.Storage;
 using Xunit;
 
@@ -15,7 +17,7 @@ namespace Sli.Server.Tests.Semantic;
 public sealed class SliOwnActionsTests
 {
     [Fact]
-    public async Task Maintenance_is_attributed_in_changes_and_does_not_publish_findings()
+    public async Task Maintenance_is_excluded_from_domain_changes_and_does_not_publish_findings()
     {
         var ct = TestContext.Current.CancellationToken;
         using var environment = new SemanticProducerPostgresTests.Admission();
@@ -66,13 +68,8 @@ public sealed class SliOwnActionsTests
         await report.ExecuteNonQueryAsync(ct);
 
         var changes = await AdSecurity.ReadAsync(reporting, request, ct, null!);
-        var row = Assert.Single(changes["items"]!.AsArray())!.AsObject();
-        Assert.Equal("SLI", row["actor"]!["name"]!.ToString());
-        Assert.Equal(1, changes["filtered_count"]!.GetValue<long>());
-        SecurityEventsReader.Derived(row);
-        Assert.Equal("SLI configured auditing · 2 subcategories", ReportPresentation.Message(
-            row["presentation_messages"]!["change_text"]!["code"]!.ToString(), true,
-            row["presentation_messages"]!["change_text"]!["params"]!.AsObject())!["text"]!.ToString());
+        Assert.Empty(changes["items"]!.AsArray());
+        Assert.Equal(0, changes["filtered_count"]!.GetValue<long>());
         var journal = await AdSecurity.ReadAsync(reporting, request with { Filters = new JsonObject { ["event_id"] = 4719 } }, ct, null!);
         Assert.Equal(2, journal["items"]!.AsArray().Count);
         Assert.All(journal["items"]!.AsArray(), item => Assert.NotEqual("SLI", item!["actor"]?["name"]?.ToString()));
@@ -82,10 +79,22 @@ public sealed class SliOwnActionsTests
         var withGpo = await AdSecurity.ReadAsync(reporting, request with {
             Filters = new JsonObject { ["changes_view"] = "all", ["repeat_mode"] = "individual" }
         }, ct, null!, config);
-        var ownRows = withGpo["items"]!.AsArray().Where(item => item!["actor"]?["name"]?.ToString() == "SLI").ToArray();
-        Assert.Equal(new[] { 4697L, 4719L, 5136L },
-            ownRows.Select(item => item!["event_id"]!.GetValue<long>()).Order().ToArray());
-        Assert.Equal("Example audit GPO", ownRows.Single(item => item!["event_id"]!.ToString() == "5136")!["affected_account"]!["name"]!.ToString());
+        var externalGpo = Assert.Single(withGpo["items"]!.AsArray())!;
+        Assert.Equal(5136L, externalGpo["event_id"]!.GetValue<long>());
+        Assert.Equal(1, withGpo["change_counts"]!["all"]!.GetValue<long>());
+        Assert.Equal("Example audit GPO", externalGpo["change"]!["observed_value"]!.ToString());
+        var facts = EventsJournalSemanticsTests.Facts();
+        var access = new ReportEligibility().Compose(facts, new CapabilityComposer().Compose(facts));
+        var computer = Guid.NewGuid();
+        var hostChanges = (await AdSnapshotChanges.ComputerHostChangesAsync(reporting, access, computer, "dc.example.test", 1,
+            request.Period!, ct, config)).ToArray();
+        var service = Assert.Single(hostChanges, item => item["event_id"]!.GetValue<long>() == 4697);
+        Assert.Equal("ExampleService", service["host_object"]!.ToString());
+        Assert.Equal(computer.ToString(), service["object_guid"]!.ToString());
+        Assert.True(service["source_event_id"]!.GetValue<long>() > 0);
+        Assert.Contains(hostChanges, item => item["host_object"]?.ToString() == @"\ExampleTask");
+        Assert.Empty(await AdSnapshotChanges.ComputerHostChangesAsync(reporting, access, computer, "other.example.test", 1,
+            request.Period!, ct, config));
 
         await using var runtime = PasswordProducerRuntime.Create(name => name == "ADLOG_SEMANTIC_WORKER_DSN"
             ? fixture.Dsn("sli_semantic_login") : null, _ => throw new InvalidOperationException());

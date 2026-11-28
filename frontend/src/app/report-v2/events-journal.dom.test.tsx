@@ -30,8 +30,8 @@ beforeEach(() => {
 afterEach(() => { cleanup(); setLocale("ru"); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 function journal({
-  state = "ok", items = [exact, group], failure, pages = false,
-}: { state?: ReportResultDto["state"]; items?: Record<string, unknown>[]; failure?: "definition" | "data"; pages?: boolean } = {}) {
+  state = "ok", items = [exact, group], failure, pages = false, filterEvidence = false,
+}: { state?: ReportResultDto["state"]; items?: Record<string, unknown>[]; failure?: "definition" | "data"; pages?: boolean; filterEvidence?: boolean } = {}) {
   const requests: URL[] = [];
   const data: ReportResultDto = {
     contract_id: "sli.report-result.v2", report_key: "events.journal", state, items,
@@ -56,7 +56,9 @@ function journal({
       ], next_cursor: null }
       : params.has("cursor") ? { ...data, items: [event(1, "Next page event")], next_cursor: null }
       : params.get("view") === "service" ? { ...data, items: [], state: "empty" }
-      : data;
+      : filterEvidence && params.get("hide_open_problem_evidence") === "on"
+        ? { ...data, items: [group], filtered_count: 1, journal_counts: { all: 18, authentication: 18, failures: 18, service: 0 } }
+        : data;
     return new Response(JSON.stringify(failed ? { error: "synthetic_failure" } : payload), {
       status: failed ? 500 : 200, headers: { "Content-Type": "application/json" },
     });
@@ -66,6 +68,18 @@ function journal({
   </QueryClientProvider>);
   return requests;
 }
+
+it("hides open problem evidence by default and restores its link and counts when unchecked", async () => {
+  const requests = journal({ filterEvidence: true });
+  const filter = await screen.findByRole("checkbox", { name: "Hide evidence of open problems" });
+  expect(filter).toHaveProperty("checked", true);
+  await screen.findByRole("tab", { name: "All 18" });
+  expect(screen.queryByRole("link", { name: "Problem #42" })).toBeNull();
+  fireEvent.click(filter);
+  await screen.findByRole("tab", { name: "All 19" });
+  expect(await screen.findByRole("link", { name: "Problem #42" })).toBeTruthy();
+  expect(requests.at(-1)?.searchParams.get("hide_open_problem_evidence")).toBe("off");
+});
 
 it("keeps the workstation source and return context when changing journal filters", async () => {
   const source = "41800000-0000-4000-8000-000000000001";
@@ -203,7 +217,7 @@ it("renders paired actions, a plain workstation, and only distinguishing columns
   const failed = within((await screen.findByText(t("reports.v2.events.journal.action.failed_logon"))).closest("tr")!);
   expect(failed.getByRole("button", { name: "Expand repeats" })).toBeTruthy();
   expect(failed.queryByText("×2")).toBeNull();
-  expect(failed.getByRole("link", { name: "#43" }).getAttribute("href")).toBe("/app/report/security.problems?id=43");
+  expect(failed.getByRole("link", { name: "Problem #43" }).getAttribute("href")).toBe("/app/report/security.problems?id=43");
   expect(screen.getByText(t("reports.v2.events.journal.action.privileged_logon"))).toBeTruthy();
   expect(screen.getByText(t("reports.v2.events.journal.event.4769"))).toBeTruthy();
   expect(screen.getByRole("cell", { name: "<reported workstation>" })).toBeTruthy();

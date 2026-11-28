@@ -258,6 +258,24 @@ public sealed class DomainChangesColdFactsTests
         Assert.Equal("description", AdJson.Text(directory, "attribute"));
         Assert.Equal("Directory service", AdJson.Text(directory, "observed_value"));
 
+        await SeedCompact(db, [
+            accountChange with { EventId = 5502, Target = Member },
+            accountChange with { EventId = 5503, Kind = 4722 },
+            directoryChange with
+            {
+                EventId = 5504,
+                Fields = new Dictionary<string, string?> { ["AttributeLDAPDisplayName"] = "displayName", ["AttributeValue"] = "Directory account" }
+            },
+        ], ct);
+        var distinct = await current.ReadAsync(Request(filters: changes) with
+        {
+            Period = new AdPeriod(start.AddMinutes(10), start.AddMinutes(11))
+        }, false, ct);
+        Assert.Equal(new long[] { 5504, 5503, 5502, 5501, 5500 },
+            distinct["items"]!.AsArray().Select(item => AdJson.Int(item, "event_db_id")));
+        Assert.Equal(5L, AdJson.Int(distinct, "filtered_count"));
+        Assert.Equal(5L, AdJson.Int(distinct["change_counts"], "all"));
+
         // Record the S2 admission boundary without weakening it for this reader.
         // A separately numbered migration is required before API-role rollout.
         await using (var tx = await db.BeginTransactionAsync(ct)) {

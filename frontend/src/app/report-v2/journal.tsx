@@ -256,7 +256,7 @@ function journalRouteValues(definition: ReportDefinitionDto, routeSearch: string
   const legacyDomain = search.get("domain_id");
   if (legacyDomain && !search.has("domain")) search.set("domain", legacyDomain);
   if (!categories.some((category) => category === search.get("view"))) search.delete("view");
-  return { collapse: "on", ...valuesFromSearch(definition, search) };
+  return { collapse: "on", hide_open_problem_evidence: "on", ...valuesFromSearch(definition, search) };
 }
 
 export function EventJournal({ definition, initialSearch }: { definition: ReportDefinitionDto; initialSearch?: string }) {
@@ -339,7 +339,7 @@ export function EventJournal({ definition, initialSearch }: { definition: Report
   const tabs = categories.map((key) => ({
     key, label: <>{journalText(`view.${key}`)}{typeof counts?.[key] === "number" ? ` ${formatNumber(counts[key])}` : null}</>,
   }));
-  const defaults = { ...defaultValues(definition), collapse: "on" };
+  const defaults = { ...defaultValues(definition), collapse: "on", hide_open_problem_evidence: "on" };
   const currentSearch = new URLSearchParams(initialSearch ?? window.location.search);
   const hasExplicitScope = ["domain", "domain_id", "scope"].some(key => entrySearch.has(key) || currentSearch.has(key));
   const firstAdSource = useFirstAdSource(currentSearch, !hasExplicitScope && page === 0 && active === "all"
@@ -353,7 +353,10 @@ export function EventJournal({ definition, initialSearch }: { definition: Report
           { value: "failure", label: journalText("result.failure") },
         ] } : field
   ));
-  filterDefinitions.push({ key: "collapse", kind: "checkbox", label: journalText("collapse"), onValue: "on", offValue: "off" });
+  filterDefinitions.push(
+    { key: "collapse", kind: "checkbox", label: journalText("collapse"), onValue: "on", offValue: "off" },
+    { key: "hide_open_problem_evidence", kind: "checkbox", label: journalText("hide_open_problem_evidence"), onValue: "on", offValue: "off" },
+  );
   const columns: TableColumn<JournalRow>[] = [
     { key: "time", label: journalText("columns.time.label"), kind: "datetime", render: (row) => eventTime(row, timeZone) },
     { key: "title", label: journalText("columns.event.label"), render: (row) => <span className="sli-ds-table__cell-line">
@@ -429,7 +432,7 @@ export function EventJournal({ definition, initialSearch }: { definition: Report
         {definition.export && valid ? <a className="sli-ds-button" aria-label={t("reports.renderer.export_csv")}
           title={t("reports.renderer.export_csv")} href={`/api/v2/reports/events.journal/export.csv?${fixedParams}`} download><Icon name="download"/></a> : null}
       </>}
-      filters={<FilterBar layout="inline" fields={filterDefinitions} primaryKeys={["q", "result", "collapse"]} values={values} applyInline
+      filters={<FilterBar layout="inline" fields={filterDefinitions} primaryKeys={["q", "result", "collapse", "hide_open_problem_evidence"]} values={values} applyInline
         defaults={{ ...defaults, domain: values.domain, period: values.period }}
         onApply={(next) => change({ ...next, pivot: next.q === values.q ? values.pivot : undefined })}
         leadingControls={<TabList label={journalText("params.view.label")}/>}/>}

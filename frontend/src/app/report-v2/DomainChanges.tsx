@@ -62,8 +62,8 @@ function toChange(row: Row): Change {
   const actor = object(row.actor), group = object(row.group), member = object(row.member), target = object(row.affected_account);
   const host = text(object(row.source_host).hostname);
   const kind = text(change.kind);
-  const added = ["created", "group_created", "member_added"].includes(kind);
-  const removed = ["deleted", "group_deleted", "member_removed"].includes(kind);
+  const added = ["created", "group_created", "member_added"].includes(kind) || event === "5137";
+  const removed = ["deleted", "group_deleted", "member_removed"].includes(kind) || event === "5141";
   const attributes = object(change.attributes);
   const previous = object(change.previous_attributes);
   const fields: Change["fields"] = Object.entries(attributes).flatMap(([key, value]) => {
@@ -97,8 +97,8 @@ function toChange(row: Row): Change {
     id: text(row.event_db_id), domain: text(row.domain_id), event,
     time: text(row.time_created_utc), first: text(row.first_seen_utc),
     count: typeof row.repeat_count === "number" ? row.repeat_count : 1,
-    title: text(row.change_text) || t(`${prefix}change`),
-    sign: added ? "+" : removed ? "−" : "↻",
+    title: row.repeat_mixed_operations === true ? labels("series") : text(row.change_text) || labels("change"),
+    sign: row.repeat_mixed_operations === true ? "↻" : added ? "+" : removed ? "−" : "↻",
     object: name(member) || name(target) || name(group) || (text(row.event_family) === "audit_configuration" ? host : ""),
     target: name(target), member: name(member), group: name(group), actor: name(actor),
     actorFilter: identity(actor), targetFilter: identity(member) || identity(target), groupFilter: identity(group),
@@ -286,13 +286,22 @@ export function DomainChanges({ definition, initialSearch }: { definition: Repor
       ? <button type="button" className="sli-ds-button" data-variant="ghost" data-size="compact" aria-expanded={expanded === row.id}
           onClick={(event) => toggleBatch(event, row.id)}>{row.sign} {row.title} ×{formatNumber(row.count)}</button>
       : `${row.sign} ${row.title}` },
-    { key: "object", label: labels("object"), render: (row) => row.count > 1 ? dash() : show(row.object) },
+    { key: "object", label: labels("object"), render: (row) => show(row.count > 1 ? row.group || row.object : row.object) },
     { key: "field", label: labels("field"), hiddenByDefault: false, render: (row) => row.count > 1 ? dash() : row.fields.map(({ label }) => label).join(" · ") || dash() },
     { key: "value", label: labels("value"), hiddenByDefault: false, render: (row) => row.count > 1 ? dash() : row.fields.map(({ value }) => show(value)).join(" · ") || dash() },
     { key: "initiator", label: labels("initiator"), hiddenByDefault: false, render: (row) => show(row.actor) },
     { key: "dc", label: labels("dc"), minWidth: "calc(4.5 * var(--sli-space-8))", hiddenByDefault: true, render: (row) => show(row.host) },
-    { key: "result", label: labels("result"), minWidth: "calc(2.5 * var(--sli-space-8))", hiddenByDefault: false, render: (row) => <Result value={row.result}/> },
+    { key: "result", label: labels("result"), minWidth: "calc(2.5 * var(--sli-space-8))", hiddenByDefault: false, render: (row) => row.count > 1 ? dash() : <Result value={row.result}/> },
   ];
+  const complete = pageIndex === 0 && page?.has_more === false;
+  const populated: Record<string, boolean> = {
+    field: rows.some((row) => row.count === 1 && row.fields.length > 0),
+    value: rows.some((row) => row.count === 1 && row.fields.some(({ value }) => value)),
+    result: rows.some((row) => row.count === 1 && (row.result === "success" || row.result === "failure")),
+  };
+  const available: Record<string, boolean> | undefined = page?.change_columns;
+  const visibleColumns = columns.filter(({ key }) =>
+    populated[key] !== false || (available ? available[key] : !complete));
   const operations = paramOptions(definition, "event_id", page?.filter_options);
   const count = page?.filtered_count;
   const blocked = page?.state === "denied" || (data.error instanceof ApiResponseError && [401, 403].includes(data.error.status));
@@ -354,7 +363,9 @@ export function DomainChanges({ definition, initialSearch }: { definition: Repor
         <div className="sli-ds-control-field"><span>{labels("operation")}</span>
           <Select label={labels("operation")} value={text(filters.event_id)}
             options={[{ value: "", label: labels("any_operation") }, ...operations.map(({ value }) => ({
-              value, label: value === "5136" ? t("reports.v2.security.events.chains.actions.5136") : t(`security.events.action.${value}` as MessageKey),
+              value, label: ["4739", "5136", "5137", "5141"].includes(value)
+                ? t(`reports.v2.security.events.chains.actions.${value}` as MessageKey)
+                : t(`security.events.action.${value}` as MessageKey),
             }))]} onChange={(eventId) => set({ ...values, event_id: eventId, category: undefined, changes_view: "all" })}/>
         </div>
       </div></div>}
@@ -374,7 +385,7 @@ export function DomainChanges({ definition, initialSearch }: { definition: Repor
       side={chosen}>
       <div className="sli-ds-report__views">
         {data.error && page ? <ErrorLine onRetry={() => void data.fetchNextPage()}/> : null}
-        <DataTable caption={title} columns={columns} rows={rows} rowKey={(row) => row.id} wrapCells density={density}
+        <DataTable caption={title} columns={visibleColumns} rows={rows} rowKey={(row) => row.id} wrapCells density={density}
           sort={{ field: "time", direction: values.changes_order === "asc" ? "asc" : "desc" }}
           onSort={() => set({ ...values, changes_order: values.changes_order === "asc" ? "desc" : "asc" })}
           onRowClick={(row) => { if (row.count > 1) setExpanded(expanded === row.id ? "" : row.id); else select(row); }}

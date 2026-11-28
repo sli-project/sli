@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using Npgsql;
+using Sli.Server.Access;
+using Sli.Server.Auth;
 using Sli.Server.Infrastructure;
 using Sli.Server.Reporting;
 using Sli.Server.Reporting.V2;
@@ -142,6 +144,49 @@ public sealed class JournalPagePerformanceTests(ITestOutputHelper output)
         }
     }
 
+    [Fact]
+    public async Task Open_evidence_is_hidden_before_pairing_totals_and_paging_are_presented()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct);
+        var end = new DateTimeOffset(DateTime.UtcNow.Date, TimeSpan.Zero);
+        await SeedAsync(fixture, end, ct, bulkEvents: 0, pairedEvidence: true);
+        var connections = new Connections(fixture);
+        var reportDatabase = new ReportDatabase(connections);
+        var facts = EventsJournalSemanticsTests.WithQueue(EventsJournalSemanticsTests.Facts());
+        var reader = new EventsJournalReader(new ReportRunner(reportDatabase), new ReportFixture.FactsRepo(facts),
+            new SemanticDatabase(connections), null!);
+        var access = new ReportEligibility().Compose(facts, new CapabilityComposer().Compose(facts));
+        var definition = new ReportDefinitionRegistry().Get("events.journal")!;
+        var grants = access.Reports.Single(report => report.ReportKey == "events.explorer").Grants;
+        Task<JsonObject> Read(string toggle, string? search = null) => reader.QueryAsync(new(definition, access, new Principal("session", 7, "admin"),
+            new() {
+                ["period"] = new JsonObject { ["from_utc"] = end.AddMinutes(-11).ToString("O"), ["to_utc"] = end.ToString("O") },
+                ["collapse"] = "off", ["hide_open_problem_evidence"] = toggle, ["q"] = search,
+            },
+            new(null, 50, "UTC", null, "desc", null), ReportScope.All, null, "view", _ => true, grants), ct);
+
+        var visible = await Read("off");
+        var rows = visible["items"]!.AsArray();
+        Assert.Equal(new long[] { 600003, 600002 }, rows.Select(row => row!["id"]!.GetValue<long>()));
+        Assert.Equal(900001L, rows[1]!["journal_finding_id"]!.GetValue<long>());
+        Assert.Equal(2, rows[1]!["journal_source_count"]!.GetValue<int>());
+        Assert.Equal(3, visible["journal_counts"]!["failures"]!.GetValue<int>());
+
+        var hidden = await Read("on");
+        Assert.Equal(600003L, Assert.Single(hidden["items"]!.AsArray())!["id"]!.GetValue<long>());
+        Assert.Equal(1, hidden["journal_counts"]!["failures"]!.GetValue<int>());
+        Assert.Equal(1, hidden["filtered_count"]!.GetValue<int>());
+        Assert.Equal(1, hidden["journal_event_count"]!.GetValue<int>());
+        Assert.Empty((await Read("on", "4776"))["items"]!.AsArray());
+        Assert.Equal(600002L, Assert.Single((await Read("off", "4776"))["items"]!.AsArray())!["id"]!.GetValue<long>());
+
+        await using var seed = await fixture.Pg.OpenAsync(ct);
+        await PostCollectionPostgres.Sql(seed, "update findings set status='closed' where id=900001", ct);
+        Assert.Equal(2, (await Read("on"))["items"]!.AsArray().Count);
+    }
+
     private static Measurement Measure(string statement, JsonNode explanation)
     {
         static long ReadBlocks(JsonNode? node) => new[] { "Shared Read Blocks", "Local Read Blocks", "Temp Read Blocks" }
@@ -163,11 +208,13 @@ public sealed class JournalPagePerformanceTests(ITestOutputHelper output)
             ["id", "event_id", "time_created_utc", "channel", "subject_user_name", "target_user_name"], query, options, 50, boundary, ct);
     }
 
-    private static async Task SeedAsync(SqlPostgresFixture fixture, DateTimeOffset end, CancellationToken ct)
+    private static async Task SeedAsync(SqlPostgresFixture fixture, DateTimeOffset end, CancellationToken ct,
+        int bulkEvents = 500000, bool pairedEvidence = false)
     {
         await using var db = await fixture.Pg.OpenAsync(ct);
         await using var seed = new NpgsqlCommand("""
             insert into servers(id,domain_id,hostname,fqdn,role) values (900001,1,'dc01','dc01.example.test','domain_controller');
+            insert into storage_v2_channel(value) values ('Security') on conflict do nothing;
             select create_event_storage_partitions((@end at time zone 'UTC')::date-1,(@end at time zone 'UTC')::date);
             insert into event_hot(event_id,time_created_utc,event_kind,domain_id,actor,target,source,computer,method,outcome,fields)
             select n,@end-interval '24 hours'+n*interval '171 milliseconds',
@@ -180,7 +227,7 @@ public sealed class JournalPagePerformanceTests(ITestOutputHelper output)
                 jsonb_build_object('LogonType','3','TargetLogonId',case when pair_position=4 then '0x'||to_hex(session_key) end,
                     'SubjectLogonId',case when pair_position=3 then '0x'||to_hex(session_key) end,
                     'synthetic_payload',repeat(md5(n::text),22))
-            from generate_series(1,500000) n
+            from generate_series(1,@bulk) n
             -- Keep pairing dense near the 50-row page and spread independent
             -- events over the whole partition to exercise the legacy scan.
             cross join lateral (select n % stride as pair_position,n / stride + 1 as session_key
@@ -195,11 +242,11 @@ public sealed class JournalPagePerformanceTests(ITestOutputHelper output)
             from (values(600001,-0.5,4776),(600002,0.5,4625),(600003,3.0,4625)) e(id,offset_seconds,kind);
             insert into findings(id,fingerprint,rule_code,title,status,severity,source,evidence_count,first_seen_utc,last_seen_utc)
                 values(900001,'semantic:'||encode(sha256('journal-finding'::bytea),'hex'),'synthetic-journal-rule','Synthetic journal finding','new','high',
-                       'synthetic-journal',50001,now()::text,now()::text);
+                       'synthetic-journal',@evidence_count,now()::text,now()::text);
             insert into finding_event_copies337(finding_id,event_id,time_created_utc,event_kind,domain_id,actor,target,source,computer,method,outcome,fields,source_sha256,evidence_role)
             select 900001,event_id,time_created_utc,event_kind,domain_id,actor,target,source,computer,method,outcome,fields,
                 sha256(event_id::text::bytea),'synthetic_witness'
-            from event_hot where event_id%10=0 or event_id=600003;
+            from event_hot where event_id%10=0 or event_id=case when @paired then 600001 else 600003 end;
             insert into semantic_security_scenarios(scenario_id,scenario_kind,result_class,identity_key,scenario_key,partition_key,strict_keys_json,merge_window_seconds,title,explanation,first_seen_utc,last_seen_utc,risk_class)
             values(md5('journal-scenario')::uuid,'synthetic','control_gap',sha256('journal-identity'::bytea),sha256('journal-scenario'::bytea),
                 'synthetic','{}',300,'Synthetic journal scenario','Synthetic journal scenario',now(),now(),'low');
@@ -213,9 +260,12 @@ public sealed class JournalPagePerformanceTests(ITestOutputHelper output)
             insert into semantic_risk_evaluation_results(job_id,scenario_id,evaluation_mode,risk_class,raw_score,display_score,hard_critical,confidence,confidence_score,coverage_status,evaluation_ms)
             values(md5('journal-job')::uuid,md5('journal-scenario')::uuid,'enabled','low',1,1,false,'low',1,'unknown',1);
             insert into semantic_finding_publications(scenario_id,finding_id,first_job_id,finding_fingerprint,published_evidence_count)
-            values(md5('journal-scenario')::uuid,900001,md5('journal-job')::uuid,'semantic:'||encode(sha256('journal-finding'::bytea),'hex'),50001);
+            values(md5('journal-scenario')::uuid,900001,md5('journal-job')::uuid,'semantic:'||encode(sha256('journal-finding'::bytea),'hex'),@evidence_count);
             """, db) { CommandTimeout = 0 };
         seed.Parameters.AddWithValue("end", end);
+        seed.Parameters.AddWithValue("bulk", bulkEvents);
+        seed.Parameters.AddWithValue("paired", pairedEvidence);
+        seed.Parameters.AddWithValue("evidence_count", bulkEvents / 10 + 1);
         await seed.ExecuteNonQueryAsync(ct);
         foreach (string statement in new[]
         {
