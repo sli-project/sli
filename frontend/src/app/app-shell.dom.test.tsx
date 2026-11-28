@@ -41,6 +41,7 @@ vi.mock("../api/client", async (importOriginal) => {
       setupStatus: vi.fn().mockResolvedValue({ sources: [], domains: [], domain_controllers: [] }),
       agents: vi.fn().mockResolvedValue({ items: [] }),
       logout: vi.fn().mockResolvedValue({}),
+      v4Objects: vi.fn(),
     },
   };
 });
@@ -67,7 +68,11 @@ async function renderShell(initialPath = "/", showTimeZone = false, waitForHeadi
     return <><h1 data-page-heading>Журнал событий</h1><output aria-label="Journal query">{new URLSearchParams(searchStr).get("q")}</output></>;
   } });
   const plugins = createRoute({ getParentRoute: () => root, path: "/plugins", component: PluginsRoute });
-  const routes = [page("/"), plugins, page("/access"), page("/access/$id"), page("/access-requests"), page("/admin"), page("/agents"), page("/settings"), page("/setup"), page("/project-readiness"), page("/platform-settings"), page("/report-studio"), page("/notifications"), page("/operations"), page("/reports"), page("/report/$reportKey"), page("/objects"), page("/search"), ...createAdminPlaceholderRoutes(root), search];
+  const entity = createRoute({ getParentRoute: () => root, path: "/entities/$entityId", component: () => {
+    const { entityId } = entity.useParams();
+    return <h1 data-page-heading>Object {entityId}</h1>;
+  } });
+  const routes = [page("/"), plugins, page("/access"), page("/access/$id"), page("/access-requests"), page("/admin"), page("/agents"), page("/settings"), page("/setup"), page("/project-readiness"), page("/platform-settings"), page("/report-studio"), page("/notifications"), page("/operations"), page("/reports"), page("/report/$reportKey"), page("/objects"), page("/search"), ...createAdminPlaceholderRoutes(root), search, entity];
   const router = createRouter({ routeTree: root.addChildren(routes), history: createMemoryHistory({ initialEntries: [initialPath] }), parseSearch: parseShellSearch, stringifySearch: stringifyShellSearch });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><RouterProvider router={router}/></QueryClientProvider>);
@@ -248,7 +253,7 @@ describe("AppShell", () => {
     state.access = { ...adminAccess, reports: [{ report_key: "operations.readiness", allowed: true }] };
     await renderShell("/admin/status");
     const main = screen.getByRole("main");
-    fireEvent.click(await within(main).findByText("Другие экраны"));
+    fireEvent.click(await within(main).findByText("Связанные разделы"));
     expect(within(main).getByRole("link", { name: "Первичная настройка" }).getAttribute("href")).toBe("/setup");
     expect(within(main).getByRole("link", { name: "Готовность платформы" }).getAttribute("href")).toBe("/project-readiness");
     expect(within(main).getByRole("link", { name: "Настройки платформы" }).getAttribute("href")).toBe("/platform-settings");
@@ -263,7 +268,7 @@ describe("AppShell", () => {
     await renderShell("/admin/status");
     const main = screen.getByRole("main");
     expect(await within(main).findByRole("heading", { name: "Состояние системы" })).toBeTruthy();
-    fireEvent.click(within(main).getByText("Другие экраны"));
+    fireEvent.click(within(main).getByText("Связанные разделы"));
     expect(within(main).getByRole("link", { name: "Настройки платформы" }).getAttribute("href")).toBe("/platform-settings");
   });
 
@@ -274,7 +279,7 @@ describe("AppShell", () => {
     state.access = adminAccess;
     await renderShell(path);
     const main = screen.getByRole("main");
-    fireEvent.click(await within(main).findByText("Другие экраны"));
+    fireEvent.click(await within(main).findByText("Связанные разделы"));
     expect(within(main).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual(destinations);
   });
 
@@ -301,6 +306,33 @@ describe("AppShell", () => {
     expect(submit.classList.contains("sli-ds-shell__search-submit")).toBe(true);
     submit.focus();
     expect(document.activeElement).toBe(submit);
+  });
+
+  it("opens a permitted object directly and preserves a custom period in the event journal link", async () => {
+    state.access = { ...userAccess, capabilities: ["objects.view", "events.view"] };
+    const objects = { computer: ["41", "Example computer"], user: ["42", "Example user"], ad_group: ["43", "Example group"] };
+    const read = vi.mocked(api.v4Objects).mockImplementation(async (params) => {
+      const type = params?.get("type") as keyof typeof objects;
+      const [id, label] = objects[type];
+      return { api_version: "v4", query: params?.get("q") ?? "", items: [{
+        object_id: id, object_type: type, display_name: label, source: "fixture",
+      }], state: "available", has_more: false, limits: {} };
+    });
+    await renderShell("/report/events.journal?period=custom&from=2026-11-26&to=2026-11-28&tz=UTC");
+    const header = within(screen.getByRole("search"));
+    const input = header.getByRole("searchbox");
+    fireEvent.change(input, { target: { value: "Example" } });
+    const computers = await header.findByRole("group", { name: "Компьютеры" });
+    expect(within(computers).getByRole("link").getAttribute("href")).toBe("/entities/41");
+    expect(within(await header.findByRole("group", { name: "Пользователи" })).getByRole("link").getAttribute("href")).toBe("/entities/42");
+    const group = within(await header.findByRole("group", { name: "Группы" })).getByRole("link");
+    const journal = new URL(header.getByRole("link", { name: "Искать в журнале событий" }).getAttribute("href")!, "https://example.test");
+    expect(Object.fromEntries(journal.searchParams)).toEqual({ period: "custom", from: "2026-11-26", to: "2026-11-28", tz: "UTC", q: "Example" });
+    expect(read.mock.calls.map(([params]) => params?.get("limit"))).toEqual(["5", "5", "5"]);
+    group.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(await screen.findByRole("heading", { name: "Object 43" })).toBeTruthy();
+    read.mockReset();
   });
 
   it("renders the GPO section separately and removes it when GPO is disabled", async () => {
@@ -409,18 +441,6 @@ describe("AppShell", () => {
     expect(localStorage.getItem("sli.theme")).toBe("system");
   });
 
-  it("switches the interface language and stores it", async () => {
-    const reload = vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
-    await renderShell();
-    fireEvent.click(await screen.findByRole("button", { name: /test\.operator/ }));
-    expect(screen.getByRole("menuitemradio", { name: "Русский" }).getAttribute("aria-checked")).toBe("true");
-    fireEvent.click(screen.getByRole("menuitemradio", { name: "English" }));
-    expect(localStorage.getItem("sli.locale")).toBe("en");
-    expect(document.documentElement.lang).toBe("en");
-    expect(reload).toHaveBeenCalledOnce();
-    reload.mockRestore();
-  });
-
   it("renders the shell in English when the locale is en", async () => {
     setLocaleQuiet("en");
     state.access = { ...userAccess, reports: [...userAccess.reports, { report_key: "ad.gpo.v2", allowed: true }] };
@@ -446,7 +466,7 @@ describe("AppShell", () => {
     expect(entry.getAttribute("href")).toBe("/admin/status");
     fireEvent.click(screen.getByRole("button", { name: locale === "ru" ? "Открыть меню" : "Open menu" }));
     fireEvent.click(entry);
-    const titles = locale === "ru" ? ["База", "Плагины"] : ["Core", "Plugins"];
+    const titles = locale === "ru" ? ["Система", "Плагины"] : ["System", "Plugins"];
     for (const title of titles) expect(await within(nav).findByRole("group", { name: title })).toBeTruthy();
     expect(within(nav).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
       "/", "/admin/status", "/agents", "/access", "/notifications", "/operations", "/settings",
@@ -475,38 +495,31 @@ describe("AppShell", () => {
     expect(entry.getAttribute("href")).toBe("/notifications");
     fireEvent.click(entry);
     await within(nav).findByRole("link", { name: /К работе/ });
-    expect(within(nav).getAllByRole("group").map((group) => group.getAttribute("aria-label"))).toEqual(["База"]);
+    expect(within(nav).getAllByRole("group").map((group) => group.getAttribute("aria-label"))).toEqual(["Система"]);
     expect(within(nav).queryByRole("link", { name: "Доступ" })).toBeNull();
     expect(within(nav).queryByRole("link", { name: "Агенты" })).toBeNull();
   });
 
-  it("offers administration in the sidebar and notifications in the user menu", async () => {
-    state.access = adminAccess;
-    await renderShell();
-    const nav = screen.getByRole("navigation", { name: "Разделы" });
-    expect(await within(nav).findByRole("link", { name: "Администрирование" })).toBeTruthy();
-    expect(within(nav).queryByRole("link", { name: "Оповещения" })).toBeNull();
-    const topbar = screen.getByRole("banner");
-    expect(within(topbar).queryByRole("button", { name: "Администрирование" })).toBeNull();
-    fireEvent.click(await within(topbar).findByRole("button", { name: "admin.user" }));
-    expect(within(topbar).getByRole("menuitem", { name: "Оповещения" }).getAttribute("href")).toBe("/notifications");
-  });
-
-  it.each(["ru", "en"] as const)("opens notifications from the user menu in %s", async (locale) => {
+  it.each(["ru", "en"] as const)("opens Language & time from the user menu in %s", async (locale) => {
     setLocaleQuiet(locale);
     state.access = adminAccess;
     await renderShell();
     const profile = await screen.findByRole("button", { name: "admin.user" });
     fireEvent.click(profile);
-    const link = screen.getByRole("menuitem", { name: locale === "ru" ? "Оповещения" : "Notifications" });
-    expect(link.getAttribute("href")).toBe("/notifications");
+    const menu = within(screen.getByRole("menu"));
+    const link = menu.getByRole("menuitem", { name: locale === "ru" ? "Язык и время" : "Language & time" });
+    expect(link.getAttribute("href")).toBe("/settings");
+    expect(menu.queryByRole("menuitem", { name: locale === "ru" ? "Оповещения" : "Notifications" })).toBeNull();
+    expect(menu.queryByRole("menuitemradio", { name: /Русский|English/ })).toBeNull();
+    expect(menu.getByRole("menuitem", { name: /Выйти|Sign out/ })).toBeTruthy();
     fireEvent.click(link);
     await waitFor(() => expect(profile.getAttribute("aria-expanded")).toBe("false"));
-    expect(screen.queryByRole("menu")).toBeNull();
-    const nav = screen.getByRole("navigation", { name: locale === "ru" ? "Разделы" : "Sections" });
-    const links = within(nav).getAllByRole("link", { name: locale === "ru" ? "Оповещения" : "Notifications" });
-    expect(links).toHaveLength(1);
-    expect(links[0].getAttribute("aria-current")).toBe("page");
+    const nav = within(screen.getByRole("navigation", { name: locale === "ru" ? "Разделы" : "Sections" }));
+    const settings = nav.getByRole("link", { name: locale === "ru" ? "Язык и время" : "Language & time" });
+    expect(settings.getAttribute("aria-current")).toBe("page");
+    const icon = (label: string) => nav.getByRole("link", { name: label }).querySelector("use")?.getAttribute("href");
+    expect(icon(locale === "ru" ? "Оповещения" : "Notifications")).not.toBe(icon(locale === "ru" ? "Агенты" : "Agents"));
+    expect(icon(locale === "ru" ? "Хранение" : "Storage")).toBe("#i-database");
   });
 
   it("closes the user menu with Escape or an outside click", async () => {

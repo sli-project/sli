@@ -259,7 +259,7 @@
               "id": "workstations-overview",
               "label": "shell.section.workstations",
               "path": "/report/workstations.overview",
-              "icon": "report",
+                "icon": "laptop",
               "plugin_id": "sli.workstations",
               "reports": ["workstations.overview"],
               "views": [
@@ -479,7 +479,7 @@
               "id": "notifications",
               "label": "notify.title",
               "path": "/notifications",
-              "icon": "settings",
+                "icon": "bell",
               "reports": [
                 "notifications.channels",
                 "notifications.deliveries"

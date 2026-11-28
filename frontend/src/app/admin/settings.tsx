@@ -1,15 +1,37 @@
 import { Select } from "../../design-system/Select";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Button, ComboBox, Input, Label, ListBox, ListBoxItem, Popover } from "react-aria-components";
 import { api } from "../../api/client";
 import { PageHeader, StateView } from "../../design-system";
 import { useTimeZone } from "../../shared/time-zone";
 import { roleLabel } from "../report-labels";
-import { getLocale, setLocale, t, type Locale } from "../../i18n";
+import { getLocale, LOCALES, setLocale, t, type Locale } from "../../i18n";
 import { formatDateTime } from "../../shared/date-time";
 
 const serverTimeZoneKey = "server.timezone";
+
+const russianCities: Record<string, string> = {
+  Anadyr: "Анадырь", Astrakhan: "Астрахань", Barnaul: "Барнаул", Berlin: "Берлин",
+  Chita: "Чита", Irkutsk: "Иркутск", Kaliningrad: "Калининград", Khandyga: "Хандыга",
+  Krasnoyarsk: "Красноярск", Kirov: "Киров", Magadan: "Магадан", Moscow: "Москва",
+  Novokuznetsk: "Новокузнецк", Novosibirsk: "Новосибирск", Omsk: "Омск",
+  Sakhalin: "Сахалин", Samara: "Самара", Saratov: "Саратов", Srednekolymsk: "Среднеколымск",
+  Tomsk: "Томск", Ulyanovsk: "Ульяновск", Ust_Nera: "Усть-Нера", Vladivostok: "Владивосток",
+  Volgograd: "Волгоград", Yakutsk: "Якутск", Yekaterinburg: "Екатеринбург",
+};
+
+function zoneLabel(id: string, now: Date, locale: Locale) {
+  if (id === "UTC") return id;
+  try {
+    const offset = new Intl.DateTimeFormat("en", { timeZone: id, timeZoneName: "shortOffset" })
+      .formatToParts(now).find((part) => part.type === "timeZoneName")!.value.replace("GMT", "UTC");
+    const city = id.split("/").at(-1) ?? id;
+    return `${offset}, ${(locale === "ru" ? russianCities[city] : undefined) ?? city.replaceAll("_", " ")}`;
+  } catch {
+    return id;
+  }
+}
 
 export function SettingsPage() {
   const { timeZone, setTimeZone } = useTimeZone();
@@ -26,24 +48,28 @@ export function SettingsPage() {
   });
   const [saveError, setSaveError] = useState(false);
   const zones = useMemo(() => [...new Set([...Intl.supportedValuesOf("timeZone"), "UTC", ...(timeZone === "browser" ? [] : [timeZone])])], [timeZone]);
-  const options = [{ id: "browser", label: t("operations.settings.tz_browser") }, ...zones.map((id) => ({ id, label: id }))];
+  const options = useMemo(() => {
+    const now = new Date();
+    const locale = getLocale();
+    return [{ id: "browser", label: t("operations.settings.tz_browser") }, ...zones.map((id) => ({ id, label: zoneLabel(id, now, locale) }))];
+  }, [zones]);
+  const zoneNames = useMemo(() => new Map(options.map(({ id, label }) => [label, id])), [options]);
   const bootstrap = useQuery({ queryKey: ["bootstrap"], queryFn: api.bootstrap, staleTime: 60_000 });
   const principal = bootstrap.data?.principal;
   const canSetServerZone = principal?.role === "admin" && bootstrap.data?.capabilities?.includes("access.manage") === true;
   const settings = useQuery({ queryKey: ["platform-settings"], queryFn: api.platformSettings, enabled: canSetServerZone });
   const storedServerZone = canSetServerZone ? settings.data?.items.find(item => item.key === serverTimeZoneKey)?.value : undefined;
-  const serverZones = [...new Set([...zones, ...(storedServerZone && storedServerZone !== "host" ? [storedServerZone] : [])])];
+  const serverZones = options.filter(({ id }) => id !== "browser");
+  if (storedServerZone && storedServerZone !== "host" && !zones.includes(storedServerZone))
+    serverZones.push({ id: storedServerZone, label: zoneLabel(storedServerZone, new Date(), getLocale()) });
   const serverZoneChanged = storedServerZone !== undefined && serverZone !== undefined && serverZone !== storedServerZone;
   const queryClient = useQueryClient();
-  const logout = useMutation({ mutationFn: api.logout, onSuccess: () => window.location.assign("/login") });
   const changed = language !== getLocale() || zone !== timeZone || serverZoneChanged;
 
   return <section className="sli-ds-report">
-    <PageHeader title={t("shell.adminNav.locale")}
-      actions={<button type="button" className="sli-ds-button" onClick={() => logout.mutate()} disabled={logout.isPending}>{logout.isPending ? t("operations.settings.logging_out") : t("operations.settings.logout")}</button>}/>
+    <PageHeader title={t("shell.adminNav.locale")}/>
     {principal ? <p className="sli-ds-header__subtitle">{principal.username ?? "—"} · {principal.role ? roleLabel(principal.role) : "—"}</p> : null}
     {bootstrap.isLoading ? <StateView state="loading" compact/> : bootstrap.error ? <p role="alert">{t("operations.settings.load_error")} <button type="button" className="sli-ds-button" onClick={() => void bootstrap.refetch()}>{t("state.retry")}</button></p> : null}
-    {logout.isError ? <p role="alert">{t("shell.profile.logoutFailed")}</p> : null}
     <form className="sli-ds-report__views" onSubmit={async (event) => {
       event.preventDefault();
       if (!changed || saving) return;
@@ -71,9 +97,9 @@ export function SettingsPage() {
     }}>
       <div className="sli-ds-field" data-layout="row"><label htmlFor="settings-language">{t("shell.profile.language.title")}</label>
         <Select label={t("shell.profile.language.title")} id="settings-language" value={language} aria-describedby={saveError ? "settings-save-error" : undefined} onChange={(selectedValue) => setLanguage(selectedValue as Locale)}
-          options={(["ru", "en"] as const).map((locale) => ({ value: locale, label: t(`shell.profile.language.${locale}`) }))}/></div>
+          options={LOCALES.map((locale) => ({ value: locale, label: t(`shell.profile.language.${locale}`) }))}/></div>
       <ComboBox className="sli-ds-field" data-layout="row" selectedKey={zone} defaultItems={options} menuTrigger="focus"
-        defaultFilter={(text, input) => text.toLocaleLowerCase().includes(input.trim().toLocaleLowerCase())}
+        defaultFilter={(text, input) => `${text} ${zoneNames.get(text) ?? ""}`.toLocaleLowerCase().includes(input.trim().toLocaleLowerCase())}
         onSelectionChange={(key) => { if (key !== null) setZone(String(key)); }}>
         <Label>{t("operations.settings.tz_title")}</Label>
         <div className="sli-ds-field__control"><Input aria-describedby={saveError ? "settings-save-error" : undefined}/>
@@ -87,7 +113,7 @@ export function SettingsPage() {
       {storedServerZone !== undefined ? <div className="sli-ds-field" data-layout="row">
         <label htmlFor="settings-server-time-zone">{t("operations.settings.server_tz_title")}</label>
         <Select label={t("operations.settings.server_tz_title")} id="settings-server-time-zone" value={serverZone ?? storedServerZone} disabled={saving} aria-describedby={saveError ? "settings-save-error" : undefined} onChange={(selectedValue) => setServerZone(selectedValue)}
-          options={[{ value: "host", label: t("operations.settings.server_tz_host") }, ...(serverZones.map(id => ({ value: id, label: id })) ?? [])]}/>
+          options={[{ value: "host", label: t("operations.settings.server_tz_host") }, ...serverZones.map(({ id, label }) => ({ value: id, label }))]}/>
       </div> : null}
       {canSetServerZone && settings.isError ? <p role="alert">{t("operations.settings.server_tz_load_error")}</p> : null}
       {saveError ? <p id="settings-save-error" className="sli-ds-field__error" role="alert">{t("operations.settings.save_error")}</p> : null}

@@ -21,7 +21,7 @@ internal interface ILifecycleSession : IAsyncDisposable
 
 internal sealed class StorageLifecycleWorker(ILifecycleSession session, LifecycleFiles files,
     Func<DateTime>? utcNow = null, Func<TimeSpan, CancellationToken, Task>? delay = null,
-    Func<TimeSpan, CancellationToken, Task>? heartbeatDelay = null)
+    Func<TimeSpan, CancellationToken, Task>? heartbeatDelay = null, Func<JsonObject?>? readVolume = null)
 {
     internal const string LockName = "ad_log_reports_runtime_storage_lifecycle_process";
     internal const int InboxIntervalSeconds = 900;
@@ -194,7 +194,7 @@ internal sealed class StorageLifecycleWorker(ILifecycleSession session, Lifecycl
         {
             long bytes = await session.ReadDatabaseSizeAsync(ct);
             await session.EnsureLocksAsync(ct);
-            files.Write(DatabaseUsageFile, DatabaseSizeHistory.Record(files, Now, bytes));
+            files.Write(DatabaseUsageFile, DatabaseSizeHistory.Record(files, Now, bytes, readVolume?.Invoke()));
         }
         catch (Exception e) when (!ct.IsCancellationRequested
             && e is (NpgsqlException or TimeoutException or IOException or UnauthorizedAccessException or InvalidDataException or OperationCanceledException))

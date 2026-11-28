@@ -62,9 +62,21 @@ export function navigationBeforeLoad(location: { pathname: string; search: Recor
 export const objectSearchPath = declarations.global_search.path;
 export const journalSearchPath = "/report/events.journal";
 
-export function globalSearchTarget(rawValue: string) {
+export function globalSearchTarget(rawValue: string, currentSearch = "", onHome = false) {
+  const source = new URLSearchParams(currentSearch);
+  const search: Record<string, string> = {};
+  const period = source.get("period");
+  const from = source.get("from");
+  const to = source.get("to");
+  if (period === "custom" && from && to) {
+    Object.assign(search, { period, from, to });
+    const timeZone = source.get("tz");
+    if (timeZone) search.tz = timeZone;
+  } else if (period && ["2h", "24h", "7d", "30d", "90d"].includes(period)) search.period = period;
+  else if (onHome) search.period = "24h";
   const q = rawValue.trim();
-  return { to: journalSearchPath, search: q ? { q } : {} };
+  if (q) search.q = q;
+  return { to: journalSearchPath, search };
 }
 
 export function parseShellSearch(search: string) {

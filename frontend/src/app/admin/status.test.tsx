@@ -34,12 +34,10 @@ const notifications = (enabled = false): NotificationWorkspace => ({ channels: [
 const clients: QueryClient[] = [];
 const postgresVolume = { mount_point: "/srv/sli-db", used_bytes: 2 * 1024 ** 3, free_bytes: 3 * 1024 ** 3 };
 
-it("shows the same PostgreSQL filesystem capacity in Storage and System status", async () => {
+it("links to the single disk usage table in Storage", async () => {
   setLocale("ru");
   vi.spyOn(api, "bootstrap").mockResolvedValue({ effective_role: "admin" } as Awaited<ReturnType<typeof api.bootstrap>>);
-  vi.spyOn(api, "systemHealth").mockResolvedValue({});
   vi.spyOn(api, "platformSettings").mockResolvedValue({ items: [] });
-  vi.spyOn(api, "storageGrowth").mockResolvedValue({});
   vi.mocked(api.storageOverview).mockResolvedValue({ storage: {
     postgres_volume: { ...postgresVolume, used_bytes: 23 * 1024 ** 3, free_bytes: 81 * 1024 ** 3 },
     disk_pressure: { disk: { used_bytes: 12 * 1024 ** 3, free_bytes: 17 * 1024 ** 3 } },
@@ -47,27 +45,13 @@ it("shows the same PostgreSQL filesystem capacity in Storage and System status",
   const client = new QueryClient();
   clients.push(client);
   render(<QueryClientProvider client={client}><OperationsPage/><SystemStatusPage/></QueryClientProvider>);
-  for (const title of ["Диск", "Том PostgreSQL"]) {
-    const table = await screen.findByRole("table", { name: title });
-    const row = within(table).getByRole("row", { name: /\/srv\/sli-db/ });
-    expect(within(row).getByText("23 ГБ")).toBeTruthy();
-    expect(within(row).getByText("81 ГБ")).toBeTruthy();
-  }
-});
-
-it("shows the PostgreSQL mount and omits the backup line until a copy exists", async () => {
-  vi.mocked(api.storageOverview).mockResolvedValue({ storage: {
-    postgres_volume: { ...postgresVolume, free_bytes: 98 * 1024 ** 3 },
-    disk_pressure: { disk: { free_human: "16 GB" } },
-    footprint: { components: [], backups: { last_backup_at_utc: null } },
-  } });
-  renderPage();
-  const table = await screen.findByRole("table", { name: "Том PostgreSQL" });
-  expect(screen.getAllByText("Том PostgreSQL")).toHaveLength(1);
-  const row = within(table).getByText("/srv/sli-db").closest("tr")!;
-  expect(within(row).getByText("98 ГБ")).toBeTruthy();
-  expect(within(row).getByText("2 ГБ")).toBeTruthy();
-  expect(screen.queryByText(/^Последняя копия:/)).toBeNull();
+  const disk = await screen.findByRole("table", { name: t("operations.disk.title") });
+  expect(within(disk).getByText("23 ГБ")).toBeTruthy();
+  expect(screen.getAllByText("81 ГБ")).toHaveLength(1);
+  expect(screen.getByRole("link", { name: t("operations.page.title") }).getAttribute("href")).toBe("/app/operations");
+  expect(screen.getByRole("link", { name: t("shell.adminNav.allPlugins") }).getAttribute("href")).toBe("/app/plugins");
+  expect(screen.queryByRole("table", { name: t("plugins.title") })).toBeNull();
+  expect(api.plugins).not.toHaveBeenCalled();
 });
 
 it.each([true, false, null])("shows the latest backup and reports a shared disk only when confirmed (%s)", async (sameDisk) => {
@@ -258,7 +242,7 @@ it.each([
     project_version: "2026.10.16", release_tag, git_commit, installed_at_utc: "2026-11-21T01:02:03Z",
   } });
   renderPage();
-  expect(await screen.findByText(t("systemStatus.version", { version: release_tag, commit: git_commit, date }),
+  expect(await screen.findByText(t("systemStatus.version", { version: release_tag, commit: git_commit.slice(0, 8), date }),
     { exact: false })).toBeTruthy();
 });
 
@@ -335,7 +319,7 @@ it("does not show a failure while a successful response is still pending", async
   expect(screen.queryByText("Не загрузились Службы сервера")).toBeNull();
   expect(screen.queryByText("Не загрузились Диск")).toBeNull();
   resolve(operations);
-  expect(await screen.findByRole("table", { name: "Службы сервера" })).toBeTruthy();
+  expect(await screen.findByText(t("systemStatus.servicesRunningOne"))).toBeTruthy();
 });
 
 it("shows three first-run steps without agents and links to the next actions", async () => {
@@ -354,23 +338,23 @@ it("keeps table skeletons visible until slow sources and services finish", async
   vi.mocked(api.setupStatus).mockImplementation(() => new Promise((resolve) => { resolveSetup = resolve; }));
   vi.mocked(api.operationsWorkers).mockImplementation(() => new Promise((resolve) => { resolveWorkers = resolve; }));
   renderPage();
-  await screen.findByRole("table", { name: "Том PostgreSQL" });
+  await screen.findByRole("link", { name: t("operations.page.title") });
   expect(screen.getAllByRole("status").filter((element) => element.getAttribute("aria-busy") === "true")).toHaveLength(2);
   expect(screen.queryByText(/Не загрузились/)).toBeNull();
   resolveSetup(setup([agent])); resolveWorkers({ workers: operations.workers });
   expect(await screen.findByRole("table", { name: "Источники" })).toBeTruthy();
-  expect(await screen.findByRole("table", { name: "Службы сервера" })).toBeTruthy();
+  expect(await screen.findByText(t("systemStatus.servicesRunningOne"))).toBeTruthy();
   expect(screen.queryAllByRole("status").filter((element) => element.getAttribute("aria-busy") === "true")).toHaveLength(0);
 });
 
-it("shows actual launch times for running and disabled services", async () => {
+it("shows the actual launch time of a disabled service", async () => {
   vi.mocked(api.operationsWorkers).mockResolvedValue({ workers: { items: [
     ...operations.workers.items,
     { worker_name: "semantic", label: "", state: "disabled", status: "stopped", started_at: "2026-11-12T09:30:00Z" },
   ] } });
   renderPage();
   const table = await screen.findByRole("table", { name: "Службы сервера" });
-  expect(table.textContent).toContain("13.11, 12:00");
+  expect(table.textContent).not.toContain("13.11, 12:00");
   expect(table.textContent).toContain("12.11, 09:30");
   expect(table.textContent).toContain(t("systemStatus.service.disabled"));
   expect(table.textContent).not.toContain(t("systemStatus.service.failed"));
@@ -383,7 +367,7 @@ it("hides onboarding when an agent has sent data and a channel is configured", a
   await waitFor(() => expect(api.telegramSetup).toHaveBeenCalledWith("status"));
   await waitFor(() => expect(screen.queryByRole("list", { name: "Первый запуск" })).toBeNull());
   expect(await screen.findByText("LAB-DC01 присылает данные")).toBeTruthy();
-  expect(screen.getByRole("table", { name: "Том PostgreSQL" }).textContent).toContain("3 ГБ");
+  expect(screen.getByRole("link", { name: t("operations.page.title") })).toBeTruthy();
 });
 
 it("counts a connected controller before its first import and without a legacy target", async () => {
@@ -452,11 +436,11 @@ it("shows receiving without a service action when the server reports lagging", a
   expect(within(row).queryByText(t("systemStatus.action.agent"))).toBeNull();
 });
 
-it("keeps services and disk visible when the sources request fails", async () => {
+it("keeps the service result and Storage link visible when sources fail", async () => {
   vi.mocked(api.setupStatus).mockRejectedValue(new Error("fixture failure"));
   renderPage();
-  expect(await screen.findByRole("table", { name: "Службы сервера" })).toBeTruthy();
-  expect(screen.getByRole("table", { name: "Том PostgreSQL" })).toBeTruthy();
+  expect(await screen.findByText(t("systemStatus.servicesRunningOne"))).toBeTruthy();
+  expect(screen.getByRole("link", { name: t("operations.page.title") })).toBeTruthy();
   expect(screen.getByText("Не загрузились Источники")).toBeTruthy();
   expect(screen.queryByRole("table", { name: "Источники" })).toBeNull();
 });
@@ -470,7 +454,7 @@ it("shows source data while the server request is still pending, then handles it
   reject(new Error("fixture failure"));
   expect(await screen.findByText("Не загрузились Службы сервера")).toBeTruthy();
   expect(screen.getByRole("table", { name: "Источники" })).toBeTruthy();
-  expect(screen.getByRole("table", { name: "Том PostgreSQL" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: t("operations.page.title") })).toBeTruthy();
   expect(api.operations).not.toHaveBeenCalled();
 });
 
@@ -491,7 +475,7 @@ it.each(["ru", "en"] as const)("localizes the page and copies the update command
   const writeText = vi.fn().mockResolvedValue(undefined);
   Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
   const { container } = renderPage();
-  await screen.findByRole("table", { name: t("systemStatus.services") });
+  await screen.findByText(t("systemStatus.servicesRunningOne"));
   fireEvent.click(screen.getByRole("button", { name: t("systemStatus.copy") }));
   await screen.findByRole("button", { name: t("systemStatus.copied") });
   expect(writeText).toHaveBeenCalledWith("sudo apt update && sudo apt upgrade");
@@ -502,7 +486,7 @@ it.each(["ru", "en"] as const)("localizes the page and copies the update command
 it("downloads the existing diagnostics export", async () => {
   const download = vi.spyOn(actions, "downloadOperationsExport").mockReturnValue("2026-11-14T01:16:00Z");
   renderPage();
-  await screen.findByRole("table", { name: "Службы сервера" });
+  await screen.findByText(t("systemStatus.servicesRunningOne"));
   fireEvent.click(screen.getByRole("button", { name: "Скачать диагностику" }));
   await waitFor(() => expect(download).toHaveBeenCalledWith(operations));
 });
@@ -617,16 +601,17 @@ it.each(["ru", "en"] as const)("shows running file-backed services and hides ret
       ({ worker_name, label: "", state: "stale", status: "stopped" })),
   ] } });
   renderPage();
-  const table = await screen.findByRole("table", { name: t("systemStatus.services") });
-  const rows = within(table).getAllByRole("row").slice(1);
-  expect(rows.map((row) => row.textContent)).toEqual([
-    expect.stringContaining(t("systemStatus.service.notifications")),
-    expect.stringContaining(t("systemStatus.service.light")),
-  ]);
-  for (const row of rows) expect(row.textContent).toContain(t("systemStatus.service.running"));
-  expect(table.textContent).not.toContain(t("systemStatus.service.failed"));
-  expect(table.textContent).not.toContain(t("systemStatus.service.disabled"));
-  expect(table.textContent).not.toContain(t("systemStatus.service.check"));
+  await screen.findByText(t("systemStatus.servicesRunning", { count: 2 }));
+  expect(screen.queryByRole("table", { name: t("systemStatus.services") })).toBeNull();
+  vi.mocked(api.operationsWorkers).mockResolvedValue({ workers: { items: [
+    { worker_name: "notification_delivery", label: "", state: "active", status: "running" },
+    { worker_name: "core_job_executor_light", label: "", state: "stale", status: "failed" },
+  ] } });
+  await clients[clients.length - 1].invalidateQueries({ queryKey: ["operations-workers"] });
+  const issues = await screen.findByRole("table", { name: t("systemStatus.services") });
+  expect(within(issues).getByText(t("systemStatus.service.light"))).toBeTruthy();
+  expect(within(issues).getByText(t("systemStatus.service.failed"))).toBeTruthy();
+  expect(within(issues).queryByText(t("systemStatus.service.notifications"))).toBeNull();
 });
 
 it.each(["en", "ru"] as const)("shows live and historical password backlogs independently of the process in %s", async (locale) => {
@@ -649,7 +634,7 @@ it.each(["en", "ru"] as const)("shows live and historical password backlogs inde
   expect(row.textContent).toContain(formatDateTime(observed, "UTC", { withYear: false, seconds: true }));
   expect(within(table).getByText(t("systemStatus.passwordDetection.historyPending"))).toBeTruthy();
   expect(within(table).queryByText(t("systemStatus.passwordDetection.stalled"))).toBeNull();
-  expect(screen.getByRole("row", { name: new RegExp(t("systemStatus.service.detection")) }).textContent).toContain(t("systemStatus.service.running"));
+  expect(screen.getByText(t("systemStatus.servicesRunningOne"))).toBeTruthy();
 
   vi.mocked(api.operationsWorkers).mockResolvedValue({ workers: { ...workers, password_detection: { status: "ok", items: [
     { rule_id: "qw.password-brute-force", state: "recovered", observed_at: "2026-11-22T21:25:08Z" },
@@ -695,9 +680,7 @@ it("shows failed and stalled rules with their own observed time while the proces
   const stalled = within(table).getByText(t("systemStatus.passwordDetection.stalled")).closest("tr")!;
   expect(failure.textContent).toContain(formatDateTime(failedAt, "UTC", { withYear: false, seconds: true }));
   expect(stalled.textContent).toContain(formatDateTime(stalledAt, "UTC", { withYear: false, seconds: true }));
-  const services = screen.getByRole("table", { name: t("systemStatus.services") });
-  expect(within(services).getByRole("row", { name: new RegExp(t("systemStatus.service.detection")) }).textContent).toContain(t("systemStatus.service.running"));
-  expect(within(services).queryByText(/Процесс запущен|Process is running/)).toBeNull();
+  expect(screen.getByText(t("systemStatus.servicesRunningOne"))).toBeTruthy();
 });
 
 it("reports missing password telemetry without a healthy rule result", async () => {

@@ -1263,6 +1263,7 @@ export type StorageOverview = {
     agent_inbox_capacity?: "ok" | "full" | "unavailable" | null;
     disk_pressure?: { disk?: { used_bytes?: number; free_bytes?: number; used_human?: string; free_human?: string } };
     postgres_volume?: { mount_point: string; used_bytes: number; free_bytes: number } | null;
+    postgres_volume_forecast_days?: number | null;
     retired_clickhouse_data?: boolean;
     footprint?: Pick<StorageFootprint, "components" | "backups">;
   };
@@ -2478,7 +2479,7 @@ export const api = {
   addSetupDomainController: (body: { hostname: string; domain: string }) => requestMutation<{ item: SetupDomainController }>("/api/v1/setup/domain-controllers", "POST", body),
   setSetupDomainControllerEnabled: (hostname: string, enabled: boolean) => requestMutation<{ item: { hostname: string; enabled: boolean; previous_enabled: boolean } }>(`/api/v1/setup/domain-controllers/${encodeURIComponent(hostname)}`, "POST", { enabled }),
   updatePlatformSetting: (key: string, value: string) => requestMutation<{ item: PlatformSetting }>(`/api/v1/platform-settings/${encodeURIComponent(key)}`, "POST", { value }),
-  v4Objects: (params = new URLSearchParams()) => request<{ api_version: "v4"; query: string; object_type?: string | null; state: string; items: V4ObjectItem[]; has_more: boolean; scope_filtered?: boolean; limits: Record<string, unknown> }>(`/api/v1/objects?${params.toString()}`),
+  v4Objects: (params = new URLSearchParams(), signal?: AbortSignal) => request<{ api_version: "v4"; query: string; object_type?: string | null; state: string; items: V4ObjectItem[]; has_more: boolean; scope_filtered?: boolean; limits: Record<string, unknown> }>(`/api/v1/objects?${params.toString()}`, signal),
   v4Object: (objectType: string, objectId: string) => request<V4ObjectDetail>(`/api/v1/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectId)}`),
   v4Datasets: () => request<{ api_version: "v4"; items: V4Dataset[]; arbitrary_sql_allowed: false }>("/api/v1/reports/datasets"),
   v4ReportDefinitions: () => request<{ api_version: "v4"; items: V4ReportDefinition[]; limit: number; total_count: string }>("/api/v1/reports/definitions?limit=200"),

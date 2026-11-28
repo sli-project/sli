@@ -15,7 +15,6 @@ const moduleNames = {
 export const moduleRows = (items: PluginState[]) => Object.keys(moduleNames)
   .flatMap((id) => items.filter((item) => item.plugin_id === id));
 export const moduleName = (item: PluginState) => t(moduleNames[item.plugin_id as keyof typeof moduleNames]);
-export const moduleStatusId = (item: PluginState) => `module-${item.plugin_id}`;
 export function pluginNextAction(status: PluginState["status"]) {
   const requirement = status?.check_agent_requirement;
   if (status?.reason === "outdated_agent" && requirement) {
