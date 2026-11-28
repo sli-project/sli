@@ -9,7 +9,7 @@ const reportPath = '/api/v2/reports/workstations.overview';
 const dataPath = `${reportPath}/data`;
 const requestKeys = new Set([
   'period', 'from', 'to', 'tz', 'domain', 'search', 'collection', 'source_instance_id',
-  'limit', 'cursor', 'view', 'event_cursor', 'event_limit',
+  'limit', 'cursor', 'view', 'event_cursor', 'event_limit', 'program',
 ]);
 
 function assertRequest(params) {
@@ -193,6 +193,8 @@ async function verifyStation(page, { detail, detailPath, fixture, fleetUrl, reco
   assert.ok(events.length, 'The workstation must read retained rows from the canonical journal');
   assert.equal(events.reduce((total, row) => total + row.event_count, 0), fixture.event_count,
     'The selected source must include only its retained observations, excluding another source with the same hostname');
+  await expect(page.getByRole('tab', { name: 'Важное', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await page.getByRole('tab', { name: 'Все события', exact: true }).click();
   const table = page.getByRole('table', { name: 'События станции', exact: true });
   await expect(table.locator('tbody > tr')).toHaveCount(events.length);
   const eventsUrl = page.url();
@@ -244,9 +246,7 @@ async function verifyStation(page, { detail, detailPath, fixture, fleetUrl, reco
   await expect(table).toBeVisible();
   await assertReturn(page, eventsUrl);
 
-  const collectionTab = page.getByRole('tab', { name: 'Сбор данных', exact: true });
-  await collectionTab.click();
-  await expect(collectionTab).toHaveAttribute('aria-selected', 'true');
+  await page.getByRole('button', { name: 'Сбор данных', exact: true }).click();
   const station = detail.body.detail.station;
   assert.equal(station.profile.state, 'supported');
   assert.deepEqual([...station.profile.event_ids].sort((left, right) => left - right),

@@ -231,6 +231,33 @@ public sealed class NativeWorkstationsReportPostgresTests
         Assert.Equal("Example USB drive", device.Text("device_name"));
         Assert.All(rows, row => Assert.Null(row!["journal_finding_id"])); // No security.queue grant is borrowed.
 
+        var activity = body["detail"]!["activity"]!;
+        var program = Assert.Single(activity["programs"]!.AsArray())!;
+        Assert.Equal(@"C:\Tools\editor.exe", program.Text("path"));
+        Assert.Equal(5L, program["count"]!.GetValue<long>());
+        Assert.Contains(@"WS-WORKSPACE-001\user", program["users"]!.AsArray().Select(user => user!.ToString()));
+        var logons = activity["logons"]!.AsArray();
+        var remote = Assert.Single(logons, logon => logon.Text("type") == "10")!;
+        var failed = Assert.Single(logons, logon => logon.Text("type") == "3")!;
+        Assert.Equal(37L, remote["count"]!.GetValue<long>());
+        Assert.Equal(2L, failed["failures"]!.GetValue<long>());
+        Assert.Equal("Example USB drive", Assert.Single(activity["devices"]!.AsArray()).Text("name"));
+        Assert.Equal(new[] { "new_usb_storage", "remote_logon", "service_installed" },
+            activity["notable"]!.AsArray().Select(row => row.Text("fact")));
+        Assert.Equal("low", exact.Text("station_importance"));
+        Assert.Equal("medium", daily.Text("station_importance"));
+        Assert.Equal("medium", Assert.Single(rows, row => row!["event_id"]!.GetValue<int>() == 6416).Text("station_importance"));
+        Assert.DoesNotContain("OTHER-SOURCE", activity.ToJsonString());
+
+        var programPage = await Get(detailPath + "&event_limit=2&program=" + Uri.EscapeDataString(@"c:/tools/EDITOR.exe"));
+        var filteredEvents = programPage["detail"]!["events"]!;
+        Assert.Equal(5L, filteredEvents["journal_event_count"]!.GetValue<long>());
+        Assert.Equal(2, filteredEvents["items"]!.AsArray().Count);
+        Assert.All(filteredEvents["items"]!.AsArray(), row => Assert.Equal(4688, row!["event_id"]!.GetValue<int>()));
+        string nextEvents = Uri.EscapeDataString(filteredEvents["next_cursor"]!.ToString());
+        await Get(detailPath + "&event_limit=2&event_cursor=" + nextEvents, HttpStatusCode.BadRequest);
+        Assert.Equal(5L, Assert.Single(programPage["detail"]!["activity"]!["programs"]!.AsArray())!["count"]!.GetValue<long>());
+
         // The public journal link uses the same source/window selection. The
         // trusted native server ID is an additional constraint inside detail.
         var parameters = body["detail"]!["related"]!["journal"]!["params"]!.AsObject();
@@ -263,6 +290,7 @@ public sealed class NativeWorkstationsReportPostgresTests
         Authorize(WorkstationWorkspaceTests.AuthorizedFacts(journal: false));
         var stationOnly = await Get(detailPath);
         Assert.Equal("denied", stationOnly["detail"]!["events"]!["state"]!.ToString());
+        Assert.Null(stationOnly["detail"]!["activity"]);
         Assert.Null(stationOnly["detail"]!["events"]!["filtered_count"]);
         Assert.Empty(stationOnly["detail"]!["events"]!["items"]!.AsArray());
         Assert.False(stationOnly["detail"]!["related"]!["journal"]!["allowed"]!.GetValue<bool>());
