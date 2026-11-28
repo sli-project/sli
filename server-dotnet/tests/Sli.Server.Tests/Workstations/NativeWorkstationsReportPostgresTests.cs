@@ -218,7 +218,7 @@ public sealed class NativeWorkstationsReportPostgresTests
         Assert.Equal(2L, starts["event_count"]!.GetValue<long>());
         Assert.Equal(11, (DateTimeOffset.Parse(starts.Text("last_seen_utc")!) - DateTimeOffset.Parse(starts.Text("first_seen_utc")!)).TotalSeconds);
         var process = starts["workstation_event"]!;
-        Assert.Equal(@"C:\Tools\editor.exe", process.Text("image_path"));
+        Assert.Equal(@"C:\Users\example\AppData\Local\Editor\bin\abcdef12\editor.exe", process.Text("image_path"));
         Assert.Equal(@"C:\Windows\explorer.exe", process.Text("parent_image_path"));
         Assert.Equal(@"WS-WORKSPACE-001\user", process.Text("account"));
         Assert.Equal("editor.exe draft.txt", process.Text("command_line"));
@@ -233,7 +233,8 @@ public sealed class NativeWorkstationsReportPostgresTests
 
         var activity = body["detail"]!["activity"]!;
         var program = Assert.Single(activity["programs"]!.AsArray())!;
-        Assert.Equal(@"C:\Tools\editor.exe", program.Text("path"));
+        Assert.Equal(@"C:\Users\example\AppData\Local\Editor\bin\987654fa\editor.exe", program.Text("path"));
+        Assert.Equal("low", program.Text("severity"));
         Assert.Equal(5L, program["count"]!.GetValue<long>());
         Assert.Contains(@"WS-WORKSPACE-001\user", program["users"]!.AsArray().Select(user => user!.ToString()));
         var logons = activity["logons"]!.AsArray();
@@ -249,7 +250,8 @@ public sealed class NativeWorkstationsReportPostgresTests
         Assert.Equal("medium", Assert.Single(rows, row => row!["event_id"]!.GetValue<int>() == 6416).Text("station_importance"));
         Assert.DoesNotContain("OTHER-SOURCE", activity.ToJsonString());
 
-        var programPage = await Get(detailPath + "&event_limit=2&program=" + Uri.EscapeDataString(@"c:/tools/EDITOR.exe"));
+        var programPage = await Get(detailPath + "&event_limit=2&program="
+            + Uri.EscapeDataString(@"c:/users/example/AppData/Local/Editor/bin/abcdef12/EDITOR.exe"));
         var filteredEvents = programPage["detail"]!["events"]!;
         Assert.Equal(5L, filteredEvents["journal_event_count"]!.GetValue<long>());
         Assert.Equal(2, filteredEvents["items"]!.AsArray().Count);
@@ -284,7 +286,7 @@ public sealed class NativeWorkstationsReportPostgresTests
         Assert.All(noEvidence["detail"]!["events"]!["items"]!.AsArray().Where(row => row!["event_id"]!.GetValue<int>() == 4688),
             row =>
             {
-                Assert.Equal(@"C:\Tools\editor.exe", row!["workstation_event"].Text("image_path"));
+                Assert.EndsWith(@"\editor.exe", row!["workstation_event"].Text("image_path"), StringComparison.Ordinal);
                 Assert.Null(row["workstation_event"]!["command_line"]);
             });
         Authorize(WorkstationWorkspaceTests.AuthorizedFacts(journal: false));

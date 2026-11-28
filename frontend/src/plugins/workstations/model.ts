@@ -122,7 +122,7 @@ export type StationFact = ActivityInterval & {
     | "service_installed" | "local_account_created";
   severity: StationSeverity; object: string | null; count: number;
 };
-export type StationProgram = ActivityInterval & { name: string; path: string; writable: boolean; count: number; users: string[] };
+export type StationProgram = ActivityInterval & { name: string; path: string; writable: boolean; count: number; users: string[]; severity?: StationSeverity | null };
 export type StationLogon = { account: string | null; type: string | null; last: string; count: number; failures: number };
 export type StationDevice = ActivityInterval & { class: string | null; name: string | null };
 export type StationActivity = { notable: StationFact[]; programs: StationProgram[]; logons: StationLogon[]; devices: StationDevice[] };

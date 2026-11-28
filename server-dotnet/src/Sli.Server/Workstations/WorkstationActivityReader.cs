@@ -36,6 +36,7 @@ internal static class WorkstationActivityReader
                     and d.day>=(@p4 at time zone 'UTC')::date and d.day<=(@p5 at time zone 'UTC')::date
                     and d.event_kind in (1102,4624,4625,4719,4720) and
                 """ + " " + SourceScope("d") + " and ", StringComparison.Ordinal);
+        string programKey = WorkstationActivity.ProgramKeySql("btrim(fields->>'NewProcessName')");
 
         var rows = await Ws.Rows(db, $$"""
             with source as ({{source}}),
@@ -43,6 +44,8 @@ internal static class WorkstationActivityReader
                 select id,nullif(summary_key,'') as summary_key,event_id,channel,provider_name,first_seen_utc,last_seen_utc,event_count,
                        case event_id when 4688 then nullif(btrim(fields->>'NewProcessName'),'-')
                                      when 7045 then nullif(btrim(coalesce(fields->>'ImagePath',fields->>'ServiceFileName')),'-') end as path,
+                       case when event_id=4688 then lower({{programKey}}) end as program_key,
+                       fields->>'ProcessSignatureStatus' as signature_status, fields->>'ProcessDriveType' as drive_type,
                        case event_id when 6416 then fields->>'DeviceDescription'
                                      when 7045 then coalesce(fields->>'ServiceName',target)
                                      when 4732 then case when @p7 then coalesce(fields->>'MemberName',fields->>'MemberSid') end end as name,
@@ -78,10 +81,17 @@ internal static class WorkstationActivityReader
                 order by first_seen_utc,id limit 1
             ),
             previous_programs as (
-                select distinct on (lower(replace(path,'/',chr(92)))) * from observations
+                select distinct on (program_key) * from observations
                 where first_seen_utc>=@p4-@p8 and first_seen_utc<@p4 and event_id=4688 and path is not null
                     and channel='Security' and provider_name='Microsoft-Windows-Security-Auditing'
-                order by lower(replace(path,'/',chr(92))),first_seen_utc desc,id desc
+                order by program_key,first_seen_utc desc,id desc
+            ),
+            first_program_starts as (
+                select distinct on (program_key) * from observations
+                where first_seen_utc<@p4 and event_id=4688 and channel='Security'
+                    and provider_name='Microsoft-Windows-Security-Auditing'
+                    and program_key in (select program_key from observations where first_seen_utc>=@p4 and event_id=4688)
+                order by program_key,first_seen_utc,id
             ),
             previous_devices as (
                 select distinct on (lower(device_id)) * from observations
@@ -92,6 +102,7 @@ internal static class WorkstationActivityReader
             select * from observations where first_seen_utc>=@p4
             union all select * from first_process
             union all select * from previous_programs
+            union all select * from first_program_starts
             union all select * from previous_devices
             """, ct, Ws.Number(station, "domain_id"), Ws.Number(station, "server_id").ToString(System.Globalization.CultureInfo.InvariantCulture),
             station.Text("source_instance_id"), channels, from, to, boundary, identities, WorkstationActivity.ProgramHistory);
@@ -101,6 +112,8 @@ internal static class WorkstationActivityReader
             Ws.Time(row.Text("first_seen_utc")), Ws.Time(row.Text("last_seen_utc")), row.Number("event_count"))
         {
             Path = Clean(row, "path"), Name = Clean(row, "name"), Account = Clean(row, "account"),
+            Signed = row.Text("signature_status") switch { "signed" => true, "unsigned" => false, _ => null },
+            DriveType = Clean(row, "drive_type"),
             LogonType = Clean(row, "logon_type"), DeviceId = Clean(row, "device_id"), DeviceClass = Clean(row, "device_class"),
             GroupSid = Clean(row, "group_sid"), TargetDomain = Clean(row, "target_domain"),
         }), from, to, host);
