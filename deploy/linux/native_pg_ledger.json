@@ -673,6 +673,8 @@
     "config/postgres_migrations/462_file_actions_and_problems.sql": "1143516af0c1dfb8d46a63af031342f7ceab95c9e989a7f23a1be1d2ce29cced",
     "config/postgres_migrations/463_semantic_outbox_lanes.rollback.sql": "cdb6b4917652d345e6009a21fa69eb388509fa0fdeb26ded7549eeaac7696901",
     "config/postgres_migrations/463_semantic_outbox_lanes.sql": "4f782651a2209704bdb9cfc847d5b577a426e4156b9cbb464c98e2f4fcff4a05",
+    "config/postgres_migrations/464_file_ransom_episodes.rollback.sql": "756951db391a29c4c592eadac7391350c977881453d0f15a554140bf6d5c6630",
+    "config/postgres_migrations/464_file_ransom_episodes.sql": "8f1ae282bb06ace3d4f1def1ee7e52a6c6626b5da06c94c5b278cf405ab75da1",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },
