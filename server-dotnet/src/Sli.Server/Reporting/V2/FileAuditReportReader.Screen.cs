@@ -288,7 +288,7 @@ public sealed partial class FileAuditReportReader
             if (tab == "out-of-hours") keys.Add(new JsonObject { ["row_id"] = id, ["fingerprint"] = "file-audit:" + id });
         }
         if (keys.Count == 0 && !actionEpisodes) return;
-        string episodeLinks = actionEpisodes ? "union all select row_id,finding_id from public.file_action_problems461($3::jsonb)" : "";
+        string episodeLinks = actionEpisodes ? "union all select row_id,finding_id from public.file_action_problems462($3::jsonb)" : "";
         object?[] arguments = actionEpisodes ? [keys, domains, rows] : [keys, domains];
         var problems = await session.QueryAsync($"""
             with keys as (select * from jsonb_to_recordset($1::jsonb) k(row_id text,event_id bigint,fingerprint text)),

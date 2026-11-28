@@ -470,9 +470,9 @@ public class FileAuditConsumerDatabaseTests
         const string sid = "S-1-5-21-100000001-200000002-300000003-1001";
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new SqlPostgresFixture();
-        await fixture.StartAsync(ct,throughVersion:460);
+        await fixture.StartAsync(ct,throughVersion:461);
         await fixture.Pg.ApplyFileAsync(Path.Combine(PostCollectionPostgres.Repository(),
-            "config/postgres_migrations/461_file_actions_and_problems.sql"), null, ct);
+            "config/postgres_migrations/462_file_actions_and_problems.sql"), null, ct);
         await using var owner = await fixture.Pg.OpenAsync(ct);
         await Register(owner, ct, root);
         await PostCollectionPostgres.Sql(owner, "update sli_agents set collection_policy=jsonb_set(collection_policy,'{manage_windows_audit}','true')", ct);

@@ -58,7 +58,7 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
                     select 1 from pg_attribute where attrelid=to_regclass('public.sli_file_audit_smb_catalog')
                     and attname='cached_at' and not attisdropped) as catalog_available,
                     to_regprocedure('public.file_audit_scan_prefix458(uuid,text,uuid,integer,timestamptz)') is not null as file_activity,
-                    to_regprocedure('public.file_action_problems461(jsonb)') is not null as action_episodes
+                    to_regprocedure('public.file_action_problems462(jsonb)') is not null as action_episodes
                 """, ct))[0]!.AsObject();
             fileActivity = discovery.Flag("file_activity");
             var discovered = Array(discovery["roots"]);

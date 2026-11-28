@@ -1,10 +1,10 @@
 begin;
-select pg_advisory_xact_lock(hashtext('sli_file_actions_and_problems461'));
+select pg_advisory_xact_lock(hashtext('sli_file_actions_and_problems462'));
 do $$ begin
     if not pg_has_role(session_user,'adlog_storage_owner','MEMBER')
-       or not exists(select 1 from public.schema_migrations where version=460 and name='account_check_rows')
-       or exists(select 1 from public.schema_migrations where version>=461) then
-        raise exception 'file_actions_and_problems461_preflight' using errcode='55000';
+       or not exists(select 1 from public.schema_migrations where version=461 and name='account_check_cleanup')
+       or exists(select 1 from public.schema_migrations where version>=462) then
+        raise exception 'file_actions_and_problems462_preflight' using errcode='55000';
     end if;
 end $$;
 set local role adlog_storage_owner;
@@ -18,12 +18,12 @@ declare definition text;
 begin
     definition := pg_get_functiondef('public.semantic_finding_in_domains_v265(bigint,bigint[])'::regprocedure);
     if strpos(definition,old_join)=0 then
-        raise exception 'file_actions_and_problems461_domain_reader_shape' using errcode='55000';
+        raise exception 'file_actions_and_problems462_domain_reader_shape' using errcode='55000';
     end if;
     execute replace(definition,old_join,new_join);
 end $$;
 
-create function public.file_action_page461(
+create function public.file_action_page462(
     p_roots jsonb,p_start timestamptz,p_end timestamptz,p_path text,p_nested boolean,
     p_employee text,p_operation text,p_after jsonb,p_limit integer)
 returns jsonb language plpgsql stable security definer set search_path=pg_catalog,pg_temp as $$
@@ -90,7 +90,7 @@ begin
     return result;
 end $$;
 
-create function public.file_action_problems461(p_rows jsonb)
+create function public.file_action_problems462(p_rows jsonb)
 returns table(row_id text,finding_id bigint)
 language sql stable security definer set search_path=pg_catalog,pg_temp as $$
     select distinct a.action_id,published.finding_id
@@ -112,7 +112,7 @@ language sql stable security definer set search_path=pg_catalog,pg_temp as $$
         and episode.scope_json->>'collection_scope_id'=a.collection_scope_id
 $$;
 
-create function public.file_ransom_problem_facts461(p_ids bigint[],p_domains bigint[])
+create function public.file_ransom_problem_facts462(p_ids bigint[],p_domains bigint[])
 returns table(finding_id bigint,facts jsonb)
 language sql stable security definer set search_path=pg_catalog,pg_temp as $$
     select distinct on (published.finding_id) published.finding_id,
@@ -140,10 +140,10 @@ language sql stable security definer set search_path=pg_catalog,pg_temp as $$
     order by published.finding_id,(rr.result#>>'{details,distinct_files}')::bigint desc,rr.observed_at desc,rr.result_id
 $$;
 
-revoke all on function public.file_action_page461(jsonb,timestamptz,timestamptz,text,boolean,text,text,jsonb,integer),
-    public.file_action_problems461(jsonb),public.file_ransom_problem_facts461(bigint[],bigint[]) from public;
-grant execute on function public.file_action_page461(jsonb,timestamptz,timestamptz,text,boolean,text,text,jsonb,integer),
-    public.file_action_problems461(jsonb),public.file_ransom_problem_facts461(bigint[],bigint[]) to adlog_user;
+revoke all on function public.file_action_page462(jsonb,timestamptz,timestamptz,text,boolean,text,text,jsonb,integer),
+    public.file_action_problems462(jsonb),public.file_ransom_problem_facts462(bigint[],bigint[]) from public;
+grant execute on function public.file_action_page462(jsonb,timestamptz,timestamptz,text,boolean,text,text,jsonb,integer),
+    public.file_action_problems462(jsonb),public.file_ransom_problem_facts462(bigint[],bigint[]) to adlog_user;
 
-insert into public.schema_migrations(version,name) values(461,'file_actions_and_problems');
+insert into public.schema_migrations(version,name) values(462,'file_actions_and_problems');
 commit;

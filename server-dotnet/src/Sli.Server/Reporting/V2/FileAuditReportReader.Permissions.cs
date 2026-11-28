@@ -141,7 +141,7 @@ public sealed partial class FileAuditReportReader
         , legacy as materialized (
             select case when $9->>'record_unit'='saved_event_group' then
                 jsonb_build_object('service_filter_version',1,'items','[]'::jsonb,'filtered_count',0,'has_more',false,'after',null)
-                else public.file_action_page461($1::jsonb,$3,$4,$5,$6,$7,$8,$9::jsonb,$10) end as data
+                else public.file_action_page462($1::jsonb,$3,$4,$5,$6,$7,$8,$9::jsonb,$10) end as data
         )
         """ + ActionMerge;
 

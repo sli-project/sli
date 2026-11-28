@@ -39,7 +39,7 @@ internal static class AgentClientPolicy
             probe["delivery_diagnostics"]=diagnostics;
             return new(new JsonObject { ["delivery_diagnostics"]=diagnostics.DeepClone() },probe,null,null,false,null);
         }
-        string[] allowed=["applied_policy_revision","rights_probe","collection_state","eventlog_diagnostics","runtime_handoff_supported","agent_version","windows_product_type"];
+        string[] allowed=["applied_policy_revision","rights_probe","collection_state","eventlog_diagnostics","runtime_handoff_supported","agent_version","windows_product_type","windows_product"];
         if(body is not JsonObject report || report.Any(x=>!allowed.Contains(x.Key)) ||
             report.ContainsKey("runtime_handoff_supported") && !IsTrue(report["runtime_handoff_supported"])) throw Error("invalid_agent_policy_report");
         long current=agent["policy_revision"]!.GetValue<long>(),previous=agent["applied_policy_revision"]!.GetValue<long>();
@@ -61,6 +61,16 @@ internal static class AgentClientPolicy
             if(!JsonRead.TryString(report["agent_version"],out var version) || !Version.TryParse(version,out var parsed) || parsed.Build<0 || parsed.Revision>=0 || version.Length>32)
                 throw Error("invalid_agent_policy_report");
             probe["agent_version"]=version;
+        }
+        if (report.ContainsKey("windows_product"))
+        {
+            if (report["windows_product"] is not JsonObject product || !Keys(product, "name", "version")
+                || !JsonRead.TryString(product["name"], out var name) || name.Length > 128
+                || string.IsNullOrWhiteSpace(name) || name.Any(char.IsControl)
+                || !JsonRead.TryString(product["version"], out var osVersion) || osVersion.Length > 32
+                || !Version.TryParse(osVersion, out var parsedVersion) || parsedVersion.Build < 0)
+                throw Error("invalid_agent_policy_report");
+            probe["windows_product"] = new JsonObject { ["name"] = name.Trim(), ["version"] = parsedVersion.ToString() };
         }
         if(report.ContainsKey("eventlog_diagnostics")) {
             AgentClientDiagnostics.ValidateEventLog(report["eventlog_diagnostics"],revision);

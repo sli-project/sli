@@ -210,7 +210,10 @@ async function verifyStation(page, { detail, detailPath, fixture, fleetUrl, reco
   const groupRow = table.locator('tbody > tr').nth(groupIndex);
   await expect(groupRow.locator(':scope > td').nth(countColumn)).toHaveText(String(fixture.group_count));
   await groupRow.click();
-  await expect(page.getByText('Сохранённая группа событий', { exact: true })).toBeVisible();
+  const facts = page.getByRole('region', { name: 'Сведения о событии', exact: true });
+  const observations = facts.getByText('Наблюдений', { exact: true }).locator('..').locator('dd');
+  await expect(observations).toBeVisible();
+  await expect(observations).toHaveText(String(fixture.group_count));
   await expect(page.getByRole('link', { name: 'Исходное событие', exact: true })).toHaveCount(0);
   await assertFullPage(page);
   await record({ claim: 'Retained group facts show their actual count and interval; no individual-source link is invented.' });

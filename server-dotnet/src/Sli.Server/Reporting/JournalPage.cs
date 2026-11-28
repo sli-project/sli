@@ -36,7 +36,8 @@ internal static class JournalPage
         bool security = fields.Contains("event_id") && fields.Contains("time_created_utc");
         bool technical = fields.Contains("channel");
         bool accounts = security && fields.Contains("subject_user_name") && fields.Contains("target_user_name");
-        bool canGroup = identity && accounts && technical;
+        bool workstation = technical && options.SourcePlugin == "sli.workstations";
+        bool canGroup = (identity || workstation && options.ServerId is not null) && accounts && technical;
         bool groupRepeats = canGroup && options.Before is null && (options.Collapse || options.Expand.HasValue);
         sql.Definition(Dataset, definition, 90);
         var filters = new Dictionary<string, string>();
@@ -122,6 +123,17 @@ internal static class JournalPage
                 or (channel='System' and provider_name='Service Control Manager' and event_id in (7035,7036))
                 or lower(channel) like '%taskscheduler%',false)
             """ : "false";
+        string workstationFields = workstation && security ? """
+            case when event.channel='Security' and event.provider_name='Microsoft-Windows-Security-Auditing' then
+                case event.event_id when 4688 then jsonb_strip_nulls(jsonb_build_object(
+                    'image_path',left(nullif(btrim(event.fields->>'NewProcessName'),'-'),256),
+                    'parent_image_path',left(nullif(btrim(event.fields->>'ParentProcessName'),'-'),256),
+                    'command_line',left(nullif(btrim(event.fields->>'CommandLine'),'-'),1024)))
+                when 6416 then jsonb_strip_nulls(jsonb_build_object(
+                    'device_name',left(event.fields->>'DeviceDescription',512),
+                    'device_class',left(coalesce(event.fields->>'ClassName',event.fields->>'ClassId'),512))) end
+            end
+            """ : "null::jsonb";
         string statement = $"""
             with short_events as ({source}),
             scoped as (
@@ -140,13 +152,13 @@ internal static class JournalPage
                            when 4624 then event.fields->>'TargetLogonId'
                            when 4672 then event.fields->>'SubjectLogonId'
                            end from '^0[xX]([0-9a-fA-F]+)$')),'0'),'') as logon_session,
-                       {category} as journal_category,{outcome} as journal_result
+                       {category} as journal_category,{outcome} as journal_result,{workstationFields} as workstation_event
                 from (select e.*,e.actor as subject_user_name,e.target as target_user_name,e.source as ip_address,
                              e.source as workstation_name,e.fields->>'TargetLogonId' as logon_id from short_events e) event
                 join servers server on server.id=event.server_id and server.domain_id=event.domain_id
                 cross join lateral (select event.channel as value) channel
                 cross join lateral (select coalesce(nullif(event.computer,''),server.hostname) as computer) origin
-                {SubjectJoin(accounts)}
+                {SubjectJoin(accounts, workstation)}
                 {ConnectionJoin(accounts)}
                 {where}
             ),
@@ -193,7 +205,7 @@ internal static class JournalPage
                     from candidates left join pairs on pairs.companion_id=candidates.id
                 ),
                 selected as (select * from classified {categoryWhere})
-                """ + PairedActions;
+                """ + PairedActions(workstation);
             if (options.Expand is { } expand)
                 statement += $"""
                     , anchor as materialized (
@@ -346,6 +358,8 @@ internal static class JournalPage
                 foreach (string field in new[] { "day", "summary_key", "event_count", "first_seen_utc", "last_seen_utc", "journal_result" })
                     item[field] = row[field]?.DeepClone();
             if (technical) item["journal_computer"] = row["journal_computer"]?.DeepClone();
+            if (storedRow["workstation_event"] is JsonObject workstationEvent)
+                item["_workstation_event"] = workstationEvent.DeepClone();
             if (identity && security && technical)
             {
                 item["_journal_origin"] = new JsonObject
@@ -480,7 +494,18 @@ internal static class JournalPage
               and (privileged or same_address or first_address is not distinct from last_address)
         )
         """;
-    private static readonly string PairedActions = $"""
+    private static string PairedActions(bool workstation)
+    {
+        string processRepeat = workstation ? $"""
+            when id is not null and {NativeSecurity} and event_id=4688
+                and nullif(workstation_event->>'image_path','') is not null
+                and coalesce(journal_account_sid,journal_account) is not null
+            then array[(floor(extract(epoch from time_created_utc)/60))::text,domain_id::text,server_id::text,'4688',
+                        {Fold("coalesce(journal_account_sid,journal_account)")},
+                        {Fold("journal_initiator")},workstation_event->>'image_path',workstation_event->>'parent_image_path',
+                        workstation_event->>'command_line',journal_result]
+            """ : "";
+        return $"""
         , actions as materialized (
             select selected.*,pairs.companion_id,
                    coalesce(journal_address,pairs.companion_address) as action_address,
@@ -498,11 +523,13 @@ internal static class JournalPage
                              case when pairs.privileged then 'privileged' else event_id::text end,
                              {Fold("coalesce(local_account_key,journal_account_sid,journal_account)")},
                              coalesce(journal_address,pairs.companion_address),journal_logon_type,journal_result]
+                        {processRepeat}
                    end as repeat_key
             from selected left join pairs on pairs.primary_id=selected.id
             where not exists(select 1 from pairs companion where companion.companion_id=selected.id)
         )
         """;
+    }
 
     private static string VaryingColumns(bool grouped, bool security, bool technical, bool accounts)
     {
@@ -568,7 +595,7 @@ internal static class JournalPage
         ) address
         """;
 
-    private static string SubjectJoin(bool accounts)
+    private static string SubjectJoin(bool accounts, bool workstation)
     {
         if (!accounts) return "cross join lateral (select null::text as account,null::text as initiator,null::text as account_sid) subjects";
 
@@ -577,12 +604,20 @@ internal static class JournalPage
         {
             string name = Clean($"event.method#>>'{{$principals,{kind}UserName}}'");
             string domain = Clean($"event.method#>>'{{$principals,{kind}DomainName}}'");
-            return $"case when {domain} is not null and strpos({name},chr(92))=0 and strpos({name},'@')=0 then left({domain}||chr(92)||{name},256) else {name} end";
+            return $"case when {domain} is not null and strpos({name},chr(92))=0 and strpos({name},'@')=0 then left({domain}||chr(92)||{name},256) else left({name},256) end";
         }
         string actor = $"nullif({Clean("event.actor")},'S-1-0-0')";
         string target = Clean("event.target");
         string subjectSid = Clean("event.method#>>'{$principals,SubjectUserSid}'");
         string targetSid = $"coalesce({Clean("event.method#>>'{$principals,TargetUserSid}'")},{Clean("event.method#>>'{$principals,TargetSid}'")})";
+        string processAccount = workstation ? """
+            when 4688 then coalesce(principals.target_name,principals.target_sid,principals.subject_name,principals.subject_sid,
+                case when principals.actor ~* '^S-1-[0-9]+(-[0-9]+)+$' then principals.actor end)
+            """ : "";
+        string processSid = workstation ? """
+            when native.native_code=4688 then case when principals.target_name is not null or principals.target_sid is not null
+                then principals.target_sid else principals.subject_sid end
+            """ : "";
         return $"""
             cross join lateral (select {Principal("Target")} as target_name,{Principal("Subject")} as subject_name,
                 nullif({targetSid},'S-1-0-0') as target_sid,nullif({subjectSid},'S-1-0-0') as subject_sid,
@@ -599,6 +634,7 @@ internal static class JournalPage
                     when 4625 then coalesce(principals.target_name,principals.actor)
                     when 4672 then coalesce(principals.subject_name,principals.target_name,principals.actor)
                     when 4776 then case when principals.actor=principals.target_sid then coalesce(principals.target_name,principals.actor) else principals.actor end
+                    {processAccount}
                     else coalesce(principals.target_name,principals.target,principals.subject_name,principals.actor)
                     end as account,
                     case when native.native_code in (4672,4776) then null
@@ -608,6 +644,7 @@ internal static class JournalPage
                              case when principals.subject_name is null then principals.target_sid end)
                          when native.native_code=4776 then case when lower(principals.actor)=lower(principals.target_name)
                              then principals.target_sid end
+                         {processSid}
                          else principals.target_sid end as named_sid
                 offset 0
             ) roles

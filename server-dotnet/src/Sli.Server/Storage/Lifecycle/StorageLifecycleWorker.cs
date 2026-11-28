@@ -8,6 +8,7 @@ internal interface ILifecycleSession : IAsyncDisposable
 {
     Task<long> ReadDatabaseSizeAsync(CancellationToken ct);
     Task<JsonObject> ExpirePartitionsAsync(DateTime now, int batch, CancellationToken ct);
+    Task PruneAccountCheckRowsAsync(Action<JsonObject, bool> progress, CancellationToken ct);
     Task<bool> TryLockAsync(string name, CancellationToken ct);
     Task EnsureLocksAsync(CancellationToken ct);
     Task ReleaseLockAsync(string name, CancellationToken ct);
@@ -107,6 +108,22 @@ internal sealed class StorageLifecycleWorker(ILifecycleSession session, Lifecycl
                 if (count < batch)
                     break;
             }
+            const string accountCheckPhase = "account_check_cleanup";
+            ReportProgress(accountCheckPhase, state);
+            await session.PruneAccountCheckRowsAsync((cleanup, writeLine) =>
+            {
+                state[accountCheckPhase] = cleanup.DeepClone();
+                if (LifecycleJson.Text(cleanup, "status") == "complete")
+                    state["partitions"]!["account_check_rows_deleted"] = cleanup["deleted"]?.DeepClone();
+                ReportProgress(accountCheckPhase, state);
+                if (writeLine && output is not null)
+                {
+                    var line = (JsonObject)state.DeepClone();
+                    line["contract"] = "sli.storage-lifecycle-progress.v1";
+                    line["phase"] = accountCheckPhase;
+                    output(line);
+                }
+            }, ct);
         }
         await session.EnsureLocksAsync(ct);
         state["status"] = "ok";

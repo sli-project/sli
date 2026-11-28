@@ -48,7 +48,7 @@ function FindingLink({ row, station, back }: { row: StationEvent; station: Stati
 }
 
 const profileChannel: Record<number, string> = {
-  4624: "Security", 4625: "Security", 1102: "Security", 4698: "Security", 4732: "Security", 4733: "Security",
+  4624: "Security", 4625: "Security", 1102: "Security", 4688: "Security", 4698: "Security", 4732: "Security", 4733: "Security", 6416: "Security",
   5001: "Microsoft-Windows-Windows Defender/Operational", 5010: "Microsoft-Windows-Windows Defender/Operational", 5012: "Microsoft-Windows-Windows Defender/Operational",
   7036: "System", 7040: "System", 7045: "System",
 };
@@ -56,6 +56,10 @@ const profileChannel: Record<number, string> = {
 function eventTitle(row: StationEvent): string {
   return row.code && Object.hasOwn(profileChannel, row.code) && row.channel === profileChannel[Number(row.code)]
     ? t(`workstations.workspace.event_${row.code}` as MessageKey) : row.title ?? t("workstations.workspace.unknown_event");
+}
+
+function fileName(path: string | null): string | null {
+  return path?.split(/[\\/]/).pop() || null;
 }
 
 function CollectionDetails({ station }: { station: Station }) {
@@ -82,7 +86,6 @@ function CollectionDetails({ station }: { station: Station }) {
             ? t(`workstations.workspace.event_${row.code}` as MessageKey) : t("workstations.workspace.unknown_event") },
           { key: "channel", label: t("workstations.workspace.channel"), value: row => row.channel }]}/> : null}
       {station.profile.channels.length ? <p className="sli-workstations__local-state">{t("workstations.workspace.channels")}: {station.profile.channels.join(" · ")}</p> : null}
-      {station.profile.state === "supported" ? <p className="sli-workstations__local-state">{t("workstations.workspace.profile_scope")}</p> : null}
     </section>
     <details className="sli-workstations__technical"><summary>{t("workstations.workspace.identifiers")}</summary><FactList facts={[
       { label: t("workstations.workspace.agent_id"), value: station.agent_key },
@@ -98,8 +101,7 @@ function EventFacts({ row, station, detail, search, timeZone }: { row: StationEv
   const period = exactWindow(search, timeZone);
   const crossesBoundary = row.group && period && (row.first && Date.parse(row.first) < Date.parse(period.from) || row.last && Date.parse(row.last) >= Date.parse(period.to));
   return <section className="sli-workstations__event" aria-label={t("workstations.workspace.event_facts")}>
-    <div className="sli-workstations__event-heading"><div><p className="sli-workstations__eyebrow">{t(row.group ? "workstations.workspace.saved_group" : "workstations.workspace.saved_event")}</p>
-      <h2 title={row.title ?? undefined}>{eventTitle(row)}</h2></div>
+    <div className="sli-workstations__event-heading"><h2 title={row.title ?? undefined}>{eventTitle(row)}</h2>
       {row.findingId ? <FindingLink row={row} station={station} back={back}/> : null}
     </div>
     <FactList facts={[
@@ -108,16 +110,20 @@ function EventFacts({ row, station, detail, search, timeZone }: { row: StationEv
       { label: t("workstations.workspace.observations"), value: row.count === null ? "—" : formatNumber(row.count) },
       { label: t("workstations.workspace.account"), value: row.account ?? "—" },
       ...(row.initiator ? [{ label: t("workstations.workspace.initiator"), value: row.initiator }] : []),
+      ...(row.imagePath ? [{ label: t("workstations.workspace.process_path"), value: row.imagePath }] : []),
+      ...(row.parentImagePath ? [{ label: t("workstations.workspace.parent_process"), value: fileName(row.parentImagePath) }] : []),
+      ...(row.commandLine ? [{ label: t("workstations.workspace.command_line"), value: row.commandLine }] : []),
+      ...(row.deviceName ? [{ label: t("workstations.workspace.device_name"), value: row.deviceName }] : []),
+      ...(row.deviceClass ? [{ label: t("workstations.workspace.device_class"), value: row.deviceClass }] : []),
       { label: t("workstations.workspace.result"), value: <EventResult value={row.result}/> },
       ...(row.logonType ? [{ label: t("workstations.workspace.logon_type"), value: row.logonType }] : []),
       ...(row.address ? [{ label: t("workstations.workspace.address"), value: row.address }] : []),
       { label: t("workstations.workspace.channel"), value: row.channel ?? "—" },
       ...(row.computer ? [{ label: t("workstations.workspace.event_computer"), value: row.computer }] : []),
     ]}/>
-    {row.group ? <p className="sli-workstations__local-state">{t("workstations.workspace.group_context")}</p> : null}
     {crossesBoundary ? <p className="sli-workstations__local-state">{t("workstations.workspace.group_boundary")}</p> : null}
     <div className="sli-ds-header__actions">{evidence ? <a className="sli-ds-button" href={evidence}>{t("workstations.workspace.original")}</a> : null}
-      {journal ? <a className="sli-ds-button" href={journal}>{t(row.group ? "workstations.workspace.group_journal" : "workstations.workspace.open_journal")}</a> : null}</div>
+      {journal ? <a className="sli-ds-button" href={journal}>{t(row.expandable && row.id ? "workstations.workspace.group_journal" : "workstations.workspace.open_journal")}</a> : null}</div>
   </section>;
 }
 
@@ -185,7 +191,11 @@ export function WorkstationWorkspace({ definition, stationId, search, session, t
     { key: "operation", label: t("workstations.workspace.operation"), minWidth: "15rem", render: event => <span className="sli-workstations__cell">
       <a className="sli-ds-table__link" title={event.title ?? undefined} href={localHref(patchedSearch(search, { event: event.key }))} onClick={click => {
         click.stopPropagation(); if (click.ctrlKey || click.metaKey || click.shiftKey || click.altKey) return; click.preventDefault(); select(event);
-      }}>{eventTitle(event)}</a><small>{event.code ?? "—"} · {t(event.group ? "workstations.workspace.saved_group" : "workstations.workspace.saved_event")}</small></span> },
+      }}>{[eventTitle(event), fileName(event.imagePath) ?? event.deviceName].filter(Boolean).join(" · ")}</a>
+      <small>{[event.code, event.deviceClass, event.parentImagePath && t("workstations.workspace.parent_process_value", {
+        name: fileName(event.parentImagePath) ?? event.parentImagePath,
+      })].filter(Boolean).join(" · ")}</small>
+      {event.commandLine ? <span className="sli-ds-table__cell-line"><small title={event.commandLine}>{event.commandLine}</small></span> : null}</span> },
     { key: "account", label: t("workstations.workspace.account"), value: event => event.account ?? "—", hiddenByDefault: false },
     { key: "initiator", label: t("workstations.workspace.initiator"), value: event => event.initiator ?? "—", hiddenByDefault: !rows.some(event => event.initiator) },
     { key: "address", label: t("workstations.workspace.address"), value: event => event.address ?? "—", hiddenByDefault: !rows.some(event => event.address) },

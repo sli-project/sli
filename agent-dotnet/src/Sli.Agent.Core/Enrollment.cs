@@ -38,6 +38,23 @@ public sealed class Enrollment(HostIdentityStore store, IAgentControlTransport t
         return RoleForProductType(type) is null ? null : type;
     }
 
+    public JsonObject? ReadWindowsProduct()
+    {
+        if (!OperatingSystem.IsWindows()) return null;
+        try
+        {
+            if (Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion", "ProductName", null)
+                is not string name || string.IsNullOrWhiteSpace(name) || name.Length > 128 || name.Any(char.IsControl)) return null;
+            var version = Environment.OSVersion.Version;
+            // Windows 11 can retain the Windows 10 product name in this key.
+            if (version.Build >= 22000 && name.StartsWith("Windows 10", StringComparison.Ordinal))
+                name = "Windows 11" + name["Windows 10".Length..];
+            return new JsonObject { ["name"] = name.Trim(), ["version"] = version.ToString(3) };
+        }
+        catch (Exception error) when (error is UnauthorizedAccessException or System.Security.SecurityException or IOException)
+        { return null; }
+    }
+
     private static (string Dns, string Forest, string? Sid)? ReadDcDomain()
     {
         if (!OperatingSystem.IsWindows()) return null;

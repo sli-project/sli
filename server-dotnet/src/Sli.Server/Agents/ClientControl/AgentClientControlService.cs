@@ -34,6 +34,7 @@ public sealed class AgentClientControlService(IAgentControlAudit audit,TimeProvi
             throw new InvalidOperationException("agent_plugin_generation_unavailable");
         var result=AgentClientPolicy.CheckIn(agent,fileHook);
         if (agent["rights_probe"]?["windows_product_type"] is null) result["windows_product_type_required"] = true;
+        if (agent["rights_probe"]?["windows_product_type"]?.ToString() is null or "WinNT") result["windows_product_requested"] = true;
         // The management command runs while the server verifies coverage. Until then the agent cannot capture events.
         if(agent["file_audit"] is JsonObject fileAudit
             && (fileAudit["permissions_scope"] is not null || fileAudit["permissions_scopes"] is not null

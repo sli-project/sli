@@ -489,11 +489,11 @@ public sealed partial class ProblemRepository
         var fileRows = rows.OfType<JsonObject>().Where(row => ProblemJson.Text(row["rule_code"]) == "semantic.qw.file-ransom")
             .ToDictionary(row => ProblemJson.Long(row["id"]));
         if (fileRows.Count == 0 || !ProblemJson.Bool((await One(tx,
-            "select to_regprocedure('public.file_ransom_problem_facts461(bigint[],bigint[])') is not null as available",
+            "select to_regprocedure('public.file_ransom_problem_facts462(bigint[],bigint[])') is not null as available",
             null, ct))?["available"])) return;
         var facts = await Rows(tx, $"""
             select p.finding_id,(p.facts - 'subject_sid' - 'account_at')||jsonb_build_object('actor',left(name.account,256)) as facts
-            from public.file_ransom_problem_facts461(@ids,@domains::bigint[]) p
+            from public.file_ransom_problem_facts462(@ids,@domains::bigint[]) p
             cross join lateral (select p.facts->>'subject_sid' as sid,
                 (p.facts->>'account_at')::timestamptz as observed_at) a
             cross join lateral ({FileAuditAdEnrichment.AccountAtSql}) name

@@ -15,8 +15,105 @@ public sealed class AccountCheckRowsPostgresTests
     private const string WatchSid = "S-1-5-21-100000001-200000002-300000003-1002";
     private const string OtherSid = "S-1-5-21-100000001-200000002-300000003-1003";
     private const int MigrationVersion = 460;
+    private const int CleanupVersion = 461;
     private static int Predecessor => MigrationDirectory.Read().Where(m => m.Version < MigrationVersion).Max(m => m.Version);
     private static string Migration => MigrationDirectory.Read(MigrationVersion).Single(m => m.Version == MigrationVersion).Path;
+    private static string CleanupMigration => MigrationDirectory.Read(CleanupVersion).Single(m => m.Version == CleanupVersion).Path;
+
+    [Fact]
+    public async Task Lifecycle_retries_a_busy_checkpoint_and_drains_fifty_thousand_legacy_rows_in_one_cycle()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct, throughVersion: Predecessor);
+        await using var owner = await fixture.Pg.OpenAsync(ct);
+        await PostCollectionPostgres.Sql(owner, """
+            insert into account_detection_checkpoints451(family,checkpoint_key,scope,seed_complete)
+                values ('decoy',repeat('a',64),'{}',true), ('watch',repeat('b',64),'{}',true);
+            insert into semantic_account_decoy_checks(checkpoint_key,normalized_event_id,scope_json,result_code)
+                select repeat('a',64),md5(g::text)::uuid,'{}',case when g<=3 then 'observed' else 'no_match' end
+                from generate_series(1,25000) g;
+            insert into semantic_account_watch_checks(checkpoint_key,normalized_event_id,scope_json,result_code)
+                select repeat('b',64),md5(g::text)::uuid,'{}',case when g<=2 then 'observed' else 'no_match' end
+                from generate_series(1,25000) g;
+            """, ct);
+        await fixture.Pg.ApplyFileAsync(Migration, null, ct);
+        await fixture.Pg.ApplyFileAsync(CleanupMigration, null, ct);
+
+        await PostCollectionPostgres.Sql(owner, "select pg_advisory_lock(hashtextextended(repeat('a',64),0))", ct);
+        await using var blocker = await fixture.Pg.OpenAsync(ct);
+        await using var rowLock = await blocker.BeginTransactionAsync(ct);
+        await using (var hold = new NpgsqlCommand("""
+            select 1 from semantic_account_watch_checks where checkpoint_key=repeat('b',64)
+                and normalized_event_id=md5('25000')::uuid for update
+            """, blocker, rowLock))
+            Assert.Equal(1, await hold.ExecuteScalarAsync(ct));
+        var files = new LifecycleFiles(fixture.Pg.Root);
+        await using var lifecycle = new LifecycleRuntime(name => name switch
+        {
+            "ADLOG_PG_DSN" => fixture.Dsn("sli_storage_lifecycle_login"),
+            "ADLOG_STORAGE_LIFECYCLE_DELETE_DSN" => fixture.Dsn("sli_storage_lifecycle_delete_login"),
+            _ => null
+        }, files);
+        Assert.True(await lifecycle.TryLockAsync(StorageLifecycleWorker.LockName, ct));
+        bool released = false, rowReleased = false;
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(TimeSpan.FromMinutes(3));
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        var worker = new StorageLifecycleWorker(lifecycle, files);
+        var result = await worker.CycleAsync(new(), deadline.Token, line =>
+        {
+            if (line["account_check_cleanup"] is not JsonObject progress)
+                return;
+            if (!released && LifecycleJson.Text(progress["decoy"]!.AsObject(), "status") == "retrying")
+            {
+                using var unlock = new NpgsqlCommand("select pg_advisory_unlock(hashtextextended(repeat('a',64),0))", owner);
+                Assert.Equal(true, unlock.ExecuteScalar());
+                Assert.Equal(1000, LifecycleJson.Number(progress["watch"]!.AsObject(), "deleted"));
+                released = true;
+            }
+            if (!rowReleased && LifecycleJson.Text(progress["watch"]!.AsObject(), "status") == "retrying")
+            {
+                Assert.Equal(1, LifecycleJson.Number(progress["watch"]!.AsObject(), "remaining"));
+                rowLock.Commit();
+                rowReleased = true;
+            }
+        });
+        TestContext.Current.TestOutputHelper?.WriteLine($"The full storage cycle took {elapsed.Elapsed.TotalSeconds:F2} seconds.");
+
+        await using var rows = new NpgsqlCommand("""
+            select (select count(*) from semantic_account_decoy_checks),
+                   (select count(*) from semantic_account_watch_checks),
+                   (select count(*) from semantic_account_decoy_checks where result_code='observed'),
+                   (select count(*) from semantic_account_watch_checks where result_code='observed'),
+                   (select count(*) from account_check_cleanup460 where vacuumed),
+                   (select count(*) from pg_stat_user_tables where last_vacuum is not null
+                    and relname in ('semantic_account_decoy_checks','semantic_account_watch_checks'))
+            """, owner);
+        await using (var counts = await rows.ExecuteReaderAsync(ct))
+        {
+            Assert.True(await counts.ReadAsync(ct));
+            Assert.Equal(new long[] { 3, 2, 3, 2, 2, 2 }, Enumerable.Range(0, 6).Select(counts.GetInt64).ToArray());
+        }
+        Assert.True(released);
+        Assert.True(rowReleased);
+        var cleanup = result["account_check_cleanup"]!.AsObject();
+        Assert.Equal(49995, LifecycleJson.Number(cleanup, "deleted"));
+        Assert.Equal(49995, LifecycleJson.Number(result["partitions"]!.AsObject(), "account_check_rows_deleted"));
+        Assert.Equal(0, LifecycleJson.Number(cleanup, "remaining"));
+        Assert.Equal("complete", LifecycleJson.Text(cleanup, "status"));
+
+        var repeated = await worker.CycleAsync(new(), ct);
+        Assert.Equal(0, LifecycleJson.Number(repeated["account_check_cleanup"]!.AsObject(), "deleted"));
+        await fixture.Pg.ApplyFileAsync(Path.ChangeExtension(CleanupMigration, ".rollback.sql"), null, ct);
+        await using var rollback = new NpgsqlCommand("""
+            select count(*) from account_check_cleanup460 where complete
+                and not has_table_privilege('adlog_storage_lifecycle_delete','semantic_account_decoy_checks','MAINTAIN')
+                and not has_table_privilege('adlog_storage_lifecycle_delete','semantic_account_watch_checks','MAINTAIN')
+            """, owner);
+        Assert.Equal(2L, await rollback.ExecuteScalarAsync(ct));
+        await fixture.AssertNoSqlErrorsAsync(ct);
+    }
 
     [Fact]
     public async Task Upgrade_keeps_five_hits_and_the_same_problems_for_one_hundred_thousand_events()
@@ -48,6 +145,7 @@ public sealed class AccountCheckRowsPostgresTests
             if (upgrade)
             {
                 await fixture.Pg.ApplyFileAsync(Migration, null, ct);
+                await fixture.Pg.ApplyFileAsync(CleanupMigration, null, ct);
                 await using var lifecycle = new LifecycleRuntime(name => name switch
                 {
                     "ADLOG_PG_DSN" => fixture.Dsn("sli_storage_lifecycle_login"),
@@ -55,8 +153,9 @@ public sealed class AccountCheckRowsPostgresTests
                     _ => null
                 }, new LifecycleFiles(fixture.Pg.Root));
                 Assert.True(await lifecycle.TryLockAsync(StorageLifecycleWorker.LockName, ct));
-                var cleanup = await lifecycle.ExpirePartitionsAsync(DateTime.UtcNow, 1, ct);
-                Assert.Equal(2L, LifecycleJson.Number(cleanup, "account_check_rows_deleted"));
+                JsonObject? cleanup = null;
+                await lifecycle.PruneAccountCheckRowsAsync((progress, _) => cleanup = progress, ct);
+                Assert.Equal(2L, LifecycleJson.Number(Assert.IsType<JsonObject>(cleanup), "deleted"));
                 Assert.Equal(0L, await Count("semantic_account_decoy_checks"));
                 Assert.Equal(0L, await Count("semantic_account_watch_checks"));
             }

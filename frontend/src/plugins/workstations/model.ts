@@ -58,27 +58,45 @@ export type StationEvent = {
   key: string; id: string | null; code: string | null; title: string | null; first: string | null; last: string | null;
   count: number | null; group: boolean; expandable: boolean; account: string | null; initiator: string | null;
   computer: string | null; address: string | null; result: string | null; channel: string | null; logonType: string | null;
+  imagePath: string | null; parentImagePath: string | null; commandLine: string | null;
+  deviceName: string | null; deviceClass: string | null;
   findingId: string | null; severity: string | null; evidenceAvailable: boolean;
 };
 
 /** Keep native saved groups intact; their representative ID is never an individual source event. */
 export function eventRows(items: Row[]): StationEvent[] {
+  const anonymousRows = new Map<string, number>();
   return items.map(row => {
     const id = positiveId(row.id);
     const summary = sourceText(row.summary_key), day = sourceText(row.day);
-    const key = id ?? (summary && day ? `${day}:${summary}` : null);
+    const time = timestamp(row.time_created_utc);
+    let key = id ?? (summary && day ? `${day}:${summary}` : null);
+    if (!key && time) {
+      const occurrence = (anonymousRows.get(time) ?? 0) + 1;
+      anonymousRows.set(time, occurrence);
+      key = `${time}:${occurrence}`;
+    }
     if (!key) throw new Error("workstation_event_invalid");
     const messages = record(row.presentation_messages);
     const total = count(row.event_count);
-    const group = row.journal_expandable === true || total !== null && total > 1 || !id;
+    const group = row.journal_expandable === true || total !== null && total > 1 || Boolean(summary && day);
     const findingId = positiveId(row.journal_finding_id);
-    return { key, id, code: scalar(row.event_id),
+    const code = scalar(row.event_id), details = record(row.workstation_event);
+    const process = code === "4688", device = code === "6416";
+    return { key, id, code,
       title: record(messages.title_text).code === "events.unknown_type" ? null : sourceText(row.title_text),
-      first: timestamp(row.first_seen_utc) ?? timestamp(row.time_created_utc),
-      last: timestamp(row.last_seen_utc) ?? timestamp(row.time_created_utc), count: total,
+      first: timestamp(row.first_seen_utc) ?? time,
+      last: timestamp(row.last_seen_utc) ?? time, count: total,
       group, expandable: row.journal_expandable === true,
-      account: record(messages.participant).code === "events.participant_unknown" ? null : sourceText(row.participant),
-      initiator: sourceText(row.on_behalf), computer: sourceText(row.journal_computer), address: sourceText(row.ip_address),
+      account: (process ? sourceText(details.account) : null)
+        ?? (record(messages.participant).code === "events.participant_unknown" ? null : sourceText(row.participant)),
+      initiator: process ? sourceText(details.initiator) : sourceText(row.on_behalf),
+      computer: sourceText(row.journal_computer), address: sourceText(row.ip_address),
+      imagePath: process ? sourceText(details.image_path) : null,
+      parentImagePath: process ? sourceText(details.parent_image_path) : null,
+      commandLine: process ? sourceText(details.command_line) : null,
+      deviceName: device ? sourceText(details.device_name) : null,
+      deviceClass: device ? sourceText(details.device_class) : null,
       result: sourceText(row.journal_result), channel: sourceText(row.channel), logonType: scalar(row.logon_type),
       findingId, severity: findingId && ["critical", "high", "medium", "low"].includes(String(row.journal_severity)) ? String(row.journal_severity) : null,
       evidenceAvailable: row.journal_evidence_available === true && !group && id !== null,

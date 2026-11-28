@@ -202,6 +202,9 @@ public sealed class AgentRuntime(IOptions<AgentOptions> options, TimeProvider cl
                 if (assignment["windows_product_type_required"] is JsonValue typeRequired && typeRequired.TryGetValue<bool>(out bool typeRequested) && typeRequested
                     && enrolled.ReadWindowsProductType() is { } productType)
                     report["windows_product_type"] = productType;
+                if (assignment["windows_product_requested"] is JsonValue productRequested && productRequested.TryGetValue<bool>(out bool requestedProduct)
+                    && requestedProduct && enrolled.ReadWindowsProductType() == "WinNT" && enrolled.ReadWindowsProduct() is { } product)
+                    report["windows_product"] = product;
                 if (assignment["dc_identity_required"] is JsonValue required && required.TryGetValue<bool>(out bool requested) && requested)
                     report["dc_identity"] = enrolled.ReadDcIdentity();
                 await http.PostAsync("/api/v1/agent/policy-report", report, cancellationToken).ConfigureAwait(false);
