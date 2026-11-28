@@ -87,7 +87,12 @@ export function ActivityTable({ tab, activity, hardware = [], search, timeZone, 
     }
     case "programs": {
       const patchFor = (path: string) => ({ ...resetEvents, station_tab: "events", view: "all", program: path });
+      const programImportance: TableColumn<StationProgram>[] = activity?.programs.some(row => row.severity) ? [
+        { key: "importance", label: t("workstations.activity.importance"), width: "11%",
+          render: row => row.severity ? <SeverityBadge severity={row.severity}/> : "—" },
+      ] : [];
       return <DataTable<StationProgram> {...common} rows={activity?.programs ?? []} rowKey={row => row.path} onRowClick={row => update(patchFor(row.path))} columns={[
+        ...programImportance,
         { key: "name", label: t("workstations.activity.program"), width: "15%", render: row => {
           const patch = patchFor(row.path);
           return <a className="sli-ds-table__link" href={localHref(patchedSearch(search, patch))}

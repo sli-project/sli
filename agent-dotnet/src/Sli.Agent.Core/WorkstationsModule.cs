@@ -103,7 +103,7 @@ public sealed record WorkstationPolicy(JsonObject Value, int BatchSize, int Rate
 
 /// <summary>Port of sli_agent/workstations.py. Every cursor and rate count is committed inside the signed packet.</summary>
 public sealed class WorkstationsModule(string hostId, WorkstationPolicy policy, IEventLogSource source,
-    Func<JsonObject>? protectionReader = null, bool includeProcessCommandLine = false)
+    Func<JsonObject>? protectionReader = null, bool includeProcessCommandLine = false, bool collectExecutableEvidence = false)
 {
     public const string ModuleId = "sli.workstations";
     public const string ModuleVersion = "1.1.0";
@@ -173,6 +173,9 @@ public sealed class WorkstationsModule(string hostId, WorkstationPolicy policy, 
         catch (EventLogReadException) { batch = new SourceBatch([]); error = "agent_workstations_read_failed"; }
         if (batch.Rows.Count > policy.BatchSize) throw new AgentException("agent_workstations_range_invalid");
         var records = new List<PacketRecord>();
+        var signatureCandidates = new List<(long Id, string Path, JsonObject Row)>();
+        var driveTypes = new JsonObject();
+        var driveTypeBytes = 0;
         var dropped = new JsonObject();
         var filtered = 0;
         var full = false;
@@ -197,13 +200,28 @@ public sealed class WorkstationsModule(string hostId, WorkstationPolicy policy, 
                 var record = new PacketRecord("event_xml", id, row);
                 var candidate = new JsonArray(records.Append(record).Select(item => (JsonNode?)new JsonObject
                 { ["format"] = item.Format, ["record_id"] = JsonRead.Integer(item.RecordId!.Value), ["payload"] = item.Payload.DeepClone() }).ToArray());
-                if (CanonicalJson.ToBytes(candidate).Length > MaxPayloadBytes - 4096)
+                string? process = collectExecutableEvidence && eventKey == "4688" ? data.GetValueOrDefault("NewProcessName") : null;
+                string? drive = process is null ? null : WorkstationExecutableEvidence.DriveType(process);
+                const int DriveTypeEntryBudget = 40; // JSON key and value, including a 19-digit record ID.
+                if (CanonicalJson.ToBytes(candidate).Length + driveTypeBytes + (drive is null ? 0 : DriveTypeEntryBudget) > MaxPayloadBytes - 4096)
                 {
                     if (records.Count == 0) throw new AgentException("agent_workstations_event_size_limit");
                     full = true;
                     break;
                 }
                 records.Add(record);
+                if (drive is not null)
+                {
+                    driveTypes[id.ToString(CultureInfo.InvariantCulture)] = drive;
+                    driveTypeBytes += DriveTypeEntryBudget;
+                }
+                else if (process is not null && WorkstationExecutableEvidence.SafeLocalPath(process) &&
+                    row["provider_name"]?.GetValue<string>() == WorkstationPolicy.Providers[0] &&
+                    root.Element(ns + "System")?.Element(ns + "EventID")?.Value == "4688" &&
+                    root.Element(ns + "System")?.Element(ns + "EventRecordID")?.Value == id.ToString(CultureInfo.InvariantCulture) &&
+                    root.Element(ns + "EventData")?.Elements(ns + "Data")
+                        .SingleOrDefault(field => field.Attribute("Name")?.Value == "NewProcessName") is { HasElements: false })
+                    signatureCandidates.Add(((long)id, process, row));
                 if (rates[eventKey] is not null) countsNow[eventKey] = (countsNow[eventKey]?.GetValue<long>() ?? 0) + 1;
             }
             else if (limited) dropped[eventKey] = (dropped[eventKey]?.GetValue<long>() ?? 0) + 1;
@@ -218,6 +236,23 @@ public sealed class WorkstationsModule(string hostId, WorkstationPolicy policy, 
             ["policy_revision"] = policy.Revision, ["filtered_count"] = filtered, ["dropped_count"] = lost, ["dropped_by_event_id"] = dropped,
             ["rate_window_seconds"] = policy.RateWindowSeconds, ["channel_reset"] = reset, ["read_error"] = error,
         };
+        if (driveTypes.Count > 0) context["process_drive_types"] = driveTypes;
+        var signatures = new JsonArray();
+        // Spend the bounded signature budget on distinct paths before sampling repeated launches.
+        foreach (var candidate in signatureCandidates.GroupBy(item => item.Path, StringComparer.OrdinalIgnoreCase)
+                     .SelectMany(group => group.Select((item, index) => (Item: item, Index: index)))
+                     .OrderBy(item => item.Index).Take(WorkstationExecutableEvidence.SignatureLimit).Select(item => item.Item))
+        {
+            var measurement = WorkstationExecutableEvidence.Measure(candidate.Path, candidate.Row["time_created"]?.GetValue<string>(), now);
+            if (measurement is null) continue;
+            string xml = candidate.Row["xml"]!.GetValue<string>();
+            signatures.Add(new JsonObject {
+                ["contract"] = "sli.workstation-file-signature.v1", ["record_id"] = candidate.Id,
+                ["path"] = candidate.Path, ["measurement"] = measurement,
+                ["source_sha256"] = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(xml))),
+            });
+        }
+        if (signatures.Count > 0) context["process_signatures"] = signatures;
         if (batch.BookmarkRecovered) context["bookmark_recovered"] = true;
         if (index == WorkstationPolicy.DefenderChannelIndex && policy.FamilyEnabled("protection"))
         {

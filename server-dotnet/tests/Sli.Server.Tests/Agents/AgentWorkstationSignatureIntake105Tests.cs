@@ -25,6 +25,20 @@ public sealed class AgentWorkstationSignatureIntake105Tests
             Assert.Throws<ProtocolException>(()=>AgentWorkstationValidator.Validate(env,payload,policy,host));
         }
     }
+    [Theory]
+    [InlineData("1", "removable", true)]
+    [InlineData("1", "network", true)]
+    [InlineData("2", "network", false)]
+    [InlineData("01", "removable", false)]
+    [InlineData("1", "fixed", false)]
+    public void DriveTypesOnlyDescribeProcessRecordsInThePacket(string id, string drive, bool accepted)
+    {
+        var v = (JsonObject)Fixture()[0]!.DeepClone();
+        v["payload"]!["context"]!["workstations"]!["process_drive_types"] = new JsonObject { [id] = drive };
+        var (env, payload, policy, host) = Prepare(v);
+        if (accepted) Assert.Single(AgentWorkstationValidator.Validate(env, payload, policy, host));
+        else Assert.Throws<ProtocolException>(() => AgentWorkstationValidator.Validate(env, payload, policy, host));
+    }
     private static (Envelope,JsonObject,WorkstationPolicy,Guid) Prepare(JsonObject v)
     {
         var payload=v["payload"]!.AsObject();var e=v["envelope"]!;var host=Guid.Parse(v["host_id"]!.GetValue<string>());var policy=WorkstationPolicy.Parse(v["config"]!.AsObject());

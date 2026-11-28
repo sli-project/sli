@@ -91,9 +91,12 @@ internal static class NativeWorkstationsReportFixture
         };
         var processFields = new JsonObject
         {
-            ["NewProcessName"] = @"C:\Tools\editor.exe", ["ParentProcessName"] = @"C:\Windows\explorer.exe",
-            ["CommandLine"] = "editor.exe draft.txt"
+            ["NewProcessName"] = @"C:\Users\example\AppData\Local\Editor\bin\abcdef12\editor.exe",
+            ["ParentProcessName"] = @"C:\Windows\explorer.exe",
+            ["CommandLine"] = "editor.exe draft.txt", ["ProcessSignatureStatus"] = "signed"
         };
+        var updatedProcessFields = (JsonObject)processFields.DeepClone();
+        updatedProcessFields["NewProcessName"] = @"C:\Users\example\AppData\Local\Editor\bin\987654fa\editor.exe";
         var directoryProcess = (JsonObject)security.DeepClone();
         directoryProcess["$principals"] = new JsonObject
         {
@@ -130,12 +133,12 @@ internal static class NativeWorkstationsReportFixture
                     (@event+3,@now-interval '2 minutes',7045,@domain,'OTHER-SOURCE',null,null,@host,@other,'{}','{}'),
                     (@event+4,@repeat_window+interval '4 minutes 1 second',4688,@domain,@sid,null,null,@host,@process,'{}',@process_fields),
                     (@event+5,@repeat_window+interval '4 minutes 12 seconds',4688,@domain,@sid,null,null,@host,@process,'{}',@process_fields),
-                    (@event+6,@repeat_window+interval '5 minutes 1 second',4688,@domain,@sid,null,null,@host,@process,'{}',@process_fields),
+                    (@event+6,@repeat_window+interval '5 minutes 1 second',4688,@domain,@sid,null,null,@host,@process,'{}',@updated_process_fields),
                     (@event+7,@repeat_window+interval '4 minutes 20 seconds',4688,@domain,@sid,null,null,@host,@process,'{}',@process_fields-'CommandLine'),
                     (@event+8,@repeat_window+interval '6 minutes',6416,@domain,null,null,null,@host,@security,'{}',
                         jsonb_build_object('ClassName','DiskDrive','ClassId','fixture-class-id','DeviceDescription','Example USB drive',
                             'DeviceId','USBSTOR'||chr(92)||'ExampleDisk'||chr(92)||'Unit1')),
-                    (@event+9,@repeat_window+interval '7 minutes',4688,@domain,@sid,@directory_sid,null,@host,@directory_process,'{}',@process_fields);
+                    (@event+9,@repeat_window+interval '7 minutes',4688,@domain,@sid,@directory_sid,null,@host,@directory_process,'{}',@updated_process_fields);
             insert into event_cold_daily(day,grouping_key,event_kind,domain_id,actor,target,source,computer,method,outcome,event_count,first_seen_utc,last_seen_utc)
                 values(@first::date,sha256(convert_to('workstation-workspace-daily','UTF8')),4624,@domain,
                     'EXAMPLE\\operator','EXAMPLE\\user','192.0.2.41',@host,@security,'{"LogonType":"10"}',37,@first,@last),
@@ -146,7 +149,7 @@ internal static class NativeWorkstationsReportFixture
             """, ("event", ExactEvent), ("now", now.UtcDateTime), ("first", first.UtcDateTime), ("last", last.UtcDateTime),
             ("domain", domain), ("host", Host), ("service", service), ("security", security), ("other", other),
             ("repeat_window", repeatWindow.UtcDateTime), ("failed_logon", failedLogon), ("process", process),
-            ("sid", sid), ("process_fields", processFields), ("other_security", otherSecurity),
+            ("sid", sid), ("process_fields", processFields), ("updated_process_fields", updatedProcessFields), ("other_security", otherSecurity),
             ("directory_sid", directorySid), ("directory_process", directoryProcess));
         return new JsonObject
         {

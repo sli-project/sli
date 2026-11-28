@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 
 namespace Sli.Server.Workstations;
 
@@ -7,6 +8,8 @@ internal sealed record StationObservation(long? Id, string? SummaryKey, int Code
     DateTimeOffset First, DateTimeOffset Last, long Count)
 {
     internal string? Path { get; init; }
+    internal bool? Signed { get; init; }
+    internal string? DriveType { get; init; }
     internal string? Name { get; init; }
     internal string? Account { get; init; }
     internal string? LogonType { get; init; }
@@ -17,7 +20,7 @@ internal sealed record StationObservation(long? Id, string? SummaryKey, int Code
 }
 
 internal sealed record StationFact(string Fact, string Severity, string? Object, DateTimeOffset First, DateTimeOffset Last, long Count);
-internal sealed record StationProgram(string Name, string Path, bool Writable, DateTimeOffset First, DateTimeOffset Last, long Count, string[] Users);
+internal sealed record StationProgram(string Name, string Path, bool Writable, DateTimeOffset First, DateTimeOffset Last, long Count, string[] Users, string? Severity);
 internal sealed record StationLogon(string? Account, string? Type, DateTimeOffset Last, long Count, long Failures);
 internal sealed record StationDevice(string? Class, string? Name, DateTimeOffset First, DateTimeOffset Last);
 
@@ -27,6 +30,8 @@ internal sealed class WorkstationActivity(StationFact[] notable, StationProgram[
     private const string AuditProvider = "Microsoft-Windows-Security-Auditing";
     private const int High = 3, Medium = 2, Low = 1;
     private static readonly StringComparer Names = StringComparer.OrdinalIgnoreCase;
+    private const string VersionFolder = "(?i)/bin/[0-9a-f]{7,64}/(?=[^/]+$)";
+    private static readonly Regex VersionPath = new(VersionFolder, RegexOptions.CultureInvariant);
     internal static readonly TimeSpan ProgramHistory = TimeSpan.FromDays(7);
     private static readonly TimeSpan FailureWindow = TimeSpan.FromMinutes(10);
     private static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
@@ -58,21 +63,45 @@ internal sealed class WorkstationActivity(StationFact[] notable, StationProgram[
             importance[source] = Math.Max(importance.GetValueOrDefault(source), priority);
         }
 
+        var processRows = ordered.Where(row => IsSecurity(row, 4688) && !string.IsNullOrWhiteSpace(row.Path))
+            .Select(row => (Row: row, Key: ProgramKey(row.Path!), Location: Location(row.Path!, row.DriveType))).ToArray();
+        var firstProgramStart = processRows.GroupBy(process => process.Key, Names)
+            .ToDictionary(group => group.Key, group => group.First().Row.First, Names);
+        var writableFacts = new Dictionary<string, (int Priority, StationFact Fact)>(Names);
         var lastProgramStart = new Dictionary<string, DateTimeOffset>(Names);
         DateTimeOffset? firstProcess = null;
-        foreach (var row in ordered.Where(row => IsSecurity(row, 4688) && row.Path is not null))
+        foreach (var (row, key, location) in processRows)
         {
             firstProcess ??= row.First;
-            string path = ProgramKey(row.Path!);
             if (row.First >= from)
             {
-                if (UserWritable(path)) Flag(row, "writable_program", High, row.Path, path);
+                if (location != ProgramLocation.Other)
+                {
+                    int priority = location == ProgramLocation.Suspicious ? High
+                        : location == ProgramLocation.StandardInstall || location == ProgramLocation.AppData && row.Signed == true ? Low
+                        : row.Signed == true ? 0
+                        : to - firstProgramStart[key] <= TimeSpan.FromHours(24) ? High : Medium;
+                    if (priority != 0) importance[(row.Id, row.SummaryKey)] = priority;
+                    if (priority >= Medium)
+                    {
+                        if (writableFacts.TryGetValue(key, out var previousFact))
+                        {
+                            int highest = Math.Max(priority, previousFact.Priority);
+                            writableFacts[key] = (highest, previousFact.Fact with { Severity = Severity(highest)!,
+                                Object = priority > previousFact.Priority ? row.Path : previousFact.Fact.Object,
+                                Last = row.Last > previousFact.Fact.Last ? row.Last : previousFact.Fact.Last,
+                                Count = previousFact.Fact.Count + row.Count });
+                        }
+                        else writableFacts.Add(key, (priority, new("writable_program", Severity(priority)!, row.Path, row.First, row.Last, row.Count)));
+                    }
+                }
                 else if (row.First - firstProcess.Value >= ProgramHistory &&
-                    (!lastProgramStart.TryGetValue(path, out var previous) || row.First - previous > ProgramHistory))
-                    Flag(row, "new_program", Medium, row.Path, path);
+                    (!lastProgramStart.TryGetValue(key, out var previous) || row.First - previous > ProgramHistory))
+                    Flag(row, "new_program", Medium, row.Path, key);
             }
-            lastProgramStart[path] = row.Last;
+            lastProgramStart[key] = row.Last;
         }
+        foreach (var (key, (priority, fact)) in writableFacts) facts.Add((fact.Fact, priority, key), fact);
 
         var devicesSeen = new HashSet<string>(Names);
         foreach (var row in ordered.Where(row => IsSecurity(row, 6416) && row.DeviceId is not null))
@@ -115,13 +144,14 @@ internal sealed class WorkstationActivity(StationFact[] notable, StationProgram[
             }
         }
 
-        var programs = current.Where(row => IsSecurity(row, 4688) && row.Path is not null)
-            .GroupBy(row => ProgramKey(row.Path!), Names).Select(group =>
+        var programs = processRows.Where(process => process.Row.First >= from).GroupBy(process => process.Key, Names).Select(group =>
             {
-                var first = group.First();
-                return new StationProgram(group.Key.Split('\\')[^1], first.Path!, UserWritable(group.Key),
-                    first.First, group.Max(row => row.Last), group.Sum(row => row.Count),
-                    group.Select(row => row.Account).OfType<string>().Distinct(Names).Order(Names).ToArray());
+                var first = group.First().Row;
+                return new StationProgram(group.Key.Split('/')[^1], group.Last().Row.Path!,
+                    group.Any(process => process.Location != ProgramLocation.Other), first.First,
+                    group.Max(process => process.Row.Last), group.Sum(process => process.Row.Count),
+                    group.Select(process => process.Row.Account).OfType<string>().Distinct(Names).Order(Names).ToArray(),
+                    Severity(group.Max(process => importance.GetValueOrDefault((process.Row.Id, process.Row.SummaryKey)))));
             })
             .OrderByDescending(row => row.Writable).ThenByDescending(row => row.First).ThenBy(row => row.Path, Names).ToArray();
         var logons = current.Where(row => IsSecurity(row, 4625)
@@ -148,11 +178,14 @@ internal sealed class WorkstationActivity(StationFact[] notable, StationProgram[
         row.DeviceId!.StartsWith("USBSTOR\\", StringComparison.OrdinalIgnoreCase)
         || row.DeviceId.StartsWith("USB\\", StringComparison.OrdinalIgnoreCase) && Names.Equals(row.DeviceClass, "DiskDrive");
 
-    private static string ProgramKey(string path) => path.Replace('/', '\\');
+    private static string ProgramKey(string path) => VersionPath.Replace(path.Replace('\\', '/'), "/bin/");
+
+    internal static string ProgramKeySql(string expression) =>
+        $"regexp_replace(replace({expression},chr(92),'/'),'{VersionFolder}','/bin/')";
 
     private static string ServiceBinary(string input)
     {
-        string command = ProgramKey(input.Trim());
+        string command = input.Trim().Replace('/', '\\');
         if (command.StartsWith('"') && command.IndexOf('"', 1) is > 0 and var close) return command[1..close];
         // Unquoted service paths can contain spaces. Stop at the first binary
         // extension followed by whitespace or end of input.
@@ -192,12 +225,33 @@ internal sealed class WorkstationActivity(StationFact[] notable, StationProgram[
         "WINDOWS" or "PROGRAM FILES" or "PROGRAM FILES (X86)" or "%WINDIR%" or "%SYSTEMROOT%"
         or "%PROGRAMFILES%" or "%PROGRAMFILES(X86)%" or "%PROGRAMW6432%";
 
-    private static bool UserWritable(string path)
+    private enum ProgramLocation { Other, Writable, AppData, StandardInstall, Suspicious }
+
+    private static ProgramLocation Location(string path, string? driveType)
     {
+        path = path.Replace('/', '\\');
+        if (driveType is "network" or "removable" || path.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith(@"\??\UNC\", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith(@"\\", StringComparison.Ordinal) && !path.StartsWith(@"\\?\", StringComparison.Ordinal))
+            return ProgramLocation.Suspicious;
+
         var parts = Directories(path).Select(part => part.ToUpperInvariant()).ToArray();
-        return parts.FirstOrDefault() is "TEMP" or "%TEMP%" or "%TMP%" or "%APPDATA%" or "%LOCALAPPDATA%"
-            || parts is ["WINDOWS" or "%WINDIR%" or "%SYSTEMROOT%", "TEMP", ..]
-            || parts is ["USERS", _, "DOWNLOADS" or "DESKTOP" or "APPDATA" or "TEMP", ..]
-            || parts is ["%USERPROFILE%", "DOWNLOADS" or "DESKTOP" or "APPDATA" or "TEMP", ..];
+        if (parts is ["TEMP" or "%TEMP%" or "%TMP%" or "$RECYCLE.BIN" or "RECYCLER" or "RECYCLED", ..]
+            or ["WINDOWS" or "%WINDIR%" or "%SYSTEMROOT%", "TEMP", ..])
+            return ProgramLocation.Suspicious;
+
+        bool profile = parts is ["USERS", _, ..] or ["%USERPROFILE%", ..];
+        if (profile) parts = parts[(parts[0] == "USERS" ? 2 : 1)..];
+        if (profile && parts is ["DOWNLOADS" or "DESKTOP" or "TEMP", ..]
+            || parts is ["APPDATA", "LOCAL", "TEMP", ..] or ["%LOCALAPPDATA%", "TEMP", ..])
+            return ProgramLocation.Suspicious;
+        if (parts is ["APPDATA", "LOCAL", ..]) parts = ["%LOCALAPPDATA%", .. parts[2..]];
+        if (parts is ["APPDATA", "ROAMING", ..]) parts = ["%APPDATA%", .. parts[2..]];
+        if (parts is ["%LOCALAPPDATA%", "PROGRAMS", ..] or ["%LOCALAPPDATA%", "MICROSOFT", "WINGET", "PACKAGES", ..]
+            or ["%LOCALAPPDATA%", "MICROSOFT", "WINDOWSAPPS", ..]
+            || parts is ["%APPDATA%", _, ..] && path.EndsWith(@"\Update.exe", StringComparison.OrdinalIgnoreCase))
+            return ProgramLocation.StandardInstall;
+        if (parts is ["APPDATA" or "%LOCALAPPDATA%" or "%APPDATA%", ..]) return ProgramLocation.AppData;
+        return profile ? ProgramLocation.Writable : ProgramLocation.Other;
     }
 }

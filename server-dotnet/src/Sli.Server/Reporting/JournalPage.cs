@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json.Nodes;
 using Sli.Server.Entities;
 using Sli.Server.Storage.EventReports;
+using Sli.Server.Workstations;
 using static Sli.Server.Reporting.ReportJson;
 
 namespace Sli.Server.Reporting;
@@ -68,8 +69,8 @@ internal static class JournalPage
         if (options.StationProgram is { Length: > 0 } program)
             sql.Predicates.Add(workstation && security && options.ServerId is not null
                 ? "event.event_id=4688 and event.channel='Security' and event.provider_name='Microsoft-Windows-Security-Auditing' and "
-                  + Fold("replace(event.fields->>'NewProcessName','/',chr(92))") + "="
-                  + Fold("replace(" + sql.Parameter(program) + "::text,'/',chr(92))")
+                  + Fold(WorkstationActivity.ProgramKeySql("btrim(event.fields->>'NewProcessName')")) + "="
+                  + Fold(WorkstationActivity.ProgramKeySql(sql.Parameter(program) + "::text"))
                 : "false");
         if (search.Length > 0)
         {

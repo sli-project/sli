@@ -58,9 +58,26 @@ internal static class WorkstationJournalInbox
         var reservations = await DirectEventIdentityStore.ReserveBatchAsync(authorization, direct.Worker, scope.ServerId,
             inputs.Select(input => new DirectEventRequest(channel[("channel", input.Projection.Channel)],
                 input.Row["record_id"]!.GetValue<long>(), input.Time, input.Row, input.Projection.IdentityHash)).ToArray(), ct);
-        var events = inputs.Select(input => (ShortEventRow.Create(reservations[input.Ordinal].Id, scope.DomainId, input.Row,
+        var context = row.Packet["context"]!["workstations"]!;
+        var signatures = WorkstationSignatureEvidence.Validate(context["process_signatures"], verified,
+            row.Packet["header"]!["observed_at_utc"]!.GetValue<string>());
+        var events = inputs.Select(input =>
+        {
+            var result = (ShortEventRow.Create(reservations[input.Ordinal].Id, scope.DomainId, input.Row,
                 input.Projection, scope.ServerId, workstation: true) ?? throw new WorkstationPendingException("workstation_journal_event_not_mapped"))
-            with { Computer = scope.Computer, PacketId = row.PacketId, PacketOrdinal = input.Ordinal }).ToArray();
+                with { Computer = scope.Computer, PacketId = row.PacketId, PacketOrdinal = input.Ordinal };
+            if (input.Projection.EventKind != 4688) return result;
+            long recordId = input.Row["record_id"]!.GetValue<long>();
+            string? drive = context["process_drive_types"]?[recordId.ToString(System.Globalization.CultureInfo.InvariantCulture)]?.GetValue<string>();
+            signatures.TryGetValue(recordId, out var signature);
+            string? status = signature?["measurement"]?["status"]?.GetValue<string>();
+            if (result.Fields.GetValueOrDefault("NewProcessName") != signature?["path"]?.GetValue<string>()) status = null;
+            if (drive is null && status is not ("signed" or "unsigned")) return result;
+            var fields = new Dictionary<string, string?>(result.Fields);
+            if (drive is not null) fields["ProcessDriveType"] = drive;
+            if (status is "signed" or "unsigned") fields["ProcessSignatureStatus"] = status;
+            return result with { Fields = fields };
+        }).ToArray();
         await using var publish = new NpgsqlCommand("select public.write_workstation_journal412(@packet,@events)", db, tx);
         publish.Parameters.AddWithValue("packet", row.PacketId);
         publish.Parameters.AddWithValue("events", NpgsqlDbType.Jsonb, ShortEventWriter.Encode(events).ToJsonString());
