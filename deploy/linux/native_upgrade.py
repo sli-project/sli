@@ -109,6 +109,7 @@ FAILURE_MESSAGES = {
     'native_upgrade_rollback_package_failed': 'The previous data is restored. Check APT diagnostics and repeat sudo sli-rollback to finish installing the previous kit.',
     'native_upgrade_insufficient_space': 'There is not enough space for the checkpoint / Недостаточно места для контрольной копии.',
     'native_upgrade_package_invalid': 'Invalid Debian package metadata / Некорректные метаданные пакета Debian.',
+    'native_upgrade_runtime_helper_mismatch': 'The packaged runtime helper does not match the release manifest.',
     'native_upgrade_migration_interrupted': 'The migration was interrupted before durable completion; the verified checkpoint was restored to avoid replaying uncertain SQL.',
     'native_upgrade_recovery_pending': 'Checkpoint recovery is incomplete; run resume-package again to finish restoring the previous release.',
     'native_upgrade_candidate_missing': 'The unpacked candidate release is missing; repeat the package installation before resuming.',
@@ -725,18 +726,22 @@ def prepare(candidate, transaction, *, target_version=None, previous_version=Non
             else:
                 install.wait_health()
             check_checkpoint_space()
-            ensure_directory(path, 0o700, exist_ok=False)
             stamp = datetime.now(timezone.utc).isoformat()
-            install.atomic(path / 'journal.json', {'schema_version': 1, 'transaction': transaction,
-                           'candidate': candidate, 'previous': root.name, 'recovery_sha256': digest(recovery / 'recovery.json'),
-                           **package_intent, **({'reuse_existing': True, 'coordinator_release': candidate,
-                               'coordinator_manifest_sha256': candidate_digest,
-                               'coordinator_sha256': digest(candidate_root / 'deploy/linux/native_upgrade.py')}
-                               if reuse_existing else {}),
-                           'checkpoint_storage': 'backup_volume', 'checkpoint_verification': 'integrity',
-                           'backup_schedule': schedule,
-                           'status': 'preflight', 'step': 'before', 'created_at_utc': stamp,
-                           'events': [{'phase': 'preflight', 'step': 'before', 'utc': stamp}]})
+            intent = {'schema_version': 1, 'transaction': transaction, 'status': 'preflight'}
+            # Previous releases read result.json as soon as the directory becomes visible.
+            with tempfile.TemporaryDirectory(prefix='.sli-transaction-', dir=TRANSACTIONS.parent) as temporary:
+                staging = Path(temporary)
+                install.atomic(staging / 'journal.json', dict(intent,
+                               candidate=candidate, previous=root.name, recovery_sha256=digest(recovery / 'recovery.json'),
+                               **package_intent, **({'reuse_existing': True, 'coordinator_release': candidate,
+                                   'coordinator_manifest_sha256': candidate_digest,
+                                   'coordinator_sha256': digest(candidate_root / 'deploy/linux/native_upgrade.py')}
+                                   if reuse_existing else {}),
+                               checkpoint_storage='backup_volume', checkpoint_verification='integrity',
+                               backup_schedule=schedule, step='before', created_at_utc=stamp,
+                               events=[{'phase': 'preflight', 'step': 'before', 'utc': stamp}]))
+                install.atomic(staging / 'result.json', dict(intent, terminal=False))
+                staging.rename(path)
             directory = os.open(TRANSACTIONS, os.O_RDONLY | os.O_DIRECTORY)
             try:
                 os.fsync(directory)
@@ -1077,6 +1082,9 @@ def check_package_space(version, package=None):
         pending = pending_package_recovery(version)
         if pending is not None:
             run_package_recovery(Path(package), version, pending)
+    candidate_sha256 = hashlib.sha256(Path(__file__).with_name('native_runtime.py').read_bytes()).hexdigest()
+    native_preinstall.check_runtime_helper(candidate_sha256, path=RUNTIME_HELPER,
+                                           state=runtime.STATE, recovery=RECOVERY)
     if version == package_metadata(runtime.release()[0])['version']:
         return  # Same-version reinstall or explicit package reconciliation.
     journal = latest_package_transaction(version)
@@ -1470,7 +1478,9 @@ def configure_candidate(root, manifest):
 
     # Generate candidate units with candidate code, never overwrite its host
     # helper with the coordinator's older module after APT has unpacked it.
-    install.trusted(root / 'deploy/linux/native_runtime.py')
+    helper_sha256 = digest(root / 'deploy/linux/native_runtime.py')
+    require(manifest.get('runtime_helper_sha256', helper_sha256) == helper_sha256,
+            'native_upgrade_runtime_helper_mismatch')
     code = (
         'import json, sys\n'
         'sys.path.insert(0, sys.argv[1])\n'
@@ -2011,7 +2021,13 @@ def main(argv=None):
                   file=sys.stderr)
             return 0
         if args.action == 'check-package-space':
-            message = FAILURE_MESSAGES.get(code, 'Could not check checkpoint space before APT / Не удалось проверить место до запуска APT.')
+            if str(error) == 'native_existing_configuration_conflict':
+                from deploy.linux.native_preinstall import GuardError, RUNTIME_HELPER as RUNTIME_HELPER_PATH
+
+                if isinstance(error, GuardError) and error.conflict_paths == (RUNTIME_HELPER_PATH,):
+                    print(f'{error.console_message} (reason_code={error})', file=sys.stderr)
+                    return 1
+            message = FAILURE_MESSAGES.get(code, 'Could not check upgrade prerequisites before APT / Не удалось проверить условия обновления до запуска APT.')
             print(f'{message} (reason_code={code})', file=sys.stderr)
             return 1
         print(f'Upgrade failed: {failure_message(code)} (reason_code={code})', file=sys.stderr)
