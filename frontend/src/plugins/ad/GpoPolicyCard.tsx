@@ -1,20 +1,18 @@
-import { Select } from "../../design-system/Select";
-import { useState, type ReactNode } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiResponseError } from "../../api/client";
 import type { ReportDefinitionDto } from "../../api/report-v2-types";
-import { DataTable, ReportLayout, TabList, TabPanel, Tabs, type TableColumn } from "../../design-system";
+import { Badge, Button, DataTable, FilterChip, ReportLayout, TabList, TabPanel, Tabs, type TableColumn } from "../../design-system";
 import { Icon } from "../../design-system/Icon";
 import { useDateFormatters } from "../../design-system/useDateFormatters";
-import { plural, t, type MessageKey } from "../../i18n";
+import { t, type MessageKey } from "../../i18n";
 import { auditLeaf, auditLeafLabel, auditLeafValue } from "./gpo-audit-setting";
-import { displaySettings, gpoSettingLabel, gpoSettingMetadata, type Setting } from "./gpo-settings";
-import { GpoSnapshotComparison } from "./GpoSnapshotComparison";
+import { displaySetting, displaySettings, gpoSettingLabel, gpoSettingMetadata, type Setting } from "./gpo-settings";
+import { GpoSnapshotComparison, hasMismatch, versionPair, type Versions } from "./GpoSnapshotComparison";
 import { ReportDenied } from "../../app/report-v2/ReportDenied";
 
 const sides = ["computer", "user"] as const;
 type Side = typeof sides[number];
-type Versions = Partial<Record<`${Side}_${"directory_version" | "sysvol_version"}`, number>> & { observed_at?: string };
 export type PolicyRow = Versions & {
   id: string;
   guid?: string;
@@ -29,34 +27,23 @@ export type PolicyRow = Versions & {
   modification_time?: string;
 };
 type LinkRow = { id: string; scope_name?: string; order?: number; enabled?: boolean; enforced?: boolean };
-type Permission = { id: string; trustee_name?: string; permission?: string };
+type Permission = { id: string; trustee_name?: string; trustee_sid?: string; permission?: string; denied?: boolean };
 type Change = { id: string; object_id: string; object_type: string; field: string; kind: string; name?: string;
   observed_at?: string; before_value?: string | null; after_value?: string | null };
 type CardCollections = { settings?: Setting[]; links?: LinkRow[]; permissions?: Permission[]; versions?: Versions[]; changes?: Change[] };
-const tabs = ["settings", "links", "rights", "versions", "changes"] as const;
+const tabs = ["important", "settings", "links", "rights", "versions", "changes"] as const;
 export type PolicyTab = typeof tabs[number];
-
-export function hasMismatch(row: Versions, component?: Side): boolean {
-  return (component ? [component] : sides).some((side) => {
-    const ad = row[`${side}_directory_version`];
-    const sysvol = row[`${side}_sysvol_version`];
-    return ad != null && sysvol != null && ad !== sysvol;
-  });
-}
-
-export function versionPair(row: Versions, side: Side, domain?: string): ReactNode {
-  const ad = row[`${side}_directory_version`];
-  const sysvol = row[`${side}_sysvol_version`];
-  if (ad == null && sysvol == null) return "—";
-  const value = `${ad ?? "—"} / ${sysvol ?? "—"}`;
-  return hasMismatch(row, side) ? <strong className="sli-ds-value-mismatch">{domain === undefined ? value :
-    <a href={`/app/report/ad.infrastructure${domain ? `?${new URLSearchParams({ domain })}` : ""}`}>{value}</a>}</strong> : value;
-}
 
 const permissionLabels: Record<string, MessageKey> = {
   GpoRead: "reports.gpo.permission_read", GpoApply: "reports.gpo.permission_apply", GpoEdit: "reports.gpo.permission_edit",
   GpoEditDeleteModifySecurity: "reports.gpo.permission_manage", GpoCustom: "reports.gpo.permission_custom", GpoNone: "reports.gpo.permission_none",
 };
+
+function delegatedEdit(row: Permission) {
+  return !row.denied && (row.permission === "GpoEdit" || row.permission === "GpoEditDeleteModifySecurity")
+    && !!row.trustee_sid && !["S-1-3-0", "S-1-5-18", "S-1-5-32-544"].includes(row.trustee_sid)
+    && !/^S-1-5-21-(?:\d+-){3}(512|519)$/i.test(row.trustee_sid);
+}
 const changeLabels: Record<string, MessageKey> = {
   gpo: "reports.gpo.policy", gpo_setting: "reports.gpo.parameter", gpo_link: "reports.gpo.link",
   display_name: "reports.gpo.policy", modification_time: "reports.gpo.modified",
@@ -71,7 +58,7 @@ export function GpoPolicyCard({ definition, domain, initial, backHref }: {
   const policyId = guid ?? initial.get("policy_id");
   const snapshot = initial.get("snapshot");
   const enabled = Boolean(domain && policyId && (guid || snapshot));
-  const [tab, setTab] = useState<PolicyTab>(() => tabs.find((key) => key === initial.get("detail_tab")) ?? "settings");
+  const [tab, setTab] = useState<PolicyTab>(() => tabs.find((key) => key === initial.get("detail_tab")) ?? (initial.has("setting") ? "settings" : "important"));
   const [item, setItem] = useState(initial.get("setting"));
   const { formatDateTime } = useDateFormatters();
   const changeLocation = (nextTab: PolicyTab, nextItem: string | null) => {
@@ -123,11 +110,27 @@ export function GpoPolicyCard({ definition, domain, initial, backHref }: {
   const historyCount = historyState === "ok" || historyState === "empty" || changes.length > 0 ? changes.length : undefined;
   const linkCount = policy.link_count ?? (fields?.links?.length ? fields.links.length : undefined);
   const items = tabs.map((key) => {
-    const count = key === "links" ? linkCount : key === "changes" ? historyCount : undefined;
+    const count = key === "settings" ? policy.setting_count : key === "links" ? linkCount : key === "changes" ? historyCount : undefined;
     return { key, label: <>{t(`reports.gpo.${key}`)}{count == null ? null : <> <b>{count}</b></>}</> };
   });
   const content = () => {
     switch (tab) {
+      case "important": {
+        const findings = sides.filter((side) => hasMismatch(fields?.versions?.[0] ?? {}, side)).map((side) => ({
+          id: side, label: t(`reports.gpo.${side}`), fact: versionPair(fields!.versions![0], side), tab: "versions" as const,
+        }));
+        const checks = [
+          ...findings,
+          ...(policy.unlinked ? [{ id: "unlinked", label: t("reports.gpo.unlinked"), fact: null, tab: "links" as const }] : []),
+          ...(policy.gpo_status === "AllSettingsDisabled" ? [{ id: "disabled", label: t("reports.v2.ad.gpo.v2.columns.status.labels.AllSettingsDisabled"), fact: null, tab: "settings" as const }] : []),
+        ];
+        return <CardTable caption={t("reports.gpo.important")} rows={checks} columns={[{
+          key: "label", label: t("reports.gpo.important"), render: (row) => <Button variant="ghost" onClick={() => changeLocation(row.tab, null)}>
+            {row.id === "computer" || row.id === "user" ? t("reports.gpo.component_mismatch", { component: row.label }) : row.label}
+            {row.fact && <> · {row.fact}</>}
+          </Button>,
+        }]}/>;
+      }
       case "settings": return fields?.settings?.length ? <PolicySettings settings={fields.settings} changes={changes} item={item}
         selectItem={(id) => changeLocation("settings", id)}/> : item ? t("reports.gpo.setting_unavailable") : "—";
       case "links": return <CardTable caption={t("reports.gpo.links")} rows={fields?.links ?? []} columns={[
@@ -137,30 +140,29 @@ export function GpoPolicyCard({ definition, domain, initial, backHref }: {
         { key: "enabled", label: t("reports.gpo.enabled"), kind: "boolean" },
       ]}/>;
       case "rights": return <CardTable caption={t("reports.gpo.rights")} rows={fields?.permissions ?? []} columns={[
-        { key: "trustee_name", label: t("reports.gpo.trustee") },
-        { key: "permission", label: t("reports.gpo.rights"), render: (row: Permission) => {
+        { key: "trustee_name", label: t("reports.gpo.trustee"), width: "45%", render: (row) => row.trustee_name?.trim() || row.trustee_sid || "—" },
+        { key: "permission", label: t("reports.gpo.allowed"), render: (row: Permission) => {
           const label = row.permission && Object.hasOwn(permissionLabels, row.permission) ? permissionLabels[row.permission] : undefined;
-          return label ? t(label) : "—";
+          if (!label) return "—";
+          const permission = t(label);
+          return row.denied ? t("reports.gpo.permission_denied", { permission }) :
+            <>{permission}{delegatedEdit(row) && <> <Badge tone="warning">{t("reports.gpo.can_edit")}</Badge></>}</>;
         } },
       ]}/>;
       case "versions": return <>
-        <PolicyVersions versions={fields?.versions ?? []} domain={domain}/>
-        <GpoSnapshotComparison reportKey={definition.key} domain={domain} policyId={policy.id} revision={detail.dataUpdatedAt}/>
+        <PolicyVersions current={fields?.versions?.[0]} domain={domain}/>
+        <GpoSnapshotComparison reportKey={definition.key} domain={domain} policyId={policy.id} revision={detail.dataUpdatedAt}
+          observed={typeof detail.data?.coverage.observed_at_utc === "string" ? detail.data.coverage.observed_at_utc : undefined}/>
       </>;
       case "changes": return history.isPending ? <span role="status">{t("state.loading")}</span> :
         history.isError || !matchedHistory || historyState === "unavailable" || history.data?.state === "error" || history.data?.state === "denied" ?
           <div role="alert">{t("reports.gpo.history_failed")}{" "}
             <button className="sli-ds-button" type="button" onClick={() => void history.refetch()}>{t("state.retry")}</button></div>
-          : historyState === "not_collected" ? <p role="status">{t("reports.state.not_collected")}</p>
+          : historyState === "not_collected" ? "—"
           : <PolicyChanges changes={changes} settings={fields?.settings ?? []}/>;
     }
   };
   const observed = detail.data?.coverage.observed_at_utc;
-  const sources = detail.data?.coverage.policy_sources as Record<string, string | undefined> | undefined;
-  const sourceState = sources?.[tab === "settings" ? "report" : tab === "rights" ? "permissions" : tab === "versions" ? "gpt" : tab];
-  const sourceMessage = !sourceState || ["observed", "no_record", "not_applicable"].includes(sourceState) ? null
-    : sourceState === "partial" ? t("reports.state.partial")
-    : ["failed", "access_denied", "parse_error"].includes(sourceState) ? t("reports.state.unavailable") : t("reports.state.not_collected");
   const status = ["AllSettingsEnabled", "AllSettingsDisabled", "UserSettingsDisabled", "ComputerSettingsDisabled"]
     .find((value) => value === policy.gpo_status);
   return <ReportLayout title={policy.display_name} domain={domain} actions={back}>
@@ -171,7 +173,6 @@ export function GpoPolicyCard({ definition, domain, initial, backHref }: {
     <Tabs active={tab} items={items} onChange={(key) => changeLocation(key as PolicyTab, item)}>
       <TabList label={policy.display_name}/>
       <TabPanel>
-        {sourceMessage ? <p role="status">{sourceMessage}</p> : null}
         {content()}
       </TabPanel>
     </Tabs>
@@ -186,55 +187,60 @@ function PolicySettings({ settings, changes, item, selectItem }: {
   settings: Setting[]; changes: Change[]; item: string | null; selectItem: (id: string | null) => void;
 }) {
   const { formatDateTime } = useDateFormatters();
-  const display = displaySettings(settings);
-  const [side, setSide] = useState<Side>(() => display.find((row) => row.id === item)?.side
-    ?? (display.some((row) => row.side === "computer") ? "computer" : "user"));
+  const display = useMemo(() => displaySettings(settings), [settings]);
+  const [side, setSide] = useState<Side | "">("");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
   const [pageSize, setPageSize] = useState(50);
   const [page, setPage] = useState<number>();
-  const matchingSide = display.filter((row) => row.side === side);
-  const categories = [...new Set(matchingSide.map((row) => row.category).filter((value): value is string => Boolean(value)))].sort((left, right) => left.localeCompare(right));
   const text = query.trim().toLocaleLowerCase();
-  const rows = matchingSide.filter((row) => (!category || row.category === category) &&
-    [row.setting_name, row.path, row.value_display].some((value) => (value ?? "").toLocaleLowerCase().includes(text)))
+  const matching = display.filter((row) => (!side || row.side === side) &&
+    [row.setting_name, row.path, row.category, row.value_display].some((value) => (value ?? "").toLocaleLowerCase().includes(text)));
+  const categories = [...new Set(matching.map((row) => row.category))].sort((left, right) => left.localeCompare(right));
+  const rows = matching.filter((row) => !category || row.category === category)
     .sort((left, right) => (left.category ?? "").localeCompare(right.category ?? "") ||
       (left.setting_name ?? "").localeCompare(right.setting_name ?? "") || (left.path ?? "").localeCompare(right.path ?? ""));
   const itemIndex = rows.findIndex((row) => row.id === item);
   const pageIndex = Math.min(page ?? Math.floor(Math.max(0, itemIndex) / pageSize), Math.max(0, Math.ceil(rows.length / pageSize) - 1));
   const start = pageIndex * pageSize;
   const visibleRows = rows.slice(start, start + pageSize);
-  const sections = new Map(visibleRows.map((row, index) => [row.id, index === 0 || row.category !== visibleRows[index - 1].category ? row.category : undefined]));
   const lastChanges = new Map<string, Change>();
   for (const change of changes) {
     if (change.object_type === "gpo_setting" && change.field === "value_display" && !lastChanges.has(change.object_id)) lastChanges.set(change.object_id, change);
   }
   const open = (row: Setting) => { setPage(pageIndex); selectItem(item === row.id ? null : row.id); };
-  const columns: TableColumn<Setting>[] = [
-    { key: "category", label: t("reports.gpo.category"), render: (row) => sections.get(row.id) ?? null },
+  const sideCounts = sides.map((key) => ({ key, count: display.filter((row) => row.side === key).length }));
+  const showSides = sideCounts.every(({ count }) => count > 0);
+  const columns: TableColumn<ReturnType<typeof displaySetting>>[] = [
     { key: "setting_name", label: t("reports.gpo.parameter"), width: "40%", render: (row) => <button type="button"
       className="sli-ds-table__disclosure" aria-expanded={item === row.id} onClick={(event) => { event.stopPropagation(); open(row); }}>
       <Icon name={item === row.id ? "chevron-down" : "chevron"}/>{row.setting_name || "—"}
     </button> },
-    { key: "value_display", label: t("reports.gpo.value"), width: "27%" },
-    ...(matchingSide.some((row) => row.registry_path) ? [{ key: "registry_path", label: t("reports.gpo.path"),
-      render: (row: Setting) => row.registry_path }] : []),
+    { key: "value_display", label: t("reports.gpo.value"), width: "34%", wrap: true,
+      renderHeader: rows.some((row) => row.masked) ? () => <span title={t("reports.gpo.value_hidden_reason")}>{t("reports.gpo.value")}</span> : undefined,
+      render: (row) => row.value_display ? <span className="sli-ds-table__value-preview">{row.value_display}</span> : "—" },
+    ...(!category && categories.length > 1 ? [{ key: "category", label: t("reports.gpo.category") }] : []),
+    ...(showSides && !side ? [{ key: "side", label: t("reports.gpo.component"), render: (row: Setting) => t(`reports.gpo.${row.side}`) }] : []),
   ];
   return <>
     <div className="sli-ds-split-report__toolbar">
-      <div className="sli-ds-header__meta">
-        {sides.map((key) => {
-          const count = display.filter((row) => row.side === key).length;
-          return count ? <button type="button" key={key} className="sli-ds-chip" aria-pressed={side === key}
-            onClick={() => { setSide(key); setCategory(""); setQuery(""); setPage(0); selectItem(null); }}>{t(`reports.gpo.${key}`)} <b>{count}</b></button> : null;
-        })}
-      </div>
+      {showSides && <div className="sli-ds-header__meta" role="group" aria-label={t("reports.gpo.component")}>
+        {[{ key: "" as const, count: display.length }, ...sideCounts].map(({ key, count }) => <FilterChip key={key} count={count} aria-pressed={side === key}
+          onClick={() => { setSide(key); setCategory(""); setPage(0); selectItem(null); }}>
+          {t(key ? `reports.gpo.${key}` : "reports.gpo.all_settings")}
+        </FilterChip>)}
+      </div>}
       <label className="sli-ds-field" data-grow="" data-search=""><Icon name="search"/><input type="search" aria-label={t("reports.gpo.search_settings")} placeholder={t("reports.gpo.search_settings")}
-        value={query} onChange={(event) => { setQuery(event.target.value); setPage(0); }}/></label>
-      {categories.length ? <div className="sli-ds-field"><Select label={t("reports.gpo.category")} value={category} onChange={(selectedValue) => { setCategory(selectedValue); setPage(0); }}
-        options={[{ value: "", label: t("reports.gpo.all_categories") }, ...(categories.map((value) => ({ value: value, label: value })) ?? [])]}/></div> : null}
+        value={query} onChange={(event) => { setQuery(event.target.value); setCategory(""); setPage(0); }}/></label>
     </div>
     {item && !display.some((row) => row.id === item) ? <p role="status">{t("reports.gpo.setting_unavailable")}</p> : null}
+    <div className="sli-ds-split-report__columns" data-layout={categories.length > 1 ? "navigation" : "single"}>
+    {categories.length > 1 && <div className="sli-ds-split-report__navigation" role="group" aria-label={t("reports.gpo.category")}>
+      {["", ...categories].map((name) => <FilterChip key={name} title={name || undefined} aria-pressed={name === category}
+        onClick={() => { setCategory(name); setPage(0); selectItem(null); }}>
+        {name || t("reports.gpo.all_categories")}
+      </FilterChip>)}
+    </div>}
     <DataTable caption={t("reports.gpo.settings")} rows={visibleRows} columns={columns} rowKey={(row) => row.id}
       total={rows.length} pageSize={{ value: pageSize, options: [25, 50, 100, 200], onChange: (size) => { setPageSize(size); setPage(0); } }}
       pagination={{ start: start + 1, onPrevious: pageIndex > 0 ? () => setPage(pageIndex - 1) : undefined,
@@ -243,23 +249,19 @@ function PolicySettings({ settings, changes, item, selectItem }: {
         if (item !== row.id) return null;
         const change = lastChanges.get(row.id);
         const original = settings.find((setting) => setting.id === row.id);
-        const leaf = auditLeaf(original?.setting_name, original?.path, original?.category, original?.extension);
-        const rawBefore = change?.after_value === original?.value_display ? change?.before_value : undefined;
-        const before = auditLeafValue(leaf, rawBefore, original?.side);
+        const before = original && change?.before_value != null && change.after_value === original.value_display
+          ? displaySetting({ ...original, value_display: change.before_value }).value_display : undefined;
         return <div className="sli-ds-table__row-details">
           <dl>
             <dt>{t("reports.gpo.configured_value")}</dt><dd>{row.value_display ?? "—"}{typeof before === "string" && change?.observed_at
               ? <span className="sli-ds-text-muted"> · {t("reports.gpo.previous", { value: before, time: formatDateTime(change.observed_at) })}</span> : null}</dd>
             {row.path ? <><dt>{t("reports.gpo.path")}</dt><dd>{row.path}</dd></> : null}
+            {row.description ? <><dt>{t("reports.gpo.purpose")}</dt><dd>{row.description}</dd></> : null}
           </dl>
-          {row.value_display ? <CopyValue value={row.value_display}/> : null}
+          {row.value_display && !row.masked ? <CopyValue value={row.value_display}/> : null}
         </div>;
       }}/>
-    <div className="sli-ds-split-report__count" aria-live="polite">{plural(rows.length, {
-      one: t("reports.gpo.settings_shown.one", { count: rows.length }),
-      few: t("reports.gpo.settings_shown.few", { count: rows.length }),
-      many: t("reports.gpo.settings_shown.many", { count: rows.length }),
-    })}</div>
+    </div>
   </>;
 }
 
@@ -270,23 +272,17 @@ function CopyValue({ value }: { value: string }) {
   }}>{t(state === "copied" ? "reports.gpo.copied" : state === "failed" ? "reports.gpo.copy_failed" : "reports.gpo.copy")}</button>;
 }
 
-function PolicyVersions({ versions, domain }: { versions: Versions[]; domain: string }) {
-  const current = versions[0];
-  const components = current ? sides.map((side) => ({ id: side, row: current })) : [];
-  return <div className="sli-ds-split-report__columns">
-    <CardTable caption={t("reports.gpo.versions")} rows={components} columns={[
+function PolicyVersions({ current, domain }: { current?: Versions; domain: string }) {
+  const components = current ? sides
+    .filter((side) => current[`${side}_directory_version`] != null || current[`${side}_sysvol_version`] != null)
+    .map((side) => ({ id: side, row: current })) : [];
+  return <CardTable caption={t("reports.gpo.versions")} rows={components} columns={[
       { key: "component", label: t("reports.gpo.component"), render: ({ id }) => t(`reports.gpo.${id}`) },
       ...(["directory_version", "sysvol_version"] as const).map((source): TableColumn<typeof components[number]> => ({
         key: source, label: t(source === "directory_version" ? "reports.gpo.ad" : "reports.gpo.sysvol"), kind: "number",
         render: ({ id, row }) => hasMismatch(row, id) ? <strong className="sli-ds-value-mismatch">{row[`${id}_${source}`]}</strong> : row[`${id}_${source}`] ?? "—",
       })),
-    ]}/>
-    <CardTable caption={t("reports.gpo.version_history")} rows={versions.filter((row) => row.observed_at).map((row) => ({ ...row, id: row.observed_at! }))} columns={[
-      { key: "observed_at", label: t("reports.gpo.observed"), kind: "datetime" },
-      { key: "computer", label: t("reports.gpo.computer_version_pair"), render: (row) => versionPair(row, "computer", domain) },
-      { key: "user", label: t("reports.gpo.user_version_pair"), render: (row) => versionPair(row, "user", domain) },
-    ]}/>
-  </div>;
+    ]}/>;
 }
 
 function PolicyChanges({ changes, settings }: { changes: Change[]; settings: Setting[] }) {

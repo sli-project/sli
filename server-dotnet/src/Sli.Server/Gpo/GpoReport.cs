@@ -63,7 +63,9 @@ internal static class GpoReport
             return Result(state,coverage:coverage,collections:new JsonObject { [request.Tab]=rows },limitations:limitations);
         }
         var listed=GpoInventory.Filter(snapshot,request.View,request.Query,request.Tab=="gpos");
-        var items=listed.Items.OfType<JsonObject>().Select(g=>request.Tab=="gpos"?GpoInventory.ListRow(g):GpoInventory.Row(g)).ToArray();
+        var policySettings = request.Tab == "gpos" ? snapshot.Rows("settings").ToLookup(row => row.Text("gpo_id")) : null;
+        var items = listed.Items.OfType<JsonObject>().Select(policy => policySettings is null ? GpoInventory.Row(policy)
+            : GpoInventory.ListRow(policy, snapshot, policySettings[policy.Text("id")])).ToArray();
         if(request.Sort is not null)
         {
             string path=Metadata["declaration"].Rows("columns").Single(c=>c.Text("key")==request.Sort).Text("path");var present=items.Where(i=>i[path] is not null&&i.Text(path).Length>0);

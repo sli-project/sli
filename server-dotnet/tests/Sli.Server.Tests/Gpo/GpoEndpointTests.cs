@@ -50,8 +50,8 @@ public sealed class GpoEndpointTests
         Assert.Equal("Synthetic policy", Assert.Single(exact.Rows("items")).Text("display_name"));
         var settings = exact["collections"].Rows("settings").ToArray();
         Assert.Equal("600", Assert.Single(settings, setting => setting.Text("id") == "timeout").Text("value_display"));
-        Assert.Equal("3", Assert.Single(settings, setting => setting.Text("id") == "logon-audit").Text("audit_mode"));
-        Assert.False(Assert.Single(settings, setting => setting.Text("id") == "other-audit").ContainsKey("audit_mode"));
+        Assert.Equal("3", Assert.Single(settings, setting => setting.Text("id") == "logon-audit").Text("value_display"));
+        Assert.Null(Assert.Single(settings, setting => setting.Text("id") == "other-audit")["value_display"]);
         Assert.Equal("Old scope", Assert.Single(exact["collections"].Rows("links")).Text("scope_name"));
         Assert.Equal(7, Assert.Single(exact["collections"].Rows("versions")).Number("computer_directory_version"));
 
@@ -291,6 +291,7 @@ public sealed class GpoEndpointTests
         var same = old with { Id = SnapshotId(2), ObservedAt = old.ObservedAt.AddDays(1) };
         store.Snapshots.AddRange([(1, "synthetic-policy", old), (1, "synthetic-policy", same), (1, "synthetic-policy", current),
             (1, "synthetic-policy", current with { Id = SnapshotId(4), ObservedAt = current.ObservedAt.AddDays(1) }),
+            (1, "synthetic-policy", old with { Id = SnapshotId(7), ObservedAt = current.ObservedAt.AddDays(2) }),
             (2, "synthetic-policy", current with { Id = SnapshotId(5) }), (1, "another-policy", current with { Id = SnapshotId(6) })]);
         using var host = await Host(store);
         using var client = host.GetTestClient();
@@ -298,8 +299,7 @@ public sealed class GpoEndpointTests
 
         var list = JsonNode.Parse(await client.GetStringAsync(PolicySnapshots + "&snapshots=1", ct))!;
         var choices = list["collections"].Rows("snapshots").ToArray();
-        Assert.Equal(new[] { SnapshotId(4), SnapshotId(3), SnapshotId(2), SnapshotId(1) }, choices.Select(row => Guid.Parse(row.Text("id"))));
-        Assert.All(choices, row => Assert.Equal(2, row.Count));
+        Assert.Equal(new[] { SnapshotId(7), SnapshotId(3), SnapshotId(1) }, choices.Select(row => Guid.Parse(row.Text("id"))));
 
         string response = await client.GetStringAsync(PolicySnapshots + SnapshotIds, ct);
         var changes = JsonNode.Parse(response)!["collections"].Rows("snapshot_comparison");
@@ -324,6 +324,30 @@ public sealed class GpoEndpointTests
 
         static (string, string, string, string) Change(JsonObject row) =>
             (row.Text("setting_name"), row.Text("kind"), row.Text("before_value"), row.Text("after_value"));
+    }
+
+    [Fact]
+    public async Task Comparison_reads_one_setting_across_legacy_and_grouped_registry_records()
+    {
+        var before = SyntheticSnapshot(1, """
+            [
+              {"id":"key","gpo_id":"synthetic-policy","side":"computer","path":"RegistrySetting/KeyPath","setting_name":"KeyPath","value_display":"SYSTEM\\CurrentControlSet\\Control\\Lsa"},
+              {"id":"name","gpo_id":"synthetic-policy","side":"computer","path":"RegistrySetting/Value/Name","setting_name":"Name","value_display":"SCENoApplyLegacyAuditPolicy"},
+              {"id":"value","gpo_id":"synthetic-policy","side":"computer","path":"RegistrySetting/Value/Number","setting_name":"Number","value_display":"0"}
+            ]
+            """);
+        var after = SyntheticSnapshot(3, """
+            [{"id":"new","gpo_id":"synthetic-policy","side":"computer","category":"Registry","path":"SYSTEM\\CurrentControlSet\\Control\\Lsa\\SCENoApplyLegacyAuditPolicy","value_display":"1"}]
+            """);
+        var store = new GpoReportTests.Store();
+        store.Snapshots.AddRange([(1, "synthetic-policy", before), (1, "synthetic-policy", after)]);
+        using var host = await Host(store);
+        using var client = host.GetTestClient();
+        var response = JsonNode.Parse(await client.GetStringAsync(PolicySnapshots + SnapshotIds, TestContext.Current.CancellationToken))!;
+        var change = Assert.Single(response["collections"].Rows("snapshot_comparison"));
+        Assert.Equal("SCENoApplyLegacyAuditPolicy", change.Text("setting_name"));
+        Assert.Equal("SYSTEM\\CurrentControlSet\\Control\\Lsa\\SCENoApplyLegacyAuditPolicy", change.Text("path"));
+        Assert.Equal(("changed", "0", "1"), (change.Text("kind"), change.Text("before_value"), change.Text("after_value")));
     }
 
     private static Guid SnapshotId(int number) => Guid.Parse($"10000000-0000-0000-0000-{number:D12}");

@@ -42,14 +42,12 @@ public sealed class GpoSnapshotPostgresTests
             ["ConnectionStrings:Sli"] = fixture.Dsn("adlog_user"),
         }).Build();
         var store = new GpoReadStore(new PostgresConnectionFactory(config), config);
-        var choices = await store.PolicySnapshotsAsync(domain, "synthetic-policy", null, ct);
-        Assert.Equal(new[] { fourth, third, second, first }, choices.Select(snapshot => snapshot.Id));
-        Assert.All(choices, snapshot => Assert.Null(snapshot.Payload));
-
         var request = new GpoRequest("all", "", "gpos", null, "asc", 500, null, "UTC", DateTimeOffset.UtcNow.AddDays(-7), DateTimeOffset.UtcNow)
         {
             DomainId = domain, PolicyId = "synthetic-policy", ComparePolicySnapshots = (first, third),
         };
+        var history = await GpoSnapshotComparison.QueryAsync(store, request with { ComparePolicySnapshots = null }, ct);
+        Assert.Equal(new[] { third, first }, history["collections"].Rows("snapshots").Select(row => Guid.Parse(row.Text("id"))));
         var result = await GpoSnapshotComparison.QueryAsync(store, request, ct);
         var change = Assert.Single(result["collections"].Rows("snapshot_comparison"));
         Assert.Equal(("changed", "900", "600"), (change.Text("kind"), change.Text("before_value"), change.Text("after_value")));

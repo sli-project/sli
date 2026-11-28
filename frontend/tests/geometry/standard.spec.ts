@@ -65,6 +65,11 @@ function rowFor(columns: ReportColumnDto[], index: number): Record<string, unkno
 
 function resultFor(definition: ReportDefinitionDto, count = 60): ReportResultDto {
   const items = Array.from({ length: count }, (_, index) => ({ ...rowFor(definition.columns, index),
+    ...(definition.key === 'ad.gpo.v2' ? {
+      id: `gpo-00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      guid: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      link_count: index === 0 ? 0 : 1, unlinked: index === 0,
+    } : {}),
     ...(definition.key === 'security.problems' ? { allowed_statuses: ['new', 'active', 'false_positive', 'closed'] } : {}),
     ...(definition.key === 'ad.computers.v6' && index % 2 === 0
       ? { status: 'checked', status_text: 'Проверено', total: 2, new_count: 0 } : {}),
@@ -78,7 +83,7 @@ function resultFor(definition: ReportDefinitionDto, count = 60): ReportResultDto
     items, has_more: false, next_cursor: null, filtered_count: count,
     domains: [{ id: 1, display_name: 'example.test', freshness: { observed_at_utc: observed } }],
     coverage: { state: 'partial', population: count, affected_objects: count, not_evaluated_count: 0,
-      ...(definition.key === 'ad.gpo.v2' ? { observed_at_utc: observed } : {}),
+      ...(definition.key === 'ad.gpo.v2' ? { observed_at_utc: observed, domain_id: 1 } : {}),
       domains: [{ domain_id: 1, domain_name: 'example.test', observed_at_utc: observed, state: 'partial' }] },
     metrics: definition.key === 'ad.gpo.v2' ? ['attention', 'unverified', 'assignment', 'all', 'linked', 'unlinked'].map(view => ({
       key: view, label: view, value: ['attention', 'unlinked'].includes(view) ? 0 : count, filter: { view },
