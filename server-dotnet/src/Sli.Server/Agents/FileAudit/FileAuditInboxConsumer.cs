@@ -111,9 +111,16 @@ public static class FileAuditInboxConsumer
                 else command.Parameters.AddWithValue(key, value);
             return await command.ExecuteScalarAsync(ct) is string jsonText ? JsonNode.Parse(jsonText)!.AsObject() : null;
         }
-        var observations = rows.OfType<JsonObject>().Select(row => FileAuditObservation.Build(row, policy,
-            envelope.AgentId, envelope.SourceInstanceId, envelope.Generation, envelope.PolicyRevision,
-            $"agent-file-audit-event:{packet:D}:{row["record_id"]}")).ToArray();
+        var observations = rows.OfType<JsonObject>().Select(row =>
+        {
+            var observation = FileAuditObservation.Build(row, policy, envelope.AgentId, envelope.SourceInstanceId,
+                envelope.Generation, envelope.PolicyRevision, $"agent-file-audit-event:{packet:D}:{row["record_id"]}");
+            // Only the attested packet supplies a kind. Retain it with the native
+            // record so a subsequent packet can classify an operation on this handle.
+            if (objectKinds?[row["record_id"]!.ToJsonString()] is { } kind)
+                observation["signed_object_kind"] = kind.DeepClone();
+            return observation;
+        }).ToArray();
         var actions = new JsonArray();
         var withinPacket = new JsonArray();
         foreach (var observationsInHour in observations.GroupBy(row => AgentAdDcUtc.Parse(Text(row["observed_at"])).UtcTicks / TimeSpan.TicksPerHour))
@@ -129,7 +136,7 @@ public static class FileAuditInboxConsumer
             foreach (var item in withinPacket) prior.Add(item!.DeepClone());
             foreach (var observation in batch)
             {
-                var kind = objectKinds?[observation["record_id"]!.ToJsonString()]?.GetValue<string>() ?? "unknown";
+                var kind = observation["signed_object_kind"]?.GetValue<string>() ?? "unknown";
                 foreach (var action in FileAuditCorrelation.ProjectActions(observation,prior,kind))
                     actions.Add(action!.DeepClone());
                 prior.Add(observation.DeepClone());
@@ -148,12 +155,24 @@ public static class FileAuditInboxConsumer
             var last = hour.Max(row => AgentAdDcUtc.Parse(Text(row["observed_at"])));
             var context = (await Run("select sli_plugin_file_audit.rule_context(@agent,@packet,@start,@end)::text",
                 ("start", first.AddSeconds(-seconds)), ("end", last)))!;
-            if (!context["complete"]!.GetValue<bool>()) continue;
+            if (!context["complete"]!.GetValue<bool>())
+            {
+                LogFileRuleEvaluation(0,0,"incomplete_coverage");
+                continue;
+            }
             var currentIds = hour.Select(row => Text(row["action_id"])).ToHashSet(StringComparer.Ordinal);
-            foreach (var result in FileAuditActivityRules.Evaluate(context["actions"]!.AsArray(), policy.Value,
-                envelope.AgentId, envelope.SourceInstanceId, context["snapshots"]!.AsArray(), null))
-                if (result!["action_ids"]!.AsArray().Any(id => currentIds.Contains(Text(id))))
-                    ruleResults.TryAdd(Text(result["result_id"]),result.DeepClone());
+            var evaluation = FileAuditActivityRules.Evaluate(context["actions"]!.AsArray(), policy.Value,
+                envelope.AgentId, envelope.SourceInstanceId, context["snapshots"]!.AsArray(), null);
+            int resultCount = 0;
+            foreach (var result in evaluation.Results.OfType<JsonObject>())
+            {
+                if (!result["action_ids"]!.AsArray().Any(id => currentIds.Contains(Text(id)))) continue;
+                ruleResults.TryAdd(Text(result["result_id"]),result.DeepClone());
+                if (Text(result["rule_code"]) is "file-audit.mass-write" or "file-audit.mass-delete") resultCount++;
+            }
+            LogFileRuleEvaluation(resultCount,evaluation.DistinctFiles,resultCount > 0 ? null
+                : evaluation.MissingKinds ? "incomplete_coverage"
+                : evaluation.DistinctFiles < policy.Number("mass_operation_files") ? "below_threshold" : "outside_window");
         }
         if (ruleResults.Count != 0)
             await Run("select sli_plugin_file_audit.publish_rules(@agent,@packet,null,@results)",
@@ -169,4 +188,10 @@ public static class FileAuditInboxConsumer
                        or (a.file_audit#>>'{last_event,observed_at}')::timestamptz < @observed)
                 """, ("scope", Text(latest["collection_scope_id"])), ("observed", AgentAdDcUtc.Parse(Text(latest["observed_at"]))));
     }
+
+    private static void LogFileRuleEvaluation(int resultCount,int distinctFiles,string? reason) =>
+        Console.Error.WriteLine("file_ransom_rule_evaluation:" + new JsonObject
+        {
+            ["result_count"] = resultCount, ["distinct_files"] = distinctFiles, ["reason"] = reason
+        }.ToJsonString());
 }

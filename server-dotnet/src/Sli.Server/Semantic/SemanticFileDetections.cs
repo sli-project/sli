@@ -64,22 +64,53 @@ internal sealed partial class SemanticProduction
         return (signals, signals.Count > 0 ? "observed" : "no_match");
     }
     private static async Task<int> ProcessFileRansom(ISemanticSession session, JsonNode source, CancellationToken ct) => (int)(await RunFileRansom(session,source,ct)).Number("jobs");
-    private static async Task<JsonObject> RunFileRansom(ISemanticSession session, JsonNode source, CancellationToken ct, DetectorRule? rule = null, DateTimeOffset? now = null)
+    private static async Task<JsonObject> RunFileRansom(ISemanticSession session, JsonNode source, CancellationToken ct,
+        DetectorRule? rule = null, DateTimeOffset? now = null, JsonObject? evaluation = null)
     {
         var scope = source["scope"]!.AsObject(); string agent = source.Text("agent_id")!; var config = source["config"]!.AsObject(); var definition = Definition("qw.file-ransom", scope, agent, config); if (rule is null && !await AdmitDefault(session, definition, ct)) return new() { ["state"] = "processed", ["members"] = 0, ["jobs"] = 0 };
         if (source["ransom_policy"] is not null && source["ransom_policy"].Text("state") != "ready") throw new InvalidOperationException("source_policy_waiting");
         int threshold = (int)definition.Number("expected_evidence_count"), window = (int)definition.Number("merge_window_seconds"); string revision = config["policy_revision"]?.ToString() ?? "1";
         string checkpoint = FileCheckpoint(scope, agent, "qw.file-ransom", rule?.Mode ?? "enabled", rule?.Revision ?? 1, config: config); await session.QueryAsync("select pg_advisory_xact_lock(hashtextextended($1,0))", ct, checkpoint);
         var rows = await session.QueryAsync("select * from public.read_file_ransom_results($1::jsonb,$2,$3,$4,$5,$6)", ct, scope, Guid.Parse(agent), revision, checkpoint, threshold, window); if (rows.Count > 32) throw new InvalidDataException("file_ransom_batch_invalid"); int jobs = 0, members = 0;
+        if (evaluation is not null)
+        {
+            evaluation["result_count"] = rows.Count;
+            if (rows.Count != 0) evaluation.Remove("reason");
+        }
         foreach (var row in rows)
         {
             var result = row!["result"]!; var details = result["details"]!;
-            if (result.Text("rule_code") is not ("file-audit.mass-write" or "file-audit.mass-delete") || result.Text("conclusion_state") != "observed" || result.Number("rule_version") != 1 || result.Text("agent_id") != agent || result.Text("source_instance_id") != scope.Text("source_instance_id") || result.Text("collection_scope_id") != scope.Text("collection_scope_id") || string.IsNullOrEmpty(result.Text("subject_sid")) || details.Number("threshold") != threshold || details.Number("window_seconds") != window || details.Number("distinct_files") < threshold || details.Number("distinct_files") > result["action_ids"]!.AsArray().Count) throw new InvalidDataException("file_ransom_result_invalid");
-            var start = SigmaProjection.At(details, "window_start"); var end = SigmaProjection.At(details, "window_end"); if (end < start || end - start > TimeSpan.FromSeconds(window)) throw new InvalidDataException("file_ransom_window_invalid");
-            if ((await session.QueryAsync("select 1 from semantic_file_ransom_members where checkpoint_key=$1 and result_id=$2", ct, checkpoint, result.Text("result_id"))).Count > 0) continue;
+            long distinctFiles = details.Number("distinct_files");
+            var decision = evaluation is null ? null : new JsonObject { ["distinct_files"] = distinctFiles, ["episode"] = "none" };
+            if (decision is not null) evaluation!["results"]!.AsArray().Add(decision);
+            string? invalid = null;
+            if (result.Text("agent_id") != agent || result.Text("source_instance_id") != scope.Text("source_instance_id")
+                || result.Text("collection_scope_id") != scope.Text("collection_scope_id")) invalid = "scope_mismatch";
+            else if (distinctFiles < threshold) invalid = "below_threshold";
+            else if (result.Text("rule_code") is not ("file-audit.mass-write" or "file-audit.mass-delete")
+                || result.Text("conclusion_state") != "observed" || result.Number("rule_version") != 1
+                || string.IsNullOrEmpty(result.Text("subject_sid")) || details.Number("threshold") != threshold
+                || details.Number("window_seconds") != window || distinctFiles > result["action_ids"]!.AsArray().Count) invalid = "invalid_result";
+            if (invalid is not null)
+            {
+                if (decision is not null) decision["reason"] = invalid;
+                throw new InvalidDataException("file_ransom_result_invalid");
+            }
+            var start = SigmaProjection.At(details, "window_start"); var end = SigmaProjection.At(details, "window_end");
+            if (end < start || end - start > TimeSpan.FromSeconds(window))
+            {
+                if (decision is not null) decision["reason"] = "outside_window";
+                throw new InvalidDataException("file_ransom_window_invalid");
+            }
+            if ((await session.QueryAsync("select 1 from semantic_file_ransom_members where checkpoint_key=$1 and result_id=$2", ct, checkpoint, result.Text("result_id"))).Count > 0)
+            {
+                if (decision is not null) decision["reason"] = "already_evaluated";
+                continue;
+            }
             var exclusion = rule?.Exclusions.FirstOrDefault(e => e.Text("subject_sid") == result.Text("subject_sid") && SigmaProjection.At(e!,"active_from") <= start && end < SigmaProjection.At(e!,"active_to"));
             if (exclusion is not null)
             {
+                if (decision is not null) decision["reason"] = "excluded";
                 await session.QueryAsync("insert into semantic_file_ransom_members(checkpoint_key,result_id,episode_key,scope_json,exclusion_json,evaluation_mode) values($1,$2,null,$3,$4,$5)",ct,checkpoint,result.Text("result_id"),scope,exclusion,rule!.Mode); members++; continue;
             }
             string entity = Digest(new JsonArray(checkpoint, result["subject_sid"].Copy()));
@@ -108,6 +139,11 @@ internal sealed partial class SemanticProduction
             for (int offset = 0; offset < refs.Count; offset += 256) { var signal = Signal(definition, entity, key, end, now ?? DateTimeOffset.UtcNow, SemanticJson.Array(refs.Skip(offset).Take(256)), reason: "mass_file_changes", quality: complete ? "good" : "degraded", total: refs.Count); int count = await EnqueueQW(session, rule?.Apply(signal) ?? signal, ct); if (count == 0) throw new InvalidOperationException("file_ransom_policy_unavailable"); jobs += count; }
             await session.QueryAsync("insert into semantic_file_ransom_episodes(episode_key,checkpoint_key,scope_json,entity_key,first_seen,last_seen,incomplete) values($1,$2,$3,$4,$5,$6,$7) on conflict(episode_key) do update set first_seen=least(semantic_file_ransom_episodes.first_seen,excluded.first_seen),last_seen=greatest(semantic_file_ransom_episodes.last_seen,excluded.last_seen),incomplete=semantic_file_ransom_episodes.incomplete or excluded.incomplete", ct, key, checkpoint, scope, entity, start, end, !complete);
             await session.QueryAsync("insert into semantic_file_ransom_members(checkpoint_key,result_id,episode_key,scope_json,evaluation_mode) values($1,$2,$3,$4,$5)", ct, checkpoint, result.Text("result_id"), key, scope, rule?.Mode ?? "enabled"); members++;
+            if (decision is not null)
+            {
+                decision["episode"] = episode is null ? "opened" : "extended";
+                if (!complete) decision["reason"] = "incomplete_coverage";
+            }
         }
         return new() { ["state"] = "processed", ["members"] = members, ["jobs"] = jobs };
     }

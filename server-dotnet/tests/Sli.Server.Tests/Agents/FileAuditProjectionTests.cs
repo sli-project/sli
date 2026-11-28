@@ -63,6 +63,26 @@ public class FileAuditProjectionTests
         ["record_id"]=record,["event_id"]=id,["observed_at"]=$"2026-10-07T00:00:{record:00}+00:00",["path"]=path,["excluded"]=false,
         ["scopes"]=new JsonArray(new JsonObject { ["collection_scope_id"]="scope",["share_name"]="",["important"]=true }),
         ["facts"]=new JsonObject { ["outcome"]="success",["subject_user_sid"]="S-1-1-0",["logon_id_numeric"]=16,["server_process_id"]=8,["handle_id"]=68,["access_mask"]=mask } };
+
+    [Theory]
+    [InlineData("file", "file")]
+    [InlineData("directory", "directory")]
+    [InlineData(null, "unknown")]
+    public void WriteUsesSignedKindFromItsOpenUntilTheHandleIsClosed(string? signedKind, string expected)
+    {
+        const string path = @"C:\synthetic\item";
+        var open = Item(1,4656,path,0x120196);
+        if (signedKind is not null) open["signed_object_kind"] = signedKind;
+        var write = Item(3,4663,path,0x6);
+        var typed = Assert.Single(FileAuditCorrelation.ProjectActions(write,new JsonArray(open.DeepClone())))!;
+        Assert.Equal(expected,typed["object_type"]!.ToString());
+        Assert.Contains(typed["evidence"]!.AsArray(), edge => edge!["evidence_key"]!.ToString()=="e1");
+
+        var close = Item(2,4658,null);
+        var afterClose = Assert.Single(FileAuditCorrelation.ProjectActions(write,new JsonArray(open.DeepClone(),close)))!;
+        Assert.Equal("unknown",afterClose["object_type"]!.ToString());
+    }
+
     [Fact]
     public void DeleteAndRenameRequireLiveUnambiguousHandleEvidence()
     {
@@ -117,12 +137,10 @@ public class FileAuditProjectionTests
     [Fact]
     public void MassWriteRuleRequiresEvidenceAndDistinctFiles()
     {
-        var type=typeof(Sli.Server.Agents.Ingress.AgentFileAuditValidator).Assembly.GetType("Sli.Server.Agents.FileAudit.FileAuditActivityRules");
-        Assert.NotNull(type);
         var config=JsonNode.Parse("{\"roots\":[{\"collection_scope_id\":\"scope\",\"path\":\"C:\\\\synthetic\",\"important\":true}],\"service_account_exclusions\":[],\"mass_operation_files\":2,\"mass_operation_seconds\":300}")!.AsObject();
         JsonObject Action(string id,string path)=>new() { ["action_id"]=id,["agent_id"]="a",["source_instance_id"]="h",["collection_scope_id"]="scope",["subject_sid"]="S-1-1-0",["operation"]="write",["outcome"]="success",["evidence"]=new JsonArray("e"),["path"]=path,["object_type"]="file",["correlation_state"]="complete",["observed_at"]="2026-10-07T00:00:00+00:00" };
         var actions=new JsonArray(Action("one","C:\\synthetic\\one"),Action("two","C:\\synthetic\\two"));
-        var result=(JsonArray)type.GetMethod("Evaluate")!.Invoke(null,[actions,config,"a","h",new JsonArray(),null])!;
+        var result=FileAuditActivityRules.Evaluate(actions,config,"a","h",[],null).Results;
         Assert.Single(result);
         Assert.Equal("file-audit.mass-write",result[0]!["rule_code"]!.GetValue<string>());
         Assert.Equal(2,result[0]!["details"]!["distinct_files"]!.GetValue<int>());
@@ -132,11 +150,11 @@ public class FileAuditProjectionTests
         var deleted=Action("delete",@"C:\synthetic\two");
         deleted["operation"]="delete";
         var mixed=new JsonArray(actions[0]!.DeepClone(),renamed,deleted);
-        var mixedResult=Assert.Single(FileAuditActivityRules.Evaluate(mixed,config,"a","h",new JsonArray(),null))!;
+        var mixedResult=Assert.Single(FileAuditActivityRules.Evaluate(mixed,config,"a","h",[],null).Results)!;
         Assert.Equal(2,mixedResult["details"]!["distinct_files"]!.GetValue<int>());
         Assert.Equal(3,mixedResult["action_ids"]!.AsArray().Count);
         var calendar=JsonNode.Parse("{\"timezone\":\"UTC\",\"weekdays\":[0,1,2,3,4],\"start\":\"09:00\",\"end\":\"17:00\",\"excluded_dates\":[],\"exceptions\":[]}")!.AsObject();
-        var outside=(JsonArray)type.GetMethod("Evaluate")!.Invoke(null,[actions,config,"a","h",new JsonArray(),calendar])!;
+        var outside=FileAuditActivityRules.Evaluate(actions,config,"a","h",[],calendar).Results;
         Assert.Equal(2,outside.OfType<JsonObject>().Count(x=>x["rule_code"]!.GetValue<string>()=="file-audit.out-of-hours"));
     }    [Fact]
     public void CalendarAcceptsPythonIsoWeekAndTruncatesFractionalMicroseconds()

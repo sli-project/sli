@@ -602,7 +602,8 @@ public class FileAuditConsumerDatabaseTests
         rows.Add(Row(145,4663,Access(PathOf(1)+".moved","0x80"),handle:143,subject:system));
         rows.Add(Row(146,4656,Access(PathOf(2),"0x2"),failure:true,subject:system));
         Cursor Bookmark(long last) => new("bookmark",CanonicalJson.Serialize(new JsonObject
-            { ["record_id"] = last, ["bookmark"] = $"fixture-{last}", ["generation"] = generation }));
+            { ["record_id"] = last, ["bookmark"] = $"fixture-{last}", ["generation"] = generation,
+              ["anchor_sha256"] = new string('b',64) }));
         JsonObject Context() => new() { ["policy_revision"] = "2", ["filtered_count"] = 0, ["lost_count"] = 0, ["read_error"] = null };
         // The rejected queue head contained 29 native Security records, all failed logons.
         var wrongEvents = CollectionPacket.Make(source,"Security",generation,
@@ -815,47 +816,86 @@ public class FileAuditConsumerDatabaseTests
             var end = now.AddHours(2*burst - 6);
             string folder = $@"{root}\burst-{burst}";
             int record = checked((int)previous!.Value);
-            var burstRows = new List<PacketRecord>();
-            var destinationRecords = new HashSet<long>();
+            for (int firstFile = 0; firstFile < 110; firstFile += 10)
+            {
+                var opened = new List<PacketRecord>();
+                var writes = new List<PacketRecord>();
+                var types = new JsonObject();
+                var at = end.AddMilliseconds(-40_000 + firstFile * 150);
+                for (int file = firstFile; file < firstFile + 10; file++)
+                {
+                    string path = $@"{folder}\doc-{file+1:000}.txt";
+                    int handle = ++record;
+                    opened.Add(Row(record,4656,Access(path,"0x120196"),handle:handle,eventTime:at));
+                    types[record.ToString(System.Globalization.CultureInfo.InvariantCulture)] = "file";
+                }
+                var openContext = Context();
+                openContext["object_kinds"] = types;
+                await ImportBurstBatch(opened.ToArray(),record,openContext);
+                for (int i = 0; i < opened.Count; i++)
+                {
+                    string path = $@"{folder}\doc-{firstFile+i+1:000}.txt";
+                    int handle = (int)opened[i].RecordId!.Value;
+                    writes.Add(Row(++record,4663,Access(path,"0x6"),handle:handle,eventTime:at.AddMilliseconds(1)));
+                }
+                await ImportBurstBatch(writes.ToArray(),record,Context());
+            }
+            var laterRows = new List<PacketRecord>();
+            var directoryRecords = new HashSet<long>();
+            long witnessedDestination = 0;
             for (int file = 0; file < 110; file++)
             {
                 string path = $@"{folder}\doc-{file+1:000}.txt";
-                var at = end.AddMilliseconds(-40_000 + file * 350);
+                var at = end.AddMilliseconds(-20_000 + file * 10);
                 int handle = record + 1;
-                burstRows.Add(Row(++record,4663,Access(path,"0x2"),handle:handle,eventTime:at));
-                burstRows.Add(Row(++record,4663,Access(path,"0x4"),handle:handle,eventTime:at.AddMilliseconds(1)));
-                burstRows.Add(Row(++record,4663,Access(path,"0x10000"),handle:handle,eventTime:at.AddMilliseconds(2)));
-                burstRows.Add(Row(++record,file % 2 == 0 ? 4656 : 4663,Access(path+".locked","0x80"),
-                    handle:file % 2 == 0 ? handle + 10000 : handle,eventTime:at.AddMilliseconds(3)));
-                destinationRecords.Add(record);
-                if (file == 109)
+                laterRows.Add(Row(++record,4656,Access(path,"0x120196"),handle:handle,eventTime:at));
+                laterRows.Add(Row(++record,4663,Access(path,"0x6"),handle:handle,eventTime:at.AddMilliseconds(1)));
+                laterRows.Add(Row(++record,4656,Access(path,"0x110080"),handle:handle,eventTime:at.AddMilliseconds(2)));
+                laterRows.Add(Row(++record,4663,Access(path,"0x10000"),handle:handle,eventTime:at.AddMilliseconds(3)));
+                if (file == 0)
                 {
-                    burstRows.Add(Row(++record,4663,Access(path+".locked","0x10000"),handle:handle+1,eventTime:at.AddMilliseconds(5)));
-                    burstRows.Add(Row(++record,4660,"",handle:handle+1,eventTime:at.AddMilliseconds(6)));
+                    laterRows.Add(Row(++record,4656,Access(path+".locked","0x80"),handle:handle+20000,
+                        eventTime:at.AddMilliseconds(3)));
+                    witnessedDestination = record;
                 }
+                laterRows.Add(Row(++record,4656,Access(folder,"0x100002"),handle:handle+10000,eventTime:at.AddMilliseconds(4)));
+                laterRows.Add(Row(++record,4663,Access(folder,"0x2"),handle:handle+10000,eventTime:at.AddMilliseconds(5)));
+                directoryRecords.Add(record);
             }
-            foreach (var batch in burstRows.Chunk(25))
+            foreach (var batch in laterRows.Chunk(24))
             {
                 long last = (long)batch[^1].RecordId!.Value;
                 var context = Context();
-                // The old names can already be gone when the agent reads
-                // the journal. Only the surviving destination has a kind.
-                context["object_kinds"] = new JsonObject(batch.Where(row => destinationRecords.Contains((long)row.RecordId!.Value))
+                // The native rename can expose only the source and a parent-directory write.
+                context["object_kinds"] = new JsonObject(batch.Where(row => (long)row.RecordId!.Value == witnessedDestination
+                        || directoryRecords.Contains((long)row.RecordId.Value))
                     .Select(row => KeyValuePair.Create(row.RecordId!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                        (JsonNode?)JsonValue.Create("file"))));
+                        (JsonNode?)JsonValue.Create((long)row.RecordId.Value == witnessedDestination ? "file" : "directory"))));
                 await ImportBurstBatch(batch,last,context);
             }
             await using (var tx = await worker.BeginTransactionAsync(ct))
             {
+                var diagnostics = new DetectionDiagnostics();
                 var session = new SemanticSession(worker,tx);
                 var sources = await session.QueryAsync("""
                     select source from public.default_detection_sources()
                     where source#>>'{scope,plugin_id}'='sli.file-audit'
                     """,ct);
-                var detection = await SemanticProduction.ManagedRansom(session,Assert.Single(sources)!["source"]!,now,ct);
+                var detection = await SemanticProduction.ManagedRansom(session,Assert.Single(sources)!["source"]!,now,ct,diagnostics);
                 Assert.Equal(0,detection.Failed);
                 Assert.True(detection.Jobs > 0);
                 await tx.CommitAsync(ct);
+                const string prefix = "file_ransom_evaluation:";
+                var lines = new List<string>();
+                diagnostics.Write("file_ransom",lines.Add);
+                var log = Assert.Single(lines);
+                Assert.StartsWith(prefix, log);
+                Assert.DoesNotContain(folder, log);
+                var evaluation = JsonNode.Parse(log[prefix.Length..])!;
+                var results = evaluation["results"]!.AsArray();
+                Assert.Equal(results.Count,evaluation.Number("result_count"));
+                Assert.Single(results,result => result.Text("episode") == "opened");
+                Assert.Contains(results,result => result.Text("episode") == "extended" && result.Number("distinct_files") == 110);
             }
             var burstRisk = await new SemanticProduction(null!,new(true,true,false,true,true,true),SemanticRuntimeSettings.FindingsMode,16)
                 .ProcessRisk(worker,ct,fileEpisodesOnly:true);
