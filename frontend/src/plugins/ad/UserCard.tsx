@@ -19,7 +19,7 @@ type UserLabel<Section extends "card" | "event"> =
 const missing = () => t("table.noValue");
 const cardText = (key: UserLabel<"card">) => t(`reports.ad.users.card.${key}`);
 const groupId = (value: unknown) => exactNavigationId(text(value)?.replace(/^group:/, ""), "entity_id");
-const tabs = ["account", "rights", "activity"] as const;
+const tabs = ["important", "account", "rights", "activity"] as const;
 
 function GroupLink({ group }: { group: Row }) {
   const id = groupId(group.id);
@@ -165,8 +165,7 @@ export function UserCard({ selected, columns, timeZone, initialTab, historical, 
       <TabList label={cardText("tabs")}/>
       <TabPanel>
         {query.isError ? <div role="alert">{cardText("load_error")} <button type="button" className="sli-ds-button" onClick={() => void query.refetch()}>{t("state.retry")}</button></div> : null}
-        {tab === "account" ? <>
-          <FactList facts={values}/>
+        {tab === "important" ? <>
           {scope && (allowProblems || allowChanges) ? <ul className="sli-ds-path">
             {allowProblems ? <li><a href={withReturnTo(`/app/report/security.problems?${problemsParams}`, returnTo)}>
               {openCount === null ? cardText("problems") : t("reports.ad.users.card.open_problems", { count: formatNumber(openCount) })} →
@@ -179,7 +178,9 @@ export function UserCard({ selected, columns, timeZone, initialTab, historical, 
             <ul className="sli-ds-path">{deviations.map((reason) => <li key={reason.key}>
               {reason.severity ? <><SeverityBadge severity={reason.severity}/> </> : null}{reason.label}
             </li>)}</ul>
-          </Section> : null}
+          </Section> : Array.isArray(row.reasons) ? <p>{cardText("no_deviations")}</p> : null}
+        </> : tab === "account" ? <>
+          <FactList facts={values}/>
           {computers.length ? <Section title={cardText("computers")}>
             <DataTable caption={cardText("computers")} rows={computers} rowKey={(computer) => String(computer.computer)} columns={[
               { key: "computer", label: cardText("computer") },

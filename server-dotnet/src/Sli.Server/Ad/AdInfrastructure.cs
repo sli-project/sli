@@ -119,6 +119,7 @@ internal static class AdInfrastructure
             foreach (var (templateKind, field, template) in ControlTemplates())
             {
                 if (templateKind != kind || !attrs.ContainsKey(field)) continue;
+                if (kind == "domain_controller" && field == "operating_system_version") continue;
                 var actual = attrs[field]; string? value = actual?.ToString();
                 string qualification = template.Text("authority") == "not_defined" ? "policy_not_defined" : field switch
                 {
@@ -139,7 +140,7 @@ internal static class AdInfrastructure
                 row["entity_type"] = kind; row["entity_name"] = entity["display_name"]?.DeepClone();
                 if (kind == "password_policy" && domainEntities.TryGetValue(entity.Int("domain_id"), out var domainEntity)) row["domain_entity_id"] = domainEntity;
                 SetObservedValue(row, actual);
-                row["qualification"] = qualification; row["authority_text"] = template.Text("authority") switch { "collector_diagnostic" => "Диагностика сборщика", "report_rule_v1" => "Правило отчёта v1", _ => "Политика организации не задана" };
+                row["qualification"] = qualification; row["authority_text"] = template.Text("authority") switch { "collector_diagnostic" => "Проверка контроллера", "report_rule_v1" => "Правило отчёта", _ => "Политика организации не задана" };
                 var context=new JsonObject();foreach(var node in Metadata["_CONTROL_CONTEXT_FIELDS"]?[kind] as JsonArray??[]){string key=node!.ToString();if(attrs[key] is not null)context[key]=attrs[key]!.DeepClone();}row["object_context"]=context;
                 row["context"] = Array(context.Select(p=>
                 {var item=Obj(new{code=p.Key,label=Metadata["CONTEXT_LABELS"]?.Text(p.Key)??p.Key,value=TextValue(p.Value)});var messages=new JsonObject();if(AdPresentation.Message("reports.v2.ad.infrastructure.context_labels."+p.Key) is {} label)messages["label"]=label;if((AdInventoryRows.Bool(p.Value) is not null||p.Key is "trust_type" or "trust_direction")&&ValueCode(p.Value) is {} code&&AdPresentation.Message(code) is {} msg)messages["value"]=msg;if(messages.Count>0)item["presentation_messages"]=messages;return item;}));

@@ -24,6 +24,7 @@ const deviations: Record<string, MessageKey> = {
   spn_privileged: "reports.ad.users.deviation.spn_privileged",
   spn_old_password: "reports.ad.users.deviation.spn_old_password",
   privileged_password_never_expires: "reports.ad.users.list.password_no_expiry",
+  password_never_expires: "reports.ad.users.list.password_no_expiry",
   temporary_membership: "reports.ad.users.deviation.temporary_membership",
 };
 
@@ -38,20 +39,21 @@ export function userAccountCount(total: number) {
   });
 }
 
-export function userDeviations(row: Row) {
+export function userDeviations(row: Row, firstKey?: string) {
   const reviewReasons = objects(row.review_reasons);
   const reasons = reviewReasons.length ? reviewReasons : objects(row.reasons);
   const confirmed = reasons.flatMap((reason) => {
     const key = String(reason.key);
     const days = count(object(reason.policy).threshold_days);
-    const label = reviewReasons.length ? text(reason.label)
-      : days !== null && key === "password_age" ? t("reports.ad.users.deviation.password_age", { days })
+    const label = days !== null && key === "password_age" ? t("reports.ad.users.deviation.password_age", { days })
       : days !== null && key === "inactive_threshold" ? t("reports.ad.users.deviation.inactive", { days })
       : Object.hasOwn(deviations, key) ? t(deviations[key]) : text(reason.label);
     return label ? [{ key, label, severity: reason.severity }] : [];
   });
   const rank = (severity: unknown) => isSeverity(severity) ? severityOrder[severity] : Number.POSITIVE_INFINITY;
-  if (confirmed.length) return confirmed.sort((a, b) => rank(a.severity) - rank(b.severity));
+  if (confirmed.length) return confirmed.sort((a, b) => Number(b.key === firstKey) - Number(a.key === firstKey)
+    || rank(a.severity) - rank(b.severity)).filter((reason, index, ordered) =>
+      ordered.findIndex((item) => item.label === reason.label) === index);
   const label = text(row.reason_text) ?? (row.password_never_expires === true ? t("reports.ad.users.list.password_no_expiry") : null);
   return label ? [{ key: "", label, severity: row.severity }] : [];
 }
@@ -60,7 +62,7 @@ export function UserStateMark({ enabled }: { enabled: boolean }) {
   return <span aria-hidden="true" style={{ color: enabled ? "var(--sli-success)" : "var(--sli-text-muted)" }}>{enabled ? "●" : "⊘"}</span>;
 }
 
-export function userTableColumns(columns: ReportColumnDto[], onSelect: (row: Row, tab?: string) => void, timeZone?: string, review = false): TableColumn<Row>[] {
+export function userTableColumns(columns: ReportColumnDto[], onSelect: (row: Row, tab?: string) => void, timeZone?: string, review = false, check?: string): TableColumn<Row>[] {
   const order = review ? ["name", "privilege_basis", "activity", "reason"] : ["name", "privilege_basis", "department", "ou", "activity", "last_workplace", "password_last_set", "groups", "reason"];
   const labels: Record<string, string> = {
     name: t("reports.ad.users.list.name"), privilege_basis: t("reports.ad.users.list.privileges"),
@@ -75,13 +77,13 @@ export function userTableColumns(columns: ReportColumnDto[], onSelect: (row: Row
     render: (row: Row) => {
       if (key === "last_workplace") return text(object(row.last_workplace).computer) ?? missing();
       if (key === "reason") {
-        const [reason, ...otherReasons] = userDeviations(row);
+        const [reason, ...otherReasons] = userDeviations(row, check);
         if (!reason) return missing();
         const severity = isSeverity(reason.severity) ? reason.severity : row.severity;
         return <>{isSeverity(severity) ? <><SeverityBadge severity={severity}/> </> : null}
           <span>{reason.label}</span>{otherReasons.length ? <> <button type="button" className="sli-ds-link-button"
             aria-label={t("reports.ad.users.list.more_deviations", { count: otherReasons.length })}
-            onClick={(event) => { event.stopPropagation(); onSelect(row, "account"); }}>+{formatNumber(otherReasons.length)}</button></> : null}</>;
+            onClick={(event) => { event.stopPropagation(); onSelect(row, "important"); }}>+{formatNumber(otherReasons.length)}</button></> : null}</>;
       }
       if (key === "privilege_basis") {
         const groups = [row.privilege_basis, row.nested_privilege_groups].flatMap((group) => Array.isArray(group) ? group.filter((value) => typeof value === "string") : []);

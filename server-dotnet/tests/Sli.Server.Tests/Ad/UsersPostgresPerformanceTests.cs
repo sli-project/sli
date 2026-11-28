@@ -52,7 +52,7 @@ public sealed class UsersPostgresPerformanceTests
             {
                 connections.Plans.Clear();
                 var parameters = Obj(new { period = new { from_utc = Iso(day), to_utc = Iso(day.AddDays(1)) } });
-                if (tab == "checks") parameters["account_rows"] = "yes";
+                if (tab is "checks" or "all") parameters["account_rows"] = "yes";
                 var request = new AdV2Request("ad.users.v2", "view", null, [1], parameters, tab, null, false, 50, null, "UTC");
                 var timer = Stopwatch.StartNew();
                 var result = await store.ReadAsync(request, _ => true, ct);
@@ -72,7 +72,11 @@ public sealed class UsersPostgresPerformanceTests
                 Assert.NotEqual("error", result.Text("state"));
                 var page = tab == "disabled_active" ? result["collections"]![tab] : result["items"];
                 Assert.NotEmpty(page!.AsArray());
-                if (tab == "all") Assert.Equal(accounts, result["coverage"].Int("population"));
+                if (tab == "all")
+                {
+                    Assert.Equal(accounts, result["coverage"].Int("population"));
+                    Assert.Equal(50, page.AsArray().Count);
+                }
             }
         }
         if (!baseline)

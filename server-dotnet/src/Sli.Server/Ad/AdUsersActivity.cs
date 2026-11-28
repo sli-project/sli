@@ -135,7 +135,8 @@ internal static class AdUsersActivity
         LoadAsync(db, (current["users"] as JsonArray ?? []).OfType<JsonObject>(),
             (current["metadata"]?["watch_groups"] as JsonArray ?? []).OfType<JsonObject>(), domains, parameters, disabled, ct, config);
     internal static async Task<JsonObject> LoadAsync(NpgsqlConnection db, IEnumerable<JsonObject> accounts,
-        IEnumerable<JsonObject> watchGroups, long[] domains, JsonObject parameters, bool disabled, CancellationToken ct, IConfiguration? config = null)
+        IEnumerable<JsonObject> watchGroups, long[] domains, JsonObject parameters, bool disabled, CancellationToken ct, IConfiguration? config = null,
+        bool includeUnmatchedLogonCount = true)
     {
         var(period,minutes,repeats)=Window(parameters);
         var empty=Obj(new{disabled_active=new object[0],temporary_memberships=new object[0],unknown_identity_events=0,unprocessed_events=0,state="partial",truncated=false,window=period.Bounds});
@@ -169,7 +170,8 @@ internal static class AdUsersActivity
                     period, ct, config, ignoreCase: false);
                 events.AddRange(logons.Where(e => relevant.Contains((e.Int("domain_id"), e.Text("target_user_sid") ?? ""))));
             }
-            long unknownLogons = await UnknownLogonsAsync(db, domains, period, identities.Keys, config, ct);
+            long? unknownLogons = includeUnmatchedLogonCount
+                ? await UnknownLogonsAsync(db, domains, period, identities.Keys, config, ct) : null;
             var anchors=events.Where(e=>Pairs.ContainsKey((int)e.Int("event_id"))&&e.Text("normalized_event_id") is not null).Select(e=>Guid.Parse(e.Text("normalized_event_id")!)).ToArray();
             var candidates=new Dictionary<long,JsonObject>();if(!disabled&&anchors.Length>0)
             {
@@ -187,7 +189,7 @@ internal static class AdUsersActivity
                     """,ct,anchors,Chain,period.Start,period.End);candidates=rows.ToDictionary(r=>r.Int("add_id"));
             }
             var shaped=Shape(events,identities,watched,candidates,minutes,repeats);
-            shaped["unknown_identity_events"] = shaped.Int("unknown_identity_events") + unknownLogons;
+            shaped["unknown_identity_events"] = unknownLogons is long count ? JsonValue.Create(shaped.Int("unknown_identity_events") + count) : null;
             foreach(var(key,value)in shaped)empty[key]=value?.DeepClone();return empty;
         }
         catch(PostgresException error)when(error.SqlState is "42P01" or "42703" or "42501")
@@ -202,7 +204,7 @@ internal static class AdUsersActivity
     }
     internal static void ApplyCoverage(JsonObject result,JsonObject data,bool tab)
     {
-        result["coverage"]!["completeness"]="not_proven";result["coverage"]!["activity"]=Obj(new{state=data.Text("state"),truncated=false,window=data["window"],unknown_identity_events=data.Int("unknown_identity_events"),unprocessed_events=data.Int("unprocessed_events")});
+        result["coverage"]!["completeness"]="not_proven";result["coverage"]!["activity"]=Obj(new{state=data.Text("state"),truncated=false,window=data["window"],unknown_identity_events=data["unknown_identity_events"]?.DeepClone(),unprocessed_events=data.Int("unprocessed_events")});
         var limitations=result["limitations"]!.AsArray();limitations.Add(Obj(new{code="activity_not_proof",text="Наблюдаемая последовательность не доказывает злоупотребление или использование выданного права. 6272 — разрешение NPS, а не подтверждённая VPN-сессия; 4624 на DC не доказывает интерактивный вход на рабочую станцию."}));
         limitations.Add(Obj(new{code="activity_coverage",text="Полнота источников не подтверждена. Время отключения известно только при наблюдаемом 4725; события без точного SID и домена учитываются отдельно."}));
         if(data.Text("state")=="unavailable")limitations.Add(Obj(new{code="activity_unavailable",text="Хранилище событий или корреляций недоступно для чтения; отсутствие строк не означает отсутствие активности."}));

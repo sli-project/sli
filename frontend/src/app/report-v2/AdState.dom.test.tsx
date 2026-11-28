@@ -31,7 +31,6 @@ beforeEach(() => {
   vi.spyOn(api, "reportV2Data").mockImplementation(async (_, params) => {
     if (params.get("tab") === "spn_collisions") return result([], { spn_collisions: [] });
     if (params.get("tab") === "semantic") return result([], { semantic: [{ finding_id: 23, entity_name: "example.test", title: "Lockout threshold disabled", severity: "low", last_seen_utc: observed }] });
-    if (params.get("tab") === "parameter_changes") return { ...result([], { parameter_changes: [{ ...controls[0], previous_value: 14, previous_text: "14" }] }), filtered_count: 1 };
     return result(controls);
   });
   vi.spyOn(api, "reportV2Detail").mockResolvedValue(result([
@@ -46,9 +45,26 @@ function renderReport() {
   return render(<QueryClientProvider client={new QueryClient()}><ReportRenderer reportKey={definition.key}/></QueryClientProvider>);
 }
 
+it("opens with deviations first, hides snapshot period controls and removes duplicate OS versions", async () => {
+  vi.mocked(api.reportV2Data).mockResolvedValue({ ...result([...controls,
+    { row_id: "8:dc.operating_system_version", entity_type: "domain_controller", control_id: "dc.operating_system_version", label: "OS version", actual_value: "10.0", actual_text: "10.0" },
+  ]), coverage: { observed_at_utc: observed } });
+  renderReport();
+  await screen.findByRole("button", { name: "Lockout threshold" });
+  const table = screen.getByRole("table", { name: "Parameters" });
+  expect(within(table).getByRole("button", { name: "Lockout threshold" })).toBeTruthy();
+  expect(within(table).queryByRole("button", { name: "Minimum password length" })).toBeNull();
+  expect(screen.queryByRole("tab", { name: /AD changes/ })).toBeNull();
+  expect(screen.getByText(/^Data as of /).closest("header")).toBeTruthy();
+  expect(screen.queryByText("OS version")).toBeNull();
+});
+
+async function openableMatch() {
+  fireEvent.click(await screen.findByRole("button", { name: "Matches 2" }));
+  return screen.findByRole("button", { name: "Minimum password length" });
+}
+
 it.each([
-  ["parameter_changes", "AD changes", "No AD changes in the selected period", "empty"],
-  ["spn_collisions", "SPN collisions", "No SPN collisions found", "partial"],
   ["semantic", "Linked findings", "No linked problems found", "partial"],
 ] as const)("shows a tab-specific line for an empty %s result", async (key, tab, phrase, state) => {
   vi.mocked(api.reportV2Data).mockImplementation(async (_, params) => params.get("tab") === key
@@ -57,7 +73,7 @@ it.each([
   renderReport();
   fireEvent.click(await screen.findByRole("tab", { name: new RegExp(tab) }));
   expect(await screen.findByText(phrase)).toBeTruthy();
-  if (key !== "parameter_changes") expect(screen.queryByRole("table", { name: tab })).toBeNull();
+  expect(screen.queryByRole("table", { name: tab })).toBeNull();
 });
 
 it("accepts the legacy all view on a domain-scoped AD URL", async () => {
@@ -84,7 +100,7 @@ it("accepts the legacy all view on a domain-scoped AD URL", async () => {
   const controlsRequest = requests().find((params) => params.get("tab") === "controls")!;
   expect(controlsRequest.get("view")).toBe("overview");
   expect(controlsRequest.get("domain")).toBe("2");
-  expect(controlsRequest.get("period")).toBe("24h");
+  expect(controlsRequest.has("period")).toBe(false);
   expect(controlsRequest.has("return_to")).toBe(false);
   expect(requests().filter((params) => params.get("tab") !== "controls").every((params) => !params.has("view"))).toBe(true);
   expect(await screen.findByRole("table", { name: /Value history · Lockout threshold/ })).toBeTruthy();
@@ -108,6 +124,7 @@ it("groups observed parameters, puts deviations first, and combines the filters"
   renderReport();
   await screen.findByRole("button", { name: "All 3" });
   expect(screen.queryByText("Required services")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Matches" }));
   expect(screen.getByText("Lockout threshold").compareDocumentPosition(screen.getByText("Minimum password length")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Deviations 1" }));
   expect(screen.queryByText("Minimum password length")).toBeNull();
@@ -130,7 +147,7 @@ it("opens only the parameter named by a domain-scoped deep link", async () => {
 
 it("expands and collapses a parameter with history from the same domain", async () => {
   renderReport();
-  const toggle = await screen.findByRole("button", { name: "Minimum password length" });
+  const toggle = await openableMatch();
   expect(api.reportV2Detail).not.toHaveBeenCalled();
   fireEvent.click(toggle);
   const history = await screen.findByRole("table", { name: "Value history · Minimum password length · example.test" });
@@ -143,7 +160,7 @@ it("expands and collapses a parameter with history from the same domain", async 
 
 it.each([
   { entry: "selection", locale: "en", label: "Lockout threshold", title: "Value history", loading: "Loading data…", value: "20 attempts" },
-  { entry: "deep link", locale: "ru", label: "Порог блокировки", title: "История значения", loading: "Загружаем данные…", value: "20 поп." },
+  { entry: "deep link", locale: "ru", label: "Порог блокировки", title: "История значения", loading: "Загружаем данные…", value: "20 попыток" },
 ] as const)("loads one lockout threshold observation from a cold $entry", async ({ entry, locale, label, title, loading, value }) => {
   const parameter = { ...controls[1], label, actual_value: 20, actual_text: "20", expected_condition: "5–10" };
   const address = "/app/report/ad.infrastructure?domain=2&period=24h";
@@ -181,25 +198,21 @@ it("keeps a failed history distinct from a settled empty result after retry", as
   vi.mocked(api.reportV2Detail).mockRejectedValueOnce(new Error("History request failed"))
     .mockResolvedValueOnce({ ...result(), state: "empty" });
   renderReport();
-  fireEvent.click(await screen.findByRole("button", { name: "Minimum password length" }));
+  fireEvent.click(await openableMatch());
   const error = await screen.findByRole("alert");
   expect(screen.queryByRole("table", { name: /Value history/ })).toBeNull();
   fireEvent.click(within(error).getByRole("button", { name: "Retry" }));
-  const history = await screen.findByRole("table", { name: /Value history · Minimum password length/ });
-  expect(within(history).getByRole("cell", { name: "—" })).toBeTruthy();
-  expect(screen.queryByRole("alert")).toBeNull();
+  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  expect(screen.queryByRole("table", { name: /Value history/ })).toBeNull();
 });
 
-it("switches to SPN collisions and linked findings using their report collections", async () => {
+it("keeps linked findings reachable and removes the duplicate AD changes tab", async () => {
   renderReport();
-  fireEvent.click(await screen.findByRole("tab", { name: "SPN collisions 0" }));
-  expect(await screen.findByText("No SPN collisions found")).toBeTruthy();
-  fireEvent.click(screen.getByRole("tab", { name: "Linked findings 1" }));
+  fireEvent.click(await screen.findByRole("tab", { name: "Linked findings 1" }));
   expect(await screen.findByText("Lockout threshold disabled")).toBeTruthy();
   expect(screen.getByRole("link", { name: "Open problem" }).getAttribute("href")).toContain("id=23");
-  fireEvent.click(screen.getByRole("tab", { name: "AD changes 1" }));
-  expect(await screen.findByText(/14 characters →/)).toBeTruthy();
-  expect(screen.getByText("Snapshot comparison")).toBeTruthy();
+  expect(screen.queryByRole("tab", { name: /AD changes/ })).toBeNull();
+  expect(vi.mocked(api.reportV2Data).mock.calls.some(([, query]) => query.get("tab") === "parameter_changes")).toBe(false);
 });
 
 it("opens check details by keyboard without moving history out of its row", async () => {
@@ -209,24 +222,14 @@ it("opens check details by keyboard without moving history out of its row", asyn
   const toggle = await screen.findByRole("button", { name: "Lockout threshold" });
   toggle.focus();
   fireEvent.click(toggle);
-  const drawer = within(await screen.findByRole("complementary", { name: "Lockout threshold" }));
-  const observation = drawer.getByRole("tab", { name: "Observation" });
-  expect(drawer.getByText("20 attempts")).toBeTruthy();
-  expect(drawer.getByText("5–10")).toBeTruthy();
   const history = await screen.findByRole("table", { name: /Value history · Lockout threshold/ });
-  expect(history.closest("tr[data-detail]")).toBeTruthy();
-  observation.focus();
-  fireEvent.keyDown(observation, { key: "ArrowRight" });
-  expect(drawer.getByRole("tab", { name: "Object", selected: true })).toBe(document.activeElement);
-  expect(drawer.getByRole("link", { name: "example.test" }).getAttribute("href")).toContain("/app/entities/42");
-  expect(drawer.getByRole("heading", { name: "Affected objects" })).toBeTruthy();
-  expect(drawer.getByText("—")).toBeTruthy();
-  fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" });
-  expect(drawer.getByText("Report rule")).toBeTruthy();
-  fireEvent.keyDown(document.activeElement!, { key: "Escape" });
-  expect(screen.queryByRole("complementary", { name: "Lockout threshold" })).toBeNull();
+  const details = within(history.closest("tr[data-detail]")!);
+  expect(details.getByText("20 attempts")).toBeTruthy();
+  expect(details.getByText("5–10")).toBeTruthy();
+  expect(details.getByRole("link", { name: "example.test" }).getAttribute("href")).toContain("/app/entities/42");
+  expect(screen.queryByRole("complementary")).toBeNull();
+  expect(screen.queryByText("Report rule")).toBeNull();
   expect(document.activeElement).toBe(toggle);
-  expect(history.isConnected).toBeTruthy();
 });
 
 it("links a failed controller check to the controller that was actually checked", async () => {
@@ -235,15 +238,13 @@ it("links a failed controller check to the controller that was actually checked"
   vi.mocked(api.reportV2Data).mockImplementation(async (_, params) => result(params.get("tab") === "controls" ? [row] : []));
   renderReport();
   fireEvent.click(await screen.findByRole("button", { name: "DNS" }));
-  const drawer = within(await screen.findByRole("complementary", { name: "DNS" }));
-  fireEvent.click(drawer.getByRole("tab", { name: "Object" }));
-  const affected = within(drawer.getByRole("region", { name: "Affected objects" }));
-  const [controller] = affected.getAllByRole("link");
-  expect(controller.textContent).toBe("dc01.example.test");
+  const events = await screen.findByRole("link", { name: "Object events" });
+  const details = within(events.closest("tr[data-detail]")!);
+  const controller = details.getByRole("link", { name: "dc01.example.test" });
   const target = new URL(controller.getAttribute("href")!, window.location.origin);
   expect(target.pathname).toBe("/app/entities/8");
   expect(target.searchParams.get("return_to")).toContain("domain=2");
-  expect(drawer.getByRole("link", { name: "Object events" }).getAttribute("href")).toContain("domain=2");
+  expect(events.getAttribute("href")).toContain("domain=2");
 });
 
 it("lists distinct confirmed SPN owners in their own domain and snapshot", async () => {
@@ -258,11 +259,10 @@ it("lists distinct confirmed SPN owners in their own domain and snapshot", async
     ] }), state: "partial" }
     : result(params.get("tab") === "controls" ? controls : []));
   renderReport();
-  fireEvent.click(await screen.findByRole("tab", { name: "SPN collisions 3" }));
-  fireEvent.click((await screen.findAllByRole("button", { name: "HTTP/svc.example.test" }))[0]);
-  const drawer = within(await screen.findByRole("complementary", { name: "HTTP/svc.example.test" }));
-  fireEvent.click(drawer.getByRole("tab", { name: "Object" }));
-  const links = within(drawer.getByRole("region", { name: "Affected objects" })).getAllByRole("link");
+  fireEvent.click(await screen.findByRole("button", { name: "SPN collisions 3" }));
+  const table = await screen.findByRole("table", { name: "SPN collisions" });
+  const row = within(table).getAllByRole("row")[1];
+  const links = within(row).getAllByRole("link");
   expect(links.map((link) => link.textContent)).toEqual(["account-a", "account-b"]);
   expect(links.map((link) => link.getAttribute("href")?.split("?")[0])).toEqual(["/app/entities/42", "/app/entities/43"]);
 });
@@ -272,7 +272,7 @@ it("keeps existing history after a final empty page and drops the stale continua
     .mockResolvedValueOnce({ ...result([{ row_id: 1, actual_value: 16, observed_at_utc: observed }]), has_more: true, next_cursor: "1" })
     .mockResolvedValueOnce({ ...result(), state: "empty", has_more: true, next_cursor: "1" });
   renderReport();
-  fireEvent.click(await screen.findByRole("button", { name: "Minimum password length" }));
+  fireEvent.click(await openableMatch());
   const historyHeading = await screen.findByRole("heading", { name: /Value history · Minimum password length/ });
   const history = within(historyHeading.closest("section")!);
   const more = await history.findByRole("button", { name: "Show more" });
@@ -286,11 +286,12 @@ it("shows an unavailable history as a recoverable failure", async () => {
   vi.mocked(api.reportV2Detail).mockResolvedValueOnce({ ...result(), state: "not_collected" })
     .mockResolvedValueOnce({ ...result(), state: "empty" });
   renderReport();
-  fireEvent.click(await screen.findByRole("button", { name: "Minimum password length" }));
+  fireEvent.click(await openableMatch());
   const unavailable = await screen.findByRole("alert");
   expect(unavailable.textContent).toContain("Could not load Value history");
   fireEvent.click(within(unavailable).getByRole("button", { name: "Retry" }));
-  expect(await screen.findByRole("table", { name: /Value history · Minimum password length/ })).toBeTruthy();
+  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  expect(screen.queryByRole("table", { name: /Value history/ })).toBeNull();
 });
 
 it("hides a deep-linked check and its history when the domain is denied", async () => {
@@ -311,7 +312,7 @@ it("preserves confirmed history while retrying an unavailable continuation", asy
     .mockRejectedValueOnce(new ApiResponseError(503, "report_read_timeout"))
     .mockResolvedValueOnce(result([{ row_id: 2, actual_value: 14, observed_at_utc: "2026-11-09T04:20:00Z" }]));
   renderReport();
-  fireEvent.click(await screen.findByRole("button", { name: "Minimum password length" }));
+  fireEvent.click(await openableMatch());
   fireEvent.click(await screen.findByRole("button", { name: "Show more" }));
   const failure = await screen.findByRole("alert");
   const history = screen.getByRole("table", { name: /Value history · Minimum password length/ });

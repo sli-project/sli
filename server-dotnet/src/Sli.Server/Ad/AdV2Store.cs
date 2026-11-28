@@ -1,6 +1,9 @@
 ﻿using System.Data;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.Caching.Memory;
 using Npgsql;
 using Sli.Server.Access;
 using Sli.Server.Infrastructure;
@@ -12,6 +15,7 @@ public sealed class AdV2Store(IPostgresConnectionFactory connections, IConfigura
 {
     internal static JsonObject Resource(string name) => JsonNode.Parse(new StreamReader(typeof(AdV2Store).Assembly.GetManifestResourceStream("Sli.Server.Ad." + name + ".json")!).ReadToEnd())!.AsObject();
     static readonly JsonObject Messages = Resource("state-messages");
+    private static readonly MemoryCache VerifiedUsersSnapshots = new(new MemoryCacheOptions { SizeLimit = 128 });
     public async Task<IReadOnlyList<JsonObject>> DomainsAsync(DomainGrant grant, CancellationToken ct)
     {
         await using var db = await connections.OpenAsync(ct);
@@ -100,9 +104,11 @@ public sealed class AdV2Store(IPostgresConnectionFactory connections, IConfigura
             try
             {
                 payload = JsonNode.Parse(text)!.AsObject();
-                if (AdJobPlugin.Digest(payload) != row.Text("payload_sha256")) throw new InvalidDataException("ad_snapshot_hash_mismatch");
                 if (payload[family == "users_v2" ? "users" : "objects"] is not JsonArray || payload["metadata"] is not JsonObject)
                     throw new InvalidDataException("ad_snapshot_invalid");
+                var expected = row.Text("payload_sha256");
+                if (family == "users_v2") VerifyUsersSnapshot(row.Int("domain_id"), text, payload, expected);
+                else if (AdJobPlugin.Digest(payload) != expected) throw new InvalidDataException("ad_snapshot_hash_mismatch");
             }
             catch (Exception error) when (error is InvalidDataException or System.Text.Json.JsonException or InvalidOperationException)
             {
@@ -120,6 +126,16 @@ public sealed class AdV2Store(IPostgresConnectionFactory connections, IConfigura
             }
         }
         return rows;
+    }
+
+    private static void VerifyUsersSnapshot(long domain, string text, JsonObject payload, string? expected)
+    {
+        // Reuse canonical verification only for the same published digest and exact
+        // stored bytes. The cache holds hashes, so requests never share mutable facts.
+        var current = (Expected: expected, Bytes: Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))));
+        if (VerifiedUsersSnapshots.TryGetValue<(string?, string)>(domain, out var verified) && verified == current) return;
+        if (AdJobPlugin.Digest(payload) != expected) throw new InvalidDataException("ad_snapshot_hash_mismatch");
+        VerifiedUsersSnapshots.Set(domain, current, new MemoryCacheEntryOptions { Size = 1 });
     }
 
     static async Task<JsonObject> ComputerDirectoryAttributes(NpgsqlConnection db, JsonObject source, long[] entities, CancellationToken ct)
@@ -171,7 +187,7 @@ public sealed class AdV2Store(IPostgresConnectionFactory connections, IConfigura
     async Task<JsonObject> Inventory(NpgsqlConnection db, AdV2Request request, List<JsonObject> sources, Func<IEnumerable<string>, bool> fields, CancellationToken ct)
     {
         bool users = request.Key == "ad.users.v2";
-        if (request.Tab == "checks") return await AdReviewChecks.ReadAsync(db, request, sources, ct,configuration);
+        if (request.Tab == "checks") return await AdReviewChecks.ReadAsync(db, request, sources, ct, configuration, fields(["privilege"]));
         if (request.Tab == "changes") return await AdSnapshotChanges.ReadAsync(db, request, sources, fields, ct,configuration);
         JsonObject? activity=null;
         if(users&&request.Tab is "users" or "all"&&fields(["technical","security","privilege"]))
@@ -179,7 +195,7 @@ public sealed class AdV2Store(IPostgresConnectionFactory connections, IConfigura
             var watchGroups = AdUsersActivity.WatchGroups(sources).ToArray();
             if (watchGroups.Length > 0)
                 activity = await AdUsersActivity.LoadAsync(db, AdUsersActivity.Users(sources), watchGroups,
-                    request.Domains, request.Params, false, ct, configuration);
+                    request.Domains, request.Params, false, ct, configuration, includeUnmatchedLogonCount: request.Tab != "all");
         }
         var policy=Obj(new{password_age=365,inactivity=90});var exceptions=new JsonObject();
         if(users)
@@ -233,9 +249,18 @@ public sealed class AdV2Store(IPostgresConnectionFactory connections, IConfigura
             var eligibleWorkplaces = workplaceUsers.GroupBy(u => (u.SourceDomain, u.Sid))
                 .Where(g => g.Count() == 1 && g.First().Domain == g.Key.SourceDomain && workplaceAccounts[(g.First().Domain, g.Key.Sid)] == 1)
                 .Select(g => g.Key).ToHashSet();
-            var workplaces = workplaceAllowed ? await AdLastWorkplace.ReadAsync(db, request.Domains,
-                eligibleWorkplaces.Select(k => k.Sid).Where(s => s.Length > 0).Distinct().ToArray(), ct, configuration, request.Facts, request.Access, request.Action) : [];
-            workplaces = workplaces.Where(p => eligibleWorkplaces.Contains(p.Key)).ToDictionary(p => p.Key, p => p.Value);
+            async Task<JsonObject> WithWorkplaces(JsonObject result)
+            {
+                if (!workplaceAllowed || result["items"] is not JsonArray items || items.Count == 0) return result;
+                var accounts = items.OfType<JsonObject>().Select(row => (Row: row,
+                    Key: (row.Int("domain_id"), row.Text("sid")?.ToLowerInvariant() ?? "")))
+                    .Where(account => account.Key.Item2.Length > 0 && eligibleWorkplaces.Contains(account.Key)).ToArray();
+                var workplaces = await AdLastWorkplace.ReadAsync(db, request.Domains,
+                    accounts.Select(account => account.Key.Item2).Distinct().ToArray(), ct, configuration, request.Facts, request.Access, request.Action);
+                foreach (var (row, key) in accounts)
+                    if (workplaces.TryGetValue(key, out var workplace)) row["last_workplace"] = workplace.DeepClone();
+                return result;
+            }
             if (request.Tab == "semantic")
             {
                 try
@@ -245,15 +270,16 @@ public sealed class AdV2Store(IPostgresConnectionFactory connections, IConfigura
                     var workers = await AdJson.ReadAsync(db, "select status,heartbeat_at,expected_interval_seconds,details_json::text as details from runtime_worker_heartbeats where worker_name='semantic'", ct);
                     var worker = workers.FirstOrDefault();
                     if (worker is not null) worker["details_json"] = JsonNode.Parse(worker.Text("details") ?? "{}");
-                    return AdUsersTabs.Query(request, sources, policy, fields, exceptions, workplaces, findings.ToDictionary(r => r.Int("entity_id"), r => r.Int("finding_count")), AdUsersTabs.SemanticState(worker));
+                    return await WithWorkplaces(AdUsersTabs.Query(request, sources, policy, fields, exceptions,
+                        findings: findings.ToDictionary(r => r.Int("entity_id"), r => r.Int("finding_count")), semanticState: AdUsersTabs.SemanticState(worker)));
                 }
                 catch (PostgresException e) when (e.SqlState == "42501") { return Result(request.Key, "denied"); }
                 catch (NpgsqlException) { return Result(request.Key, "error", coverage: Obj(new { reason = "semantic_unavailable" })); }
             }
             var episodes = (activity?["temporary_memberships"] as JsonArray)?.OfType<JsonObject>().ToLookup(row => row.Int("entity_id"));
-            var userResult = AdUsersTabs.Query(request, sources, policy, fields, exceptions, workplaces, episodes: episodes);
+            var userResult = AdUsersTabs.Query(request, sources, policy, fields, exceptions, episodes: episodes);
             if (activity is not null) AdUsersActivity.ApplyCoverage(userResult, activity, false);
-            return userResult;
+            return await WithWorkplaces(userResult);
         }
         var rows = new List<JsonObject>();
         var allRows=new List<JsonObject>();

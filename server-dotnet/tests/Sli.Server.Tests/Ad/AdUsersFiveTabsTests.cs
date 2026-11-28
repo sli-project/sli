@@ -65,6 +65,46 @@ public sealed class AdUsersFiveTabsTests
     }
     static JsonArray Direct() => Array(new[] { new { group_id = 10, group = "Synthetic privileged group", relation = "direct", basis = "privileged_membership" } });
     static JsonArray Effective(string relation) => Array(new[] { new { id = "group:10", name = "Synthetic nested group", watchGroup = true, relation } });
+    [Fact] public void Inventory_reports_lockout_and_password_flags_with_the_same_severity_as_review()
+    {
+        var privileged = Account(1, locked: true);
+        privileged["privilegedMemberships"] = Direct();
+        privileged["passwordNeverExpires"] = true;
+        var ordinary = Account(2);
+        ordinary["passwordNotRequired"] = true;
+        ordinary["passwordNeverExpires"] = true;
+        var rows = Query(Snapshot(privileged, ordinary), "all")["items"]!.AsArray();
+        foreach (var (row, account) in rows.Zip(new[] { privileged, ordinary }))
+        {
+            var reasons = row!["reasons"]!.AsArray();
+            var assessments = AdReviewChecks.Evaluate(true, account, DateTimeOffset.Parse(Observed));
+            Assert.All(reasons.Where(reason => reason.Text("key") is "locked_out" or "password_not_required" or "password_never_expires" or "privileged_password_never_expires"), reason => Assert.True(assessments[reason.Text("key")!]));
+        }
+        Assert.Contains(rows[0]!["reasons"]!.AsArray(), reason => reason.Text("key") == "locked_out" && reason.Text("severity") == "high");
+        Assert.Contains(rows[1]!["reasons"]!.AsArray(), reason => reason.Text("key") == "password_never_expires" && reason.Text("severity") == "low");
+    }
+
+    [Fact] public void Accounts_page_keeps_filter_totals_and_full_details_across_pages()
+    {
+        var enabled = Account(1, locked: true);
+        enabled["privilegedMemberships"] = Direct();
+        enabled["ou"] = "Support";
+        var second = Account(2, locked: true);
+        second["ou"] = "Support";
+        var disabled = Account(3, false);
+        disabled["ou"] = "Support";
+        var snapshot = Snapshot(disabled, second, enabled, Account(4));
+        var filters = Obj(new { account_rows = "yes", account_state = "enabled", ou = "Support" });
+        var first = Query(snapshot, "all", filters, limit: 1);
+        var page = Query(snapshot, "all", filters, limit: 1, cursor: first.Text("next_cursor"));
+        Assert.Equal(new long[] { 1 }, Ids(first));
+        Assert.Equal(new long[] { 2 }, Ids(page));
+        Assert.Equal(2, first.Int("filtered_count"));
+        Assert.Equal(1, first["coverage"].Int("privileged_accounts"));
+        var selected = Assert.Single(first["items"]!.AsArray());
+        Assert.Contains(selected!["reasons"]!.AsArray(), reason => reason.Text("key") == "locked_out" && reason.Text("severity") == "high");
+        Assert.Contains("Support", first["filter_options"]!["ou"]!.AsArray().Select(option => option.Text("value")));
+    }
     [Fact] public void Established_protected_membership_remains_visible_as_privilege_without_a_deviation()
     {
         var account = Account(1, password: Observed, activity: Observed);
@@ -250,9 +290,11 @@ public sealed class AdUsersFiveTabsTests
         var r = await store.ReadAsync(Request("risk"), fields => !fields.Contains("technical"), Ct);
         Assert.Equal(new long[] { 1 }, Ids(r)); Assert.Equal(new[] { "inactive_threshold" }, Keys(r["items"]![0]!["reason_keys"]));
         Assert.Equal(1, r["coverage"].Int("unknown_accounts")); Assert.True(JsonNode.DeepEquals(Policy(120, 30), r["coverage"]!["hygiene_policy"]));
+        var cached = await store.ReadAsync(Request("all", Obj(new { account_rows = "yes" })), fields => !fields.Contains("technical"), Ct);
+        Assert.Equal(new long[] { 1, 2 }, Ids(cached));
         await PostCollectionPostgres.Sql(db, "update users_report_v2_snapshots set payload_json=jsonb_set(payload_json,'{users,0,enabled}','false')", Ct);
-        var failure = await store.ReadAsync(Request("all"), _ => false, Ct);
-        Assert.Empty(Ids(failure)); Assert.NotEqual("ok", failure.Text("state"));
+        var failure = await store.ReadAsync(Request("all", Obj(new { account_rows = "yes" })), fields => !fields.Contains("technical"), Ct);
+        Assert.Empty(Ids(failure)); Assert.Equal("error", failure.Text("state"));
     }
     [Fact] public async Task Semantic_SQL_counts_only_exact_open_published_unsuppressed_links_and_reports_reader_failure()
     {
