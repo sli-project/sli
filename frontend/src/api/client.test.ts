@@ -202,6 +202,14 @@ describe("eventsBatch", () => {
     expect(options).toMatchObject({ credentials: "same-origin" });
     expect(options.headers).toMatchObject({ "Accept-Language": "ru" });
   });
+
+  it("checks a retained record without rounding its ID or requiring it to exist", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ items: [] }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.eventAvailable("9007199254740993")).resolves.toBe(false);
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/events/batch?event_db_id=9007199254740993");
+  });
 });
 
 describe("v4ReportExportUrl", () => {
