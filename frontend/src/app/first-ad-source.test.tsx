@@ -25,7 +25,8 @@ const emptySetup: SetupStatus = {
   steps: [{ id: "domains", title: "Domains", state: "todo", summary: "No domains" }],
   report_domain: { key: "reports.domain_fqdn", source: "not_configured", value: "" },
   domains: [], domain_controllers: [], domain_controller_source: "none", sources: [],
-  agent_collection: { state: "unknown", checked_at_utc: checkedAt, active_agents: 0, current_agents: 0, items: [] },
+  agent_collection: { state: "unknown", checked_at_utc: checkedAt, active_agents: 0, current_agents: 0,
+    has_domain_controller_agent: false, items: [] },
   collection: null,
 };
 
@@ -42,6 +43,7 @@ function ownerAccess(owner: boolean) {
 function show(page: ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}>{page}</QueryClientProvider>);
+  return client;
 }
 
 function definition(key: string): ReportDefinitionDto {
@@ -73,7 +75,33 @@ it("offers the owner a single path to add the first agent on the empty Home page
   show(<HomePage/>);
   const action = await screen.findByRole("link", { name: t("agents.addComputer") });
   expect(action.getAttribute("href")).toBe("/app/agents?register=1");
+  expect(action.parentElement?.textContent).toBe(`${t("systemStatus.step.agent")} → ${t("agents.addComputer")}`);
   expect(screen.getAllByRole("link")).toEqual([action]);
+});
+
+it("keeps the Home action with a configured domain and workstation, then removes it after DC registration", async () => {
+  const workstationSetup = { ...emptySetup, agent_collection: { ...emptySetup.agent_collection!, state: "partial" as const, active_agents: 1 } };
+  vi.mocked(api.setupStatus).mockResolvedValue(workstationSetup);
+  vi.mocked(api.homePeriod).mockResolvedValue({
+    domains: [{ id: 7, name: "example.test" }], domain_id: 7, from: checkedAt, to: checkedAt, updated_at: checkedAt,
+    active_operator_count: null, since_previous_login: null, problems: null, weak_spots: null, changes: null,
+  });
+  const client = show(<HomePage/>);
+  expect(await screen.findByRole("link", { name: t("agents.addComputer") })).toBeTruthy();
+  vi.mocked(api.setupStatus).mockResolvedValue({ ...workstationSetup,
+    agent_collection: { ...workstationSetup.agent_collection, has_domain_controller_agent: true } });
+  await client.invalidateQueries({ queryKey: ["setup-status"] });
+  await waitFor(() => expect(screen.queryByRole("link", { name: t("agents.addComputer") })).toBeNull());
+});
+
+it.each(["unavailable", "viewer"] as const)("does not show the Home action when setup is %s", async state => {
+  if (state === "viewer") ownerAccess(false);
+  else vi.mocked(api.setupStatus).mockResolvedValue({ ...emptySetup, agent_collection: {
+    ...emptySetup.agent_collection!, state: "unavailable", has_domain_controller_agent: undefined,
+  } });
+  show(<HomePage/>);
+  await screen.findByText(t("home.loadFailed.problems"));
+  expect(screen.queryByRole("link", { name: t("agents.addComputer") })).toBeNull();
 });
 
 it.each(["security.events.chains", "ad.infrastructure", "ad.users.v2", "ad.computers.v6"])(

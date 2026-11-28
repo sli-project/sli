@@ -10,6 +10,30 @@ namespace Sli.Server.Tests.InstallationSetup;
 public sealed class SetupAgentCollectionTests
 {
     [Theory]
+    [InlineData("active", "domain_controller", false, false, true)]
+    [InlineData("disabled", "domain_controller", false, false, true)]
+    [InlineData("disabled", "domain_controller", false, true, false)]
+    [InlineData("active", "workstation", false, false, false)]
+    [InlineData("active", null, true, false, true)]
+    [InlineData("active", "file_server", true, false, false)]
+    [InlineData("replaced", "domain_controller", true, false, false)]
+    public void First_run_uses_registered_dc_agents_even_before_they_send_data(
+        string status, string? role, bool legacyAssignment, bool removalRequested, bool expected)
+    {
+        var agents = Agents();
+        var agent = agents[0]!;
+        agent["status"] = status;
+        agent["machine_role"] = role;
+        agent["removal_requested"] = removalRequested;
+        agent["last_seen"] = null;
+        if (!legacyAssignment) agent["assigned_modules"] = new JsonArray();
+
+        var health = SetupCollectionHealth.View(agents, new JsonArray(), DateTimeOffset.Parse(Stamp), diagnosticsAvailable: false);
+        Assert.Equal(expected, health["has_domain_controller_agent"]!.GetValue<bool>());
+        Assert.Equal(0, health["connected_domain_controllers"]!.GetValue<int>());
+    }
+
+    [Theory]
     [InlineData(20, 20, "current", null)]
     [InlineData(20, 900, "current", null)]
     [InlineData(20, 901, "error", "import_overdue")]

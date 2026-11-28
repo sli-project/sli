@@ -1,11 +1,15 @@
+using System.Net;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Npgsql;
 using NpgsqlTypes;
+using Sli.Server.Auth.Lifecycle;
 using Sli.Server.Infrastructure;
 using Sli.Server.Operations;
 
@@ -40,6 +44,49 @@ internal sealed class AgentInstallPackages(IConfiguration config, IAgentControlA
         await LockAsync(db, tx, ct, shared: true);
         if (SourceAvailable && await ReadGrantAsync(db, tx, ct) is { } current && File.Exists(PackagePath(current.Package))) return Response(current);
         return JsonSerializer.SerializeToElement(new { server_url = (string?)null, package_url = (string?)null });
+    }
+
+    public async Task<JsonElement> PreferRequestOriginAsync(JsonElement settings, AuthRequestIdentity request,
+        IPAddress? localAddress, CancellationToken ct)
+    {
+        if (settings.GetProperty("server_url").GetString() is not { } address
+            || config["Kestrel:Certificates:Default:Path"] is not { } path) return settings;
+        try
+        {
+            using var certificate = X509Certificate2.CreateFromPem(await File.ReadAllTextAsync(path, ct));
+            var preferred = await PreferredOriginAsync(request, new Uri(address), localAddress, certificate, Dns.GetHostAddressesAsync, ct);
+            if (preferred is null) return settings;
+            var response = JsonObject.Create(settings)!;
+            response["preferred_server_url"] = preferred;
+            return JsonSerializer.SerializeToElement(response);
+        }
+        catch (Exception error) when (error is IOException or CryptographicException or UnauthorizedAccessException)
+        {
+            return settings;
+        }
+    }
+
+    internal static async Task<string?> PreferredOriginAsync(AuthRequestIdentity request, Uri current, IPAddress? localAddress,
+        X509Certificate2 certificate, Func<string, CancellationToken, Task<IPAddress[]>> resolve, CancellationToken ct)
+    {
+        var candidate = ExistingOrigin(AuthRequestPolicy.CanonicalOrigin(request.Scheme, request.Host), certificate);
+        if (candidate is null || candidate.HostNameType != UriHostNameType.Dns || candidate == current) return null;
+
+        try
+        {
+            var addresses = await resolve(candidate.IdnHost, ct);
+            if (addresses.Length == 0 || addresses.Any(ip => !AgentConsolePackage.IsRemoteHost(ip.ToString()))) return null;
+            // A certificate name can be valid without DNS taking agents to this installation.
+            var endpointAddresses = IPAddress.TryParse(current.IdnHost, out var currentIp)
+                ? [currentIp] : await resolve(current.IdnHost, ct);
+            var known = endpointAddresses.Select(ip => ip.MapToIPv6()).ToHashSet();
+            if (localAddress is not null) known.Add(localAddress.MapToIPv6());
+            return addresses.All(ip => known.Contains(ip.MapToIPv6())) ? candidate.AbsoluteUri : null;
+        }
+        catch (SocketException)
+        {
+            return null;
+        }
     }
 
     public async Task<FileStreamHttpResult> OpenDownloadAsync(NpgsqlConnection db, NpgsqlTransaction tx, string revision, CancellationToken ct)

@@ -666,7 +666,11 @@ public sealed class PasswordDomainAutoPostgresTests
             """,ct);
         await fixture.Pg.ApplyFileAsync(Migration,null,ct);
         await using(var query=new NpgsqlCommand("select password_detection_domain_id from sli_agent_module_bindings",owner)) Assert.Equal(DBNull.Value,await query.ExecuteScalarAsync(ct));
+        // System status reads the current registry schema, including machine_role from migration 450.
+        foreach(var migration in MigrationDirectory.Read(372))
+            await fixture.Pg.ApplyFileAsync(migration.Path,null,ct);
         var health=await SetupCollectionHealth.ReadAsync(new InstallationDatabase(new Connections(fixture.Dsn("adlog_user"))),ct);
+        Assert.NotEqual("unavailable",(string?)health["state"]);
         Assert.Null(health["diagnostics"]);
         var agent=Assert.Single(health["items"]!.AsArray())!;
         Assert.Equal("dc.example.test",(string?)agent["name"]); Assert.Equal(true,(bool?)agent["password_domain_required"]);

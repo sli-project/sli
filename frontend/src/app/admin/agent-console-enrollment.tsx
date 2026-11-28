@@ -5,11 +5,12 @@ import { Button } from "../../design-system";
 import { DateInput } from "../../design-system/PeriodPicker";
 import { t } from "../../i18n";
 
-export function AgentConsoleEnrollment({ onClose }: { onClose: () => void }) {
+export function AgentConsoleEnrollment({ onClose, onKeys, onSettings }: { onClose: () => void; onKeys: () => void; onSettings: () => void }) {
   const [ready, setReady] = useState<AgentInstallPackage>();
   const [serverUrl, setServerUrl] = useState("");
   const [hostLimit, setHostLimit] = useState("");
   const [expires, setExpires] = useState("");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [limitsOpen, setLimitsOpen] = useState(false);
   const [addressStatus, setAddressStatus] = useState<"loading" | "loaded" | "failed">("loading");
   const [attempt, setAttempt] = useState(0);
@@ -23,7 +24,7 @@ export function AgentConsoleEnrollment({ onClose }: { onClose: () => void }) {
 
   function apply(packageInfo: AgentInstallPackage) {
     setReady(packageInfo);
-    setServerUrl(packageInfo.server_url ?? "");
+    setServerUrl(packageInfo.preferred_server_url ?? packageInfo.server_url ?? "");
     setHostLimit(packageInfo.host_limit?.toString() ?? "");
     setExpires(packageInfo.expires_at?.slice(0, 10) ?? "");
   }
@@ -84,6 +85,11 @@ export function AgentConsoleEnrollment({ onClose }: { onClose: () => void }) {
       <form onSubmit={(event) => { event.preventDefault(); void download(); }}>
         <div className="sli-ds-modal__head"><Heading slot="title">{t("agents.addComputer")}</Heading></div>
         <div className="sli-ds-modal__body">
+          <ol>
+            <li>{t("agents.console.step.download")}</li>
+            <li>{t("agents.console.step.run")}</li>
+            <li>{t("agents.console.step.list")}</li>
+          </ol>
           <div><Button variant="primary" type="submit"
             disabled={busy || addressStatus === "loading" || !serverUrl.trim() || (!changed && !ready?.package_url)}>{t("agents.console.download")}</Button></div>
           <div className="sli-ds-field">
@@ -95,20 +101,29 @@ export function AgentConsoleEnrollment({ onClose }: { onClose: () => void }) {
             {addressError && <span className="sli-ds-field__error" id="agent-console-address-error" role="alert">{addressError}</span>}
           </div>
           {!changed && ready?.sha256 && <div className="sli-ds-field">
-            <span>SHA-256</span><code>{ready.sha256.slice(0, 32)}<wbr/>{ready.sha256.slice(32)}</code>
+            <span>{t("agents.console.checksum")}</span><code>{ready.sha256.slice(0, 32)}<wbr/>{ready.sha256.slice(32)}</code>
           </div>}
-          <div><Button aria-expanded={limitsOpen} aria-controls={limitsOpen ? "agent-package-limits" : undefined}
-            onClick={() => setLimitsOpen(!limitsOpen)}>{t("agents.console.restrict")}</Button></div>
-          {limitsOpen && <div id="agent-package-limits" className="sli-ds-filters__fields" inert={busy || addressStatus === "loading"}>
-            <div className="sli-ds-field">
-              <label htmlFor="agent-console-limit">{t("agents.console.hostLimit")}</label>
-              <input id="agent-console-limit" type="number" min={1} max={2147483647} value={hostLimit}
-                onChange={(event) => setHostLimit(event.target.value)}/>
+          <div><Button aria-expanded={advancedOpen} aria-controls={advancedOpen ? "agent-console-advanced" : undefined}
+            onClick={() => setAdvancedOpen(!advancedOpen)}>{t("agents.console.advanced")}</Button></div>
+          {advancedOpen && <div id="agent-console-advanced" className="sli-ds-filters">
+            <div className="sli-ds-filters__fields">
+              <Button aria-expanded={limitsOpen} aria-controls={limitsOpen ? "agent-package-limits" : undefined}
+                aria-describedby="agent-package-limits-help" onClick={() => setLimitsOpen(!limitsOpen)}>{t("agents.console.limits")}</Button>
+              <Button disabled={busy} onClick={onKeys}>{t("agents.console.keys")}</Button>
+              <Button disabled={busy} onClick={onSettings}>{t("agents.registrationSettings")}</Button>
             </div>
-            <div className="sli-ds-field">
-              <label htmlFor="agent-console-expiry">{t("agents.console.expiry")}</label>
-              <DateInput id="agent-console-expiry" label={t("agents.console.expiry")} precision="date" value={expires} onChange={setExpires}/>
-            </div>
+            <small id="agent-package-limits-help">{t("agents.console.limitsHelp")}</small>
+            {limitsOpen && <div id="agent-package-limits" className="sli-ds-filters__fields" inert={busy || addressStatus === "loading"}>
+              <div className="sli-ds-field">
+                <label htmlFor="agent-console-limit">{t("agents.console.hostLimit")}</label>
+                <input id="agent-console-limit" type="number" min={1} max={2147483647} value={hostLimit}
+                  onChange={(event) => setHostLimit(event.target.value)}/>
+              </div>
+              <div className="sli-ds-field">
+                <label htmlFor="agent-console-expiry">{t("agents.console.expiry")}</label>
+                <DateInput id="agent-console-expiry" label={t("agents.console.expiry")} precision="date" value={expires} onChange={setExpires}/>
+              </div>
+            </div>}
           </div>}
           {addressStatus === "failed" && <div>
             <span role="alert">{t("agents.console.serverUrlLoadError")}</span>{" "}

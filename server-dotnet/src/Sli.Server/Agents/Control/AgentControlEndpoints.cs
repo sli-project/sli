@@ -96,6 +96,14 @@ public static class AgentControlEndpoints
                 await download.ExecuteAsync(context);
                 return;
             }
+            if (!mutation && route == AgentInstallPackages.SettingsPath)
+            {
+                var settings = await packages.ReadSettingsAsync(db, tx, ct);
+                await tx.CommitAsync(ct);
+                settings = await packages.PreferRequestOriginAsync(settings, policy.Resolve(context), context.Connection.LocalIpAddress, ct);
+                await DomainHttp.WriteAsync(context, settings, 200, ct);
+                return;
+            }
             if (mutation && (route == AgentInstallPackages.SettingsPath || route == AgentInstallPackages.SettingsPath + "/revoke"))
             {
                 Guid? revoke = route.EndsWith("/revoke", StringComparison.Ordinal)
@@ -112,7 +120,6 @@ public static class AgentControlEndpoints
                     Values(context, "after").FirstOrDefault()),
                 ("GET", ConsoleTokens) => await management.ListConsoleTokensAsync(db, tx, actor, durable),
                 ("GET", ConsoleTokens + "/settings") => await management.ReadConsoleSettingsAsync(db, tx, durable),
-                ("GET", AgentInstallPackages.SettingsPath) => await packages.ReadSettingsAsync(db, tx, durable),
                 ("GET", _) => await management.ListTokensAsync(db, tx, actor, durable),
                 ("POST", ConsoleTokens) => await management.CreateConsoleTokenAsync(db, tx, body!.RootElement, actor, context, durable),
                 ("POST", ConsoleTokens + "/revoke") => await management.RevokeConsoleTokenAsync(db, tx, body!.RootElement, actor, durable),

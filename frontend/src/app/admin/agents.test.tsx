@@ -57,8 +57,15 @@ async function openCard(name = agent.host_name!) {
   fireEvent.click((await screen.findByText(name)).closest("tr")!);
   return screen.getByRole("dialog", { name });
 }
+function openAdvanced() {
+  const dialog = screen.queryByRole("dialog", { name: t("agents.addComputer") });
+  if (!dialog) fireEvent.click(screen.getAllByRole("button", { name: t("agents.addComputer") })[0]);
+  const panel = within(screen.getByRole("dialog", { name: t("agents.addComputer") }));
+  fireEvent.click(panel.getByRole("button", { name: t("agents.console.advanced") }));
+  return panel;
+}
 function alternativeRegistration() {
-  fireEvent.click(screen.getByRole("button", { name: t("agents.registrationSettings") }));
+  fireEvent.click(openAdvanced().getByRole("button", { name: t("agents.registrationSettings") }));
 }
 async function manual() {
   alternativeRegistration();
@@ -178,7 +185,10 @@ it("opens the ready download from the registration link without creating a comma
   const panel = within(await screen.findByRole("dialog", { name: t("agents.addComputer") }));
   const address = panel.getByLabelText(t("agents.console.serverUrl"));
   await waitFor(() => expect(address).toHaveProperty("value", packageInfo.server_url));
-  expect(panel.getByText("SHA-256").nextElementSibling?.textContent).toBe(packageInfo.sha256);
+  expect(panel.getByText(t("agents.console.checksum")).nextElementSibling?.textContent).toBe(packageInfo.sha256);
+  expect(within(panel.getByRole("list")).getAllByRole("listitem").map(item => item.textContent)).toEqual([
+    t("agents.console.step.download"), t("agents.console.step.run"), t("agents.console.step.list"),
+  ]);
   fireEvent.click(panel.getByRole("button", { name: t("agents.console.download") }));
   expect(download).toHaveBeenCalledOnce();
   expect(download.mock.contexts[0]).toHaveProperty("href", new URL(packageInfo.package_url, window.location.origin).href);
@@ -340,8 +350,9 @@ it("opens the domain form for the linked domain controller", async () => {
 it("offers registration in the add panel and hides file audit", async () => {
   mount(); await screen.findByText(agent.host_name!);
   expect(state.deploymentDirectory).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: t("agents.registrationSettings") })).toBeNull();
   alternativeRegistration();
-  const drawer = screen.getByRole("dialog", { name: t("agents.addComputer") });
+  const drawer = screen.getByRole("dialog", { name: t("agents.registrationSettings") });
   expect(within(drawer).getByRole("tab", { name: t("agents.deployment.title") }).getAttribute("aria-selected")).toBe("true");
   expect(within(drawer).getByRole("button", { name: t("agents.deployment.create") })).toBeTruthy();
   fireEvent.click(within(drawer).getByRole("tab", { name: t("agents.manualEnrollment") }));
@@ -372,14 +383,33 @@ it("saves the address and optional limits before downloading a rebuilt package",
   const address = panel.getByLabelText(t("agents.console.serverUrl"));
   await waitFor(() => expect(address).toHaveProperty("value", packageInfo.server_url));
   fireEvent.change(address, { target: { value: settings.server_url } });
-  fireEvent.click(panel.getByRole("button", { name: t("agents.console.restrict") }));
+  const advanced = panel.getByRole("button", { name: t("agents.console.advanced") });
+  expect(advanced.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(advanced);
+  expect(panel.getByText(t("agents.console.limitsHelp"))).toBeTruthy();
+  fireEvent.click(panel.getByRole("button", { name: t("agents.console.limits") }));
   fireEvent.change(panel.getByLabelText(t("agents.console.hostLimit")), { target: { value: "300" } });
   fireEvent.change(panel.getByLabelText(t("agents.console.expiry")), { target: { value: "2037-01-21" } });
   fireEvent.click(panel.getByRole("button", { name: t("agents.console.download") }));
   await waitFor(() => expect(download).toHaveBeenCalledOnce());
   expect(download.mock.contexts[0]).toHaveProperty("href", new URL(rebuilt.package_url, window.location.origin).href);
   expect(state.configurePackage).toHaveBeenCalledExactlyOnceWith(settings);
-  expect(panel.getByText("SHA-256").nextElementSibling?.textContent).toBe(rebuilt.sha256);
+  expect(panel.getByText(t("agents.console.checksum")).nextElementSibling?.textContent).toBe(rebuilt.sha256);
+});
+
+it("downloads a package built for the preferred hostname and labels its checksum after rebuilding", async () => {
+  const preferred = "https://sli.example.test:8443/";
+  const rebuilt = { ...packageInfo, server_url: preferred, sha256: "b".repeat(64), package_url: packageInfo.package_url + "-preferred" };
+  state.consoleSettings.mockResolvedValueOnce({ ...packageInfo, preferred_server_url: preferred });
+  state.configurePackage.mockResolvedValueOnce(rebuilt);
+  const download = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  const panel = await openPackageDialog();
+  await waitFor(() => expect(panel.getByLabelText(t("agents.console.serverUrl"))).toHaveProperty("value", preferred));
+  expect(panel.queryByText(t("agents.console.checksum"))).toBeNull();
+  fireEvent.click(panel.getByRole("button", { name: t("agents.console.download") }));
+  await waitFor(() => expect(download).toHaveBeenCalledOnce());
+  expect(state.configurePackage).toHaveBeenCalledExactlyOnceWith({ server_url: preferred });
+  expect(panel.getByText(t("agents.console.checksum")).nextElementSibling?.textContent).toBe(rebuilt.sha256);
 });
 
 it("shows the certificate names beside a rejected address", async () => {
@@ -419,7 +449,9 @@ it("shows the package key, computer count and revocation action", async () => {
   state.revokeConsoleToken.mockResolvedValue({});
   const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
   mount(); await screen.findByText(agent.host_name!);
-  fireEvent.click(screen.getByRole("button", { name: t("agents.console.keys") }));
+  expect(screen.queryByRole("button", { name: t("agents.console.keys") })).toBeNull();
+  expect(state.consoleTokens).not.toHaveBeenCalled();
+  fireEvent.click(openAdvanced().getByRole("button", { name: t("agents.console.keys") }));
   const panel = within(screen.getByRole("dialog", { name: t("agents.console.keys") }));
   await panel.findByText(t("agents.console.packagedKey", { time: "12:05", count: 3 }));
   fireEvent.click(panel.getByRole("button", { name: t("agents.console.revoke") }));

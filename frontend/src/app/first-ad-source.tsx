@@ -5,6 +5,8 @@ import { StateView } from "../design-system";
 import { t } from "../i18n";
 import { useEffectiveAccess } from "./App";
 
+export const firstAdAgentHref = "/app/agents?register=1";
+
 export function useFirstAdSource(search: URLSearchParams, enabled: boolean) {
   const access = useEffectiveAccess();
   const canCheck = enabled && access?.platform_owner === true && !access.preview
@@ -30,6 +32,6 @@ export function isEmptyFirstAdReportResult(result: ReportResultDto | undefined) 
 
 export function FirstAdSource() {
   return <StateView state="empty" titleMessage={{ code: "systemStatus.step.agent", params: {} }} detail={
-    <a className="sli-ds-button" href="/app/agents?register=1">{t("agents.addComputer")}</a>
+    <a className="sli-ds-button" href={firstAdAgentHref}>{t("agents.addComputer")}</a>
   }/>;
 }
