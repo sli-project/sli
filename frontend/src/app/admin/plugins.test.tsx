@@ -241,8 +241,12 @@ it.each([
       status: t("plugins.enabled"), servers: 1, audited: state === "working" ? 2 : 0, shares: 3,
     });
     expect(await screen.findByText(summary, { exact: false, selector: "header p" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: t("file-audit.screen.overview") }).getAttribute("href"))
-      .toBe("/app/report/file-audit.overview?tab=overview");
+    expect(screen.getByRole("link", { name: t("pluginPage.auditResources") }).getAttribute("href"))
+      .toBe("/app/report/file-audit.overview?tab=audit-state");
+  } else if (pluginId === "sli.remote-access") {
+    expect(await screen.findByRole("heading", { name: t("pluginPage.radius.disconnected") })).toBeTruthy();
+  } else if (pluginId === "sli.workstations") {
+    expect(await screen.findByRole("link", { name: expected })).toBeTruthy();
   } else {
     expect(await screen.findByText(expected, { selector: "header p" })).toBeTruthy();
   }
@@ -250,7 +254,7 @@ it.each([
 
   const root = createRootRoute();
   const router = createRouter({ routeTree: root.addChildren(createAdminPlaceholderRoutes(root)),
-    history: createMemoryHistory({ initialEntries: [href] }), basepath: "/app" });
+    history: createMemoryHistory({ initialEntries: [href] }), basepath: "/app", defaultHashScrollIntoView: false });
   mount(<RouterProvider router={router}/>);
   const table = await screen.findByRole("table", { name: t("plugins.title") });
   expect(within(table).getByRole("cell", { name: expected })).toBeTruthy();

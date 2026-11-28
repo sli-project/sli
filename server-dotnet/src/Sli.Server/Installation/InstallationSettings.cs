@@ -150,10 +150,15 @@ public static class InstallationSettings
         const string error = "workstation_logon_policy_invalid";
         try
         {
-            if (raw.EnumerateRunes().Count() > 1024) throw new InstallationException(error);
+            int rawLength = raw.EnumerateRunes().Count();
+            if (rawLength > 1040) throw new InstallationException(error);
             var value = JsonNode.Parse(raw)!.AsObject();
-            if (!InstallationPackages.Keys(value, "version", "policies") || value["version"] is not JsonValue version || !version.TryGetValue<int>(out int number)
+            if (value.Any(entry => entry.Key is not ("version" or "policies" or "enabled"))
+                || value.ContainsKey("enabled") && value["enabled"]?.GetValueKind() is not (JsonValueKind.True or JsonValueKind.False)
+                || value["version"] is not JsonValue version || !version.TryGetValue<int>(out int number)
                 || number is < 1 or >= int.MaxValue || value["policies"] is not JsonArray policies) throw new InstallationException(error);
+            int limit = LogonPolicyLengthLimit(value);
+            if (rawLength > limit) throw new InstallationException(error);
             var scopes = new HashSet<string>(StringComparer.Ordinal);
             foreach (var rule in policies.OfType<JsonObject>())
             {
@@ -183,12 +188,20 @@ public static class InstallationSettings
             }
             if (policies.Any(p => p is not JsonObject)) throw new InstallationException(error);
             string normalized = Canonical(value);
-            if (normalized.EnumerateRunes().Count() > 1024) throw new InstallationException(error);
+            if (normalized.EnumerateRunes().Count() > limit) throw new InstallationException(error);
             return normalized;
         }
         catch (Exception e) when (e is JsonException or InvalidOperationException or InstallationException or TimeZoneNotFoundException or ArgumentException)
         { throw new InstallationException(error); }
     }
+    // The optional flag does not consume the existing schedule allowance.
+    internal static int LogonPolicyLengthLimit(JsonObject value) => 1024 + (value["enabled"]?.GetValueKind() switch
+    {
+        JsonValueKind.True => 15,
+        JsonValueKind.False => 16,
+        _ => 0,
+    });
+
     public static void CheckPolicyVersion(string value, string? previous)
     {
         if (previous is null) return;

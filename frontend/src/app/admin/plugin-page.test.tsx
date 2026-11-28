@@ -29,10 +29,12 @@ let denySettings = false;
 let sigmaEnabled = true;
 let sigmaRulesAvailable = true;
 let sigmaReadFailed = false;
+let sigmaMatches = 4;
 let radiusSources: Array<{ source_instance_id: string; source_state: string }>;
 let client: QueryClient;
 let pluginStates: Record<string, Partial<PluginState>>;
-let setupSources: Array<{ pack_id: string; enabled: boolean; data_state: string }>;
+let setupSources: Array<{ pack_id: string; enabled: boolean; data_state: string;
+  instances?: Array<{ source_instance_id: string; last_data_utc: string | null; data_state: string }> }>;
 const plugin = (plugin_id: string) => ({ plugin_id, installed: true, configured: true, enabled: plugin_id !== "sli.remote-access",
   component_runtime: "running", revision: 7, last_data_at_utc: null,
   status: { state: plugin_id === "sli.remote-access" ? "disabled" : plugin_id === "sli.sigma" ? "no_sources" : "waiting",
@@ -43,9 +45,10 @@ const plugin = (plugin_id: string) => ({ plugin_id, installed: true, configured:
 beforeEach(() => {
   settings = original(); requests = []; rejectKey = ""; denySettings = false; radiusSources = []; sigmaEnabled = true;
   pluginStates = {}; setupSources = [];
-  sigmaRulesAvailable = true; sigmaReadFailed = false;
+  sigmaRulesAvailable = true; sigmaReadFailed = false; sigmaMatches = 4;
   access.subject.coarse_role = "admin"; access.platform_owner = true;
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
+  vi.spyOn(window, "confirm").mockReturnValue(true);
   vi.stubGlobal("fetch", vi.fn(async (path: string, options?: RequestInit) => {
     const method = options?.method ?? "GET";
     const body = options?.body ? JSON.parse(String(options.body)) : undefined;
@@ -55,6 +58,7 @@ beforeEach(() => {
       if (denySettings) return json({ error: "forbidden" }, 403);
       if (method === "PUT") {
         if (body.key === rejectKey) return json({ error: "invalid_plugin_setting_value", detail: "private-error-marker" }, 400);
+        settings.values[body.key] = body.value;
         return json({ plugin_id: settings.plugin_id, key: body.key, value: body.value });
       }
       if (path === `/api/plugins/${settings.plugin_id}/settings`) return json(settings);
@@ -87,7 +91,7 @@ beforeEach(() => {
       if (method === "POST") sigmaEnabled = body.enabled;
       return json({ rules: [{ rule_id: "7b449a5e-1db5-4dd0-a2dc-4e3a67282538",
         title: "Hidden Local User Creation", level: "high", author: "SigmaHQ", license: "DRL-1.1",
-        source_uri: "https://example.test/rule", enabled: sigmaEnabled, matches_24h: 4 }] });
+        source_uri: "https://example.test/rule", enabled: sigmaEnabled, matches_24h: sigmaMatches }] });
     }
     throw new Error(`Unexpected request ${method} ${path}`);
   }));
@@ -105,15 +109,48 @@ const writes = () => requests.filter((request) => request.method === "PUT");
 
 it("opens Sigma on the rules table and applies the authoritative switch response", async () => {
   mount("sli.sigma");
-  const row = await screen.findByRole("row", { name: /Hidden Local User Creation/ });
+  const row = await screen.findByRole("row", { name: /Создание скрытого локального пользователя/ });
+  expect(screen.queryByRole("tab", { name: "Обзор" })).toBeNull();
   expect(within(row).getByText("4")).toBeTruthy();
-  const toggle = within(row).getByRole("switch", { name: "Hidden Local User Creation", checked: true });
+  expect(within(row).queryByText(/SigmaHQ|DRL-1.1/)).toBeNull();
+  const toggle = within(within(row).getAllByRole("cell")[0]).getByRole("switch", { checked: true });
   fireEvent.click(toggle);
   await waitFor(() => expect(within(row).getByRole("switch", { checked: false })).toHaveProperty("disabled", false));
   expect(requests.filter((request) => request.method === "POST")).toEqual([{
     path: "/api/v1/semantic/sigma-live-rules", method: "POST",
     body: { rule_id: "7b449a5e-1db5-4dd0-a2dc-4e3a67282538", enabled: false },
   }]);
+  fireEvent.click(within(row).getByRole("button", { name: "Создание скрытого локального пользователя" }));
+  const card = screen.getByRole("dialog");
+  expect(within(card).getByText("Hidden Local User Creation")).toBeTruthy();
+  expect(within(card).getByText("SigmaHQ")).toBeTruthy();
+  expect(within(card).getByText("DRL-1.1")).toBeTruthy();
+});
+
+it("hides the Sigma matches column while all counts are zero", async () => {
+  sigmaMatches = 0;
+  mount("sli.sigma");
+  expect(await screen.findByRole("row", { name: /Создание скрытого локального пользователя/ })).toBeTruthy();
+  expect(screen.queryByRole("columnheader", { name: t("security.sigma.live.matches") })).toBeNull();
+});
+
+it("uses one Sigma source table and omits the workstation installation namespace", async () => {
+  setupSources = [
+    { pack_id: "sli.windows.ad-dc", enabled: true, data_state: "fresh", instances: [
+      { source_instance_id: "DC-01", data_state: "fresh", last_data_utc: "2026-11-28T09:30:00Z" },
+    ] },
+    { pack_id: "sli.windows.ad-context", enabled: true, data_state: "fresh", instances: [
+      { source_instance_id: "example.test", data_state: "never", last_data_utc: null },
+      { source_instance_id: "workstations.invalid", data_state: "never", last_data_utc: null },
+    ] },
+  ];
+  mount("sli.sigma");
+  fireEvent.click(await screen.findByRole("tab", { name: "Подключение" }));
+  const table = await screen.findByRole("table");
+  expect(within(table).getAllByRole("columnheader").map(cell => cell.textContent)).toEqual(["Источник", "Что поступает", "Последние данные"]);
+  expect(within(table).getByRole("row", { name: /DC-01.+09:30/ })).toBeTruthy();
+  expect(within(table).getByRole("row", { name: /example.test.+Не собрано/ })).toBeTruthy();
+  expect(screen.queryByText("workstations.invalid")).toBeNull();
 });
 
 it.each(["sli.ad", "sli.gpo"])("retains domain setup in Connection for %s", async (id) => {
@@ -132,7 +169,9 @@ it.each(["sli.ad", "sli.gpo"])("retains domain setup in Connection for %s", asyn
 it("uses Resources counts in the file audit header and has no Connection tab", async () => {
   mount("sli.file-audit");
   expect(await screen.findByText(t("file-audit.resources.summary", { status: t("plugins.enabled"), servers: 1, audited: 1, shares: 6 }), { exact: false })).toBeTruthy();
-  expect(screen.getByRole("link", { name: t("file-audit.screen.overview") }).getAttribute("href")).toContain("file-audit.overview");
+  expect(screen.getByRole("tab", { name: "Ресурсы", selected: true })).toBeTruthy();
+  expect(within(screen.getByRole("tabpanel")).getByRole("link", { name: "Файловые серверы → Аудит" }).getAttribute("href"))
+    .toBe("/app/report/file-audit.overview?tab=audit-state");
   expect(screen.queryByRole("tab", { name: t("pluginPage.tab.connection") })).toBeNull();
   expect(requests.some((request) => request.path === "/api/v1/admin/agents")).toBe(false);
 });
@@ -142,6 +181,7 @@ it("searches for AD accounts by name and saves only the selected SID", async () 
   vi.stubGlobal("CSS", { ...globalThis.CSS, escape: (value: string) =>
     Array.from(value, character => "\\" + character.codePointAt(0)!.toString(16) + " ").join("") });
   mount("sli.file-audit");
+  fireEvent.click(await screen.findByRole("tab", { name: "Настройки" }));
   const picker = await screen.findByRole("combobox", { name: t("plugins.sli.file-audit.settings.excluded_accounts.label") });
   const user = userEvent.setup();
   await user.type(picker, "Backup");
@@ -162,12 +202,11 @@ it("shows the workstation state consistently even when the legacy source pack is
   } };
   mount("sli.workstations");
   const expected = "Включён · Нет подключённых источников · Установите агент SLI на рабочую станцию";
-  const header = await screen.findByText(expected, { selector: "header p" });
+  const header = await screen.findByText(expected, { selector: "header p a" });
   expect(screen.queryByRole("tab", { name: "Подключение" })).toBeNull();
-  const panel = screen.getByRole("tabpanel");
   expect(header).toBeTruthy();
-  expect(within(panel).getByRole("link", { name: "Установите агент SLI на рабочую станцию" }).getAttribute("href")).toBe("/app/agents");
-  expect(panel.textContent).not.toMatch(/Плагин выключен|Сведения о последних данных недоступны/);
+  expect(screen.queryByRole("tab", { name: "Обзор" })).toBeNull();
+  expect(screen.getByRole("link", { name: expected }).getAttribute("href")).toBe("/app/agents");
 });
 
 it("counts a workstation with an agent before it has collection", async () => {
@@ -177,23 +216,18 @@ it("counts a workstation with an agent before it has collection", async () => {
   } };
   mount("sli.workstations");
   expect(await screen.findByText("Включён · 1 компьютер подключён", { selector: "header p" })).toBeTruthy();
-  expect(within(screen.getByRole("tabpanel")).getByText("fixture-workstation")).toBeTruthy();
+  expect(screen.queryByRole("tab", { name: "Обзор" })).toBeNull();
   expect(screen.queryByRole("tab", { name: "Подключение" })).toBeNull();
 });
 
-it("keeps VPN setup and declared rules available while hiding empty Settings and Reports", async () => {
+it("shows one VPN connection guide and a visibly labeled switch while disabled", async () => {
   mount("sli.remote-access");
-  expect(await screen.findByRole("switch", { name: t("plugins.toggle"), checked: false })).toBeTruthy();
-  expect(screen.getByText(t("plugins.status.disabled"))).toBeTruthy();
-  expect(screen.queryByText(t("plugins.enabled"))).toBeNull();
-  expect(await screen.findByText(t("pluginPage.radius.missing"))).toBeTruthy();
-  fireEvent.click(await screen.findByRole("tab", { name: t("pluginPage.tab.rules") }));
-  expect(screen.getByText(t("plugins.sli.remote-access.rules.qw.nps-denials.name"))).toBeTruthy();
-  await waitFor(() => expect(client.getQueryState(["reports-v2-catalog"])?.status).toBe("success"));
-  expect(screen.queryByRole("tab", { name: t("pluginPage.tab.settings") })).toBeNull();
-  expect(screen.queryByRole("tab", { name: t("pluginPage.tab.reports") })).toBeNull();
-  fireEvent.click(screen.getByRole("tab", { name: t("pluginPage.tab.connection") }));
-  expect(await screen.findByText(t("pluginPage.radius.missing"))).toBeTruthy();
+  expect(await screen.findByRole("switch", { name: "Включить VPN / NPS", checked: false })).toBeTruthy();
+  expect(screen.getByText("Включить VPN / NPS")).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "VPN / NPS не подключён" })).toBeTruthy();
+  expect(within(screen.getByRole("list")).getAllByRole("listitem")).toHaveLength(3);
+  expect(screen.queryByRole("tablist")).toBeNull();
+  expect(requests.some(request => request.path === "/api/v1/operations/plugins/sli.remote-access")).toBe(false);
 });
 
 it("keeps the workstation protection report link without a description paragraph", async () => {
@@ -225,11 +259,12 @@ it("keeps the file audit working-hours link without an empty-settings message", 
   expect(panel.textContent).not.toMatch(/На этой вкладке нет настроек|Откройте «Подключение»/);
 });
 
-it("gives a connection action when Sigma rules and sources are absent", async () => {
+it("shows the connection action once when Sigma rules and sources are absent", async () => {
   sigmaRulesAvailable = false;
   mount("sli.sigma");
-  const panel = screen.getByRole("tabpanel");
-  expect(await within(panel).findByText(t("plugins.next.connect_sigma_events"))).toBeTruthy();
+  const panel = await screen.findByRole("tabpanel");
+  expect(await within(panel).findByText(t("security.sigma.live.catalog_empty"))).toBeTruthy();
+  expect(screen.getAllByText(t("plugins.next.connect_sigma_events"), { exact: false })).toHaveLength(1);
   expect(within(panel).queryByText(t("state.unavailable.title"))).toBeNull();
 });
 
@@ -239,17 +274,18 @@ it("names a Sigma rules load failure and can retry", async () => {
   expect((await screen.findByRole("alert")).textContent).toContain(t("security.sigma.live.read_failed"));
   sigmaReadFailed = false;
   fireEvent.click(screen.getByRole("button", { name: t("state.retry") }));
-  expect(await screen.findByRole("row", { name: /Hidden Local User Creation/ })).toBeTruthy();
+  expect(await screen.findByRole("row", { name: /Создание скрытого локального пользователя/ })).toBeTruthy();
 });
 
 it("shows each registered Accounting source once with its distinct subscription states", async () => {
+  pluginStates["sli.remote-access"] = { enabled: true };
   radiusSources = [
     { source_instance_id: "lab-nps", source_state: "manual_enabled" },
     { source_instance_id: "lab-nps", source_state: "subscription_disabled" },
     { source_instance_id: "lab-nps", source_state: "subscription_disabled" },
   ];
   mount("sli.remote-access");
-  fireEvent.click(screen.getByRole("tab", { name: "Подключение" }));
+  fireEvent.click(await screen.findByRole("tab", { name: "Подключение" }));
   const row = await screen.findByRole("row", { name: /lab-nps/ });
   expect(within(row).getByText("Сбор разрешён · Подписка отключена")).toBeTruthy();
   expect(screen.queryByText(t("pluginPage.radius.missing"))).toBeNull();
@@ -311,6 +347,33 @@ it("renders nested workstation policy controls without a JSON editor", async () 
   await chooseOption(screen.getByLabelText("Область действия", { selector: "button" }), "1");
   expect(screen.getByRole("textbox", { name: "Путь подразделения" })).toBeTruthy();
   expect(screen.queryByRole("textbox", { name: "Идентификатор станции" })).toBeNull();
+});
+
+it("disables and re-enables the workstation rule without removing its configured hours", async () => {
+  const schedule = { scope: { kind: "station", station_id: "fixture" }, timezone: "UTC", weekdays: [0],
+    start: "09:00", end: "18:00", include_cached_interactive: false };
+  settings = { plugin_id: "sli.workstations", schema: workstations.settings as unknown as SettingsSchema,
+    rules: workstations.rules, sources: {}, values: { "workstations.logon_policy": { version: 4, policies: [schedule] } } };
+  mount("sli.workstations");
+  const row = await screen.findByRole("row", { name: /Вход вне разрешённого времени/ });
+  vi.mocked(window.confirm).mockReturnValueOnce(false);
+  fireEvent.click(within(row).getByRole("switch", { checked: true }));
+  expect(writes()).toHaveLength(0);
+  fireEvent.click(within(row).getByRole("switch", { checked: true }));
+  const off = await within(row).findByRole("switch", { checked: false });
+  expect(within(row).getByText("Выключен")).toBeTruthy();
+  fireEvent.click(off);
+  await within(row).findByRole("switch", { checked: true });
+  expect(writes().map(request => request.body)).toEqual([
+    { key: "workstations.logon_policy", value: { version: 5, enabled: false, policies: [schedule] } },
+    { key: "workstations.logon_policy", value: { version: 6, enabled: true, policies: [schedule] } },
+  ]);
+  fireEvent.click(screen.getByRole("tab", { name: "Настройки" }));
+  fireEvent.change(await screen.findByRole("textbox", { name: t("pluginPage.field.end") }), { target: { value: "19:00" } });
+  fireEvent.click(screen.getByRole("button", { name: t("platformSettings.save") }));
+  await screen.findByText(t("pluginPage.saved"));
+  expect(writes().at(-1)?.body).toEqual({ key: "workstations.logon_policy",
+    value: { version: 7, enabled: true, policies: [{ ...schedule, end: "19:00" }] } });
 });
 
 it("shows a safe validation refusal and preserves the unsaved edit", async () => {
