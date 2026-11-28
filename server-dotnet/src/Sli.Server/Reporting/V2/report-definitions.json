@@ -8621,6 +8621,31 @@
     "key": "file-audit.overview",
     "params": [
       {
+        "key": "path_search",
+        "label": "Path or resource",
+        "kind": "text",
+        "max_length": 4096,
+        "hidden": true,
+        "field_categories": []
+      },
+      {
+        "key": "deviations_only",
+        "label": "Only with deviations",
+        "kind": "choice",
+        "options": [
+          {
+            "value": "true",
+            "label": "Yes"
+          },
+          {
+            "value": "false",
+            "label": "No"
+          }
+        ],
+        "max_length": 5,
+        "field_categories": []
+      },
+      {
         "key": "file_server_domain",
         "label": "Domain",
         "kind": "domain",
@@ -8802,6 +8827,41 @@
       }
     ],
     "columns": [
+      {
+        "key": "latest_change_at",
+        "label": "Last change",
+        "kind": "datetime",
+        "path": "latest_change_at",
+        "field_categories": []
+      },
+      {
+        "key": "top_fact_rule",
+        "label": "Recorded finding",
+        "kind": "text",
+        "path": "top_fact.rule",
+        "field_categories": []
+      },
+      {
+        "key": "top_fact_severity",
+        "label": "Severity",
+        "kind": "text",
+        "path": "top_fact.severity",
+        "field_categories": []
+      },
+      {
+        "key": "top_fact_paths",
+        "label": "Distinct paths",
+        "kind": "number",
+        "path": "top_fact.paths",
+        "field_categories": []
+      },
+      {
+        "key": "top_fact_kind",
+        "label": "Recorded fact type",
+        "kind": "text",
+        "path": "top_fact.kind",
+        "field_categories": []
+      },
       {
         "key": "share_label",
         "label": "Шара",
@@ -9594,6 +9654,13 @@
   {
     "key": "file-audit.mass-operations",
     "params": [
+      {
+        "key": "file_server_domain",
+        "label": "Domain",
+        "kind": "domain",
+        "hidden": true,
+        "field_categories": []
+      },
       {
         "key": "period",
         "label": "Период",

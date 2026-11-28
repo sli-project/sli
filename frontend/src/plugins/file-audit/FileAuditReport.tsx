@@ -2,17 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiResponseError } from "../../api/client";
 import type { ReportDefinitionDto } from "../../api/report-v2-types";
-import { Button, DataTable, FactList, FilterBar, ReportLayout, Select, StateView, Tabs, TabList,
+import { Button, Checkbox, DataTable, FactList, FilterBar, ReportLayout, Select, StateView, Tabs, TabList,
   type FilterValues, type PeriodValue, type ResultState } from "../../design-system";
 import { useDateFormatters } from "../../design-system/useDateFormatters";
-import { t } from "../../i18n";
+import { plural, t } from "../../i18n";
 import { useEffectiveAccess, useTimeZone } from "../../app/App";
 import { columnValue, defaultValues, searchFromValues, valuesFromSearch } from "../../app/report-v2/state";
 import { cellKind } from "../../app/report-v2/DetailSection";
 import { ReportDenied } from "../../app/report-v2/ReportDenied";
 import { selectedDomain, withDomain } from "../../app/domain-navigation";
-import { ACTION_FILTERS, FILE_SERVER_VIEWS, appliedFileAuditValues, fileAuditFields, fileAuditFilterValues, fileAuditHref,
-  fileAuditPageSize, fileAuditPageSizes, fileAuditParams, fileAuditReturnHref, fileAuditShare,
+import { ACTION_FILTERS, FILE_AUDIT_TABS, appliedFileAuditValues, fileAuditFields, fileAuditFilterValues, fileAuditHref,
+  fileAuditPageSize, fileAuditPageSizes, fileAuditParams, fileAuditReturnHref, fileAuditShare, tabTitle,
   type ActionFilter, type FileServerView, type FileAuditTab, type FileAuditRow as Row } from "./report";
 import { evidenceRecordNumbers, fileAuditOperation, fileServerColumns, FileAuditInterval } from "./FileAuditCells";
 import { FileAuditObjectWorkspace } from "./FileAuditObjectWorkspace";
@@ -20,7 +20,9 @@ import { useResourceAuditControls } from "./ResourceAuditControls";
 import "./file-audit.css";
 
 const minute = () => new Date(Math.floor(Date.now() / 60_000) * 60_000);
-const viewOf = (key: string): FileServerView => key === "overview" || key === "audit-state" ? "overview" : key === "permissions" ? key : "actions";
+const viewOf = (key: string): FileServerView => FILE_AUDIT_TABS.find(tab => tab === key) ?? "overview";
+const viewTitle = (key: FileServerView) => key === "actions" || key === "overview" || key === "permissions"
+  ? t(`file-audit.screen.${key}`) : tabTitle(key);
 const filterOf = (key: string, search: URLSearchParams): ActionFilter =>
   ACTION_FILTERS.find(filter => filter === search.get("action_filter"))
   ?? ACTION_FILTERS.find(filter => filter === key)
@@ -66,7 +68,9 @@ export function FileAuditReport({ definition: initial }: { definition: ReportDef
   const definition = definitionQuery.data;
   const pageSize = fileAuditPageSize(requestedSize, definition?.limits.max ?? initial.limits.max);
   const requestValues: FilterValues = { ...values, view: undefined,
-    path_search: view === "actions" ? values.path_search : undefined, account_search: view === "actions" ? values.account_search : undefined,
+    path_search: view === "actions" || view === "overview" ? values.path_search : undefined,
+    deviations_only: view === "overview" ? values.deviations_only : undefined,
+    account_search: view === "actions" ? values.account_search : undefined,
     operation: filter === "delete" && view === "actions" ? "delete" : values.operation,
     activity: filter === "changes" && view === "actions" ? "changes" : undefined };
   const baseParams = definition ? fileAuditParams(definition, requestValues, timeZone, null, anchor, pageSize) : null;
@@ -74,14 +78,16 @@ export function FileAuditReport({ definition: initial }: { definition: ReportDef
   const data = useQuery({ queryKey: ["report-v2", "file-audit", session, "data", reportKey, params?.toString()],
     queryFn: () => api.reportV2Data(reportKey, params!), enabled: Boolean(params && definition?.access?.allowed !== false && !definitionQuery.error),
     retry: false, refetchOnWindowFocus: false,
-    refetchInterval: view === "overview" ? 5_000 : false });
+    refetchInterval: view === "audit-state" ? 5_000 : false });
+  const domains = useQuery({ queryKey: ["domains", access], queryFn: api.domains,
+    enabled: view === "overview" && !!values.file_server_domain, retry: false, staleTime: 30_000 });
   const result = data.data;
   const error = definitionQuery.error ?? data.error;
   const denied = definition?.access?.allowed === false || result?.access?.allowed === false || result?.state === "denied"
     || error instanceof ApiResponseError && [401, 403].includes(error.status);
   const failed = Boolean(error) || result?.state === "error";
   const rows = !denied && !failed ? result?.items ?? [] : [];
-  const resources = useResourceAuditControls(view === "overview" ? rows : [], session + ":" + baseParams + ":" + pages.at(-1),
+  const resources = useResourceAuditControls(view === "audit-state" ? rows : [], session + ":" + view + ":" + baseParams + ":" + pages.at(-1),
     () => void data.refetch());
   const reset = () => { setPages([null]); setFirstPage(0); setSelectedId(null); };
   const pageIndex = firstPage + pages.length - 1;
@@ -89,7 +95,7 @@ export function FileAuditReport({ definition: initial }: { definition: ReportDef
   const canPermissions = currentKeys.has("file-audit.permissions");
   const canRefreshCatalog = access?.platform_owner || access?.capabilities.includes("access.manage");
   useEffect(() => {
-    if (view === "overview" && canRefreshCatalog && !denied)
+    if (view === "audit-state" && canRefreshCatalog && !denied)
       void api.refreshFileAuditCatalogs().catch(() => { /* Agents also refresh the catalog on check-in. */ });
   }, [view, session, canRefreshCatalog, denied]);
   const switchView = (next: string) => {
@@ -138,7 +144,7 @@ export function FileAuditReport({ definition: initial }: { definition: ReportDef
         ...(baseParams?.get("path") ? { path: baseParams.get("path")! } : {}) } : {}), ...extra }), window.location.search);
   const open = (row: Row) => {
     if (!definition) return;
-    if (view === "actions") {
+    if (view !== "overview" && view !== "permissions" && view !== "audit-state") {
       const id = String(row[definition.row_key]);
       setSelectedId(current => current === id ? null : id);
     } else if (canPermissions && typeof row.snapshot_id === "string" && typeof row.path === "string" && fileAuditShare(row)) {
@@ -165,8 +171,17 @@ export function FileAuditReport({ definition: initial }: { definition: ReportDef
   const period = fileAuditFilterValues(values, timeZone).period as PeriodValue;
   const serverOptions = result?.filter_options?.source_instance_id ?? [];
   const previousOptions = definition?.filter_options?.source_instance_id ?? [];
-  const servers = [{ value: "", label: t("file-audit.screen.all_servers") }, ...(serverOptions.length ? serverOptions : previousOptions)];
-  const viewTitle = (key: FileServerView) => t('file-audit.screen.' + key as "file-audit.screen.actions" | "file-audit.screen.overview" | "file-audit.screen.permissions");
+  const servers = [{ value: "", label: t("file-audit.screen.all_servers") }, ...(result ? serverOptions : previousOptions)];
+  const shareOptions = (result?.filter_options?.share ?? definition?.filter_options?.share ?? []).filter(option => {
+    if (!values.source_instance_id) return true;
+    try { return JSON.parse(option.value)[1] === values.source_instance_id; } catch { return false; }
+  });
+  const selectServer = (source: string) => {
+    reset();
+    setValues(current => ({ ...current, source_instance_id: source || undefined, share: undefined, path: undefined, device_id: undefined, snapshot_id: undefined }));
+  };
+  const serverSelect = <Select label={t("file-audit.workspace.server")} options={servers}
+    value={String(values.source_instance_id ?? "")} onChange={selectServer}/>;
   const refresh = () => {
     reset();
     const next = minute();
@@ -174,27 +189,38 @@ export function FileAuditReport({ definition: initial }: { definition: ReportDef
     setAnchor(next);
   };
   const title = viewTitle(view);
-  const emptyMessage = result?.state === "not_collected" ? "file-audit.screen.empty_setup"
+  const eventView = view !== "overview" && view !== "audit-state" && view !== "permissions";
+  const emptyMessage = eventView && (result?.coverage.reason === "full_activity_not_collected"
+    || view !== "actions" && result?.state === "not_collected") ? "file-audit.screen.empty_activity_not_collected"
+    : result?.state === "not_collected" ? "file-audit.screen.empty_setup"
     : view === "permissions" ? "file-audit.screen.empty_permissions"
-    : view === "overview" ? "file-audit.screen.empty_resources"
-    : result?.coverage.reason === "full_activity_not_collected" ? "file-audit.screen.empty_activity_not_collected"
+    : view === "overview" || view === "audit-state" ? "file-audit.screen.empty_resources"
+    : view !== "actions" ? "file-audit.views.empty"
     : pageIndex > 0 ? "file-audit.screen.empty_page" : "file-audit.screen.empty_actions";
-  const tabItems = FILE_SERVER_VIEWS.map(key => ({ key, label: viewTitle(key) }));
+  const tabItems = FILE_AUDIT_TABS.map(key => ({ key, label: viewTitle(key) }));
+  const count = result?.filtered_count;
+  const domain = values.file_server_domain
+    ? domains.data?.items.find(item => String(item.id) === values.file_server_domain)?.display_name
+    : t("shell.domain.all");
+  const overviewSubtitle = view === "overview" && baseParams ? [
+    domain, t("file-audit.overview.scope"),
+    `${formatCell(baseParams.get("from"), "datetime")} – ${formatCell(baseParams.get("to"), "datetime")}`, timeZone,
+  ].filter(Boolean).join(" · ") : undefined;
+  const exportAction = exportHref ? <a className="sli-ds-button" href={exportHref} download>
+    {t(view === "overview" ? "file-audit.overview.export" : "reports.renderer.export_csv")}
+  </a> : null;
   return <div className="sli-file-audit">
     <Tabs items={tabItems} active={view} onChange={switchView}>
-      <ReportLayout title={t("file-audit.title")} tabbed state={state} busy={data.isFetching && !data.isLoading}
+      <ReportLayout title={t("file-audit.title")} subtitle={overviewSubtitle} tabbed state={state} busy={data.isFetching && !data.isLoading}
         controls={{
-          scope: <Select label={t("file-audit.workspace.server")} options={servers}
-            value={String(values.source_instance_id ?? "")} onChange={source => {
-              reset(); setValues({ ...values, source_instance_id: source || undefined, share: undefined, path: undefined, device_id: undefined, snapshot_id: undefined });
-            }}/>,
+          scope: view === "overview" ? undefined : serverSelect,
           period: { value: period, presets: ["24h", "7d", "30d", "custom"], precision: "datetime-local", showBounds: true, strictRange: true,
             bounds: baseParams ? { from: baseParams.get("from")!, to: baseParams.get("to")! } : undefined,
             onChange: next => { reset(); setAnchor(minute()); setValues(appliedFileAuditValues({ ...values, period: next }, values, timeZone)); } },
-          onRefresh: refresh, refreshing: data.isFetching,
+          onRefresh: view === "overview" ? undefined : refresh, refreshing: data.isFetching,
         }}
         actions={<>
-          {exportHref ? <a className="sli-ds-button" href={exportHref} download>{t("reports.renderer.export_csv")}</a> : null}
+          {view !== "overview" ? exportAction : null}
           {fileAuditReturnHref(entrySearch.get("return_to")) ? <a className="sli-ds-button" href={fileAuditReturnHref(entrySearch.get("return_to"))!}>{t("file-audit.workspace.back")}</a> : null}
         </>}
         tabs={<TabList label={t("file-audit.title")} variant="underline"/>}
@@ -202,15 +228,40 @@ export function FileAuditReport({ definition: initial }: { definition: ReportDef
           message={definition && !params ? t("file-audit.invalid_period") : t("file-audit.screen.load_error", { subject: title })}
           onRetry={definition && !params ? undefined : retry}/>}>
         {definition && result ? <div ref={list}>
-          {view === "overview" ? resources.errors.map(error => <p key={error} role="alert">{error}</p>) : null}
+          {view === "overview" ? <>
+            <FilterBar layout="inline" applyInline compact fields={fileAuditFields(view)}
+              primaryKeys={["path_search"]} values={values}
+              onApply={next => { reset(); setValues(next); }}
+              leadingControls={<>
+                {serverSelect}
+                <Select label={t("file-audit.overview.resource")}
+                  value={Array.isArray(values.share) ? values.share[0] ?? "" : ""}
+                  options={[{ value: "", label: t("file-audit.overview.all_resources") }, ...shareOptions]}
+                  onChange={share => { reset(); setValues(current => ({ ...current, share: share ? [share] : undefined,
+                    path: undefined, snapshot_id: undefined })); }}/>
+              </>}
+              quickFilters={<>
+                <Checkbox checked={values.deviations_only === "true"} onChange={event => {
+                  reset();
+                  const checked = event.target.checked;
+                  setValues(current => ({ ...current, deviations_only: checked ? "true" : undefined }));
+                }}>{t("file-audit.overview.deviations")}</Checkbox>
+                <Button icon="refresh" onClick={refresh} disabled={data.isFetching}>{t("shell.header.refresh")}</Button>
+                {exportAction}
+              </>}/>
+            {typeof count === "number" ? <strong>{t(plural(count, {
+              one: "file-audit.overview.count_one", few: "file-audit.overview.count_few", many: "file-audit.overview.count_many",
+            }) as "file-audit.overview.count_one", { count })}</strong> : null}
+          </> : null}
+          {view === "audit-state" ? resources.errors.map(error => <p key={error} role="alert">{error}</p>) : null}
           <DataTable caption={title} compact density="compact" columns={[
-            ...(view === "overview" && resources.column ? [resources.column] : []),
-            ...fileServerColumns(view, definition.columns, rows, baseParams, canPermissions, open, hrefFor, () => void data.refetch()),
+            ...(view === "audit-state" && resources.column ? [resources.column] : []),
+            ...fileServerColumns(view, definition.columns, rows, baseParams, canPermissions, open, hrefFor, () => void data.refetch(), currentKeys),
           ]}
-            rows={view === "overview" ? resources.displayRows : rows} rowKey={row => String(row[definition.row_key])} selectedKey={selectedId}
+            rows={view === "audit-state" ? resources.displayRows : rows} rowKey={row => String(row[definition.row_key])} selectedKey={selectedId}
             emptyContent={<p role="status">{t(emptyMessage)}</p>}
-            onRowClick={view === "actions" ? open : undefined}
-            renderExpandedRow={view === "actions" ? row => <FactList facts={[
+            onRowClick={eventView ? open : undefined}
+            renderExpandedRow={eventView ? row => <FactList facts={[
               { label: t("file-audit.workspace.interval"), value: <FileAuditInterval row={row}/> },
               ...definition.columns.filter(column => ["path", "operation", "outcome", "access_mask", "denial_layer"].includes(column.key))
                 .map(column => ({ label: column.label, value: formatCell(column.key === "operation" ? fileAuditOperation(row, column) : columnValue(column, row), cellKind(column)).slice(0, 4096) })),
@@ -227,7 +278,7 @@ export function FileAuditReport({ definition: initial }: { definition: ReportDef
               leadingControls={<div className="sli-file-audit__segments" role="group" aria-label={title}>
                 {ACTION_FILTERS.filter(key => !access || currentKeys.has('file-audit.' + actionSource(key))).map(key =>
                   <Button key={key} aria-pressed={filter === key} onClick={() => selectFilter(key)}>{t('file-audit.filters.' + key as 'file-audit.filters.all')}</Button>)}
-              </div>}/> : view === "overview" ? resources.toolbar : undefined}
+              </div>}/> : view === "audit-state" ? resources.toolbar : undefined}
             total={result.filtered_count}
             pageSize={{ value: pageSize, options: fileAuditPageSizes(definition.limits.max), onChange: size => {
               reset(); setRequestedSize(size); try { localStorage.setItem(preference, String(size)); } catch { /* optional preference */ }

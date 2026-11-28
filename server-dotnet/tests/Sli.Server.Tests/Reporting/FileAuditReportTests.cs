@@ -22,7 +22,7 @@ namespace Sli.Server.Tests.Reporting;
 public sealed class FileAuditReportTests
 {
     [Fact]
-    public async Task Resources_lists_cached_unaudited_shares_and_a_second_apply_keeps_the_first()
+    public async Task Audit_lists_cached_unaudited_shares_and_a_second_apply_keeps_the_first()
     {
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new SqlPostgresFixture();
@@ -47,9 +47,9 @@ public sealed class FileAuditReportTests
             """, ct);
 
         var report = new FileAuditReportReader(new SemanticDatabase(new PostgresConnections(fixture)));
-        var definition = new ReportDefinitionRegistry().Get("file-audit.overview");
-        await using var app = await ReportFixture.Start(Facts("overview"), definition, nativeReader: report);
-        using var response = await app.Client.GetAsync("/api/v2/reports/file-audit.overview/data?source_kind=server", ct);
+        var definition = new ReportDefinitionRegistry().Get("file-audit.audit-state");
+        await using var app = await ReportFixture.Start(Facts("audit-state"), definition, nativeReader: report);
+        using var response = await app.Client.GetAsync("/api/v2/reports/file-audit.audit-state/data?source_kind=server", ct);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var result = await ReportFixture.Body(response);
         var shares = result["items"]!.AsArray().OfType<JsonObject>().ToDictionary(row => row["share_name"]!.GetValue<string>());
@@ -63,6 +63,17 @@ public sealed class FileAuditReportTests
         var principal = new Principal("session", 1, "admin");
         var capabilities = new CapabilityDecisionSet(true, new HashSet<string>(), new HashSet<string>(), [],
             new Dictionary<string, System.Text.Json.JsonElement>());
+        var check = new JsonObject
+        {
+            ["agent_id"] = agent.ToString("D"), ["source_instance_id"] = source, ["expected_revision"] = 1,
+            ["collection_scope_id"] = shares["Finance"]["collection_scope_id"]?.DeepClone(),
+        };
+        await using (var tx = await db.BeginTransactionAsync(ct))
+        {
+            var queued = await service.CheckResource(db, tx, check, principal, capabilities, ct);
+            Assert.Equal("pending", queued.GetProperty("state").GetString());
+            await tx.RollbackAsync(ct);
+        }
         async Task Enable(string share, long expected)
         {
             await using var tx = await db.BeginTransactionAsync(ct);
@@ -77,6 +88,12 @@ public sealed class FileAuditReportTests
         }
         await Enable("Finance", 1);
         await Enable("Projects", 2);
+        await using (var tx = await db.BeginTransactionAsync(ct))
+        {
+            check["expected_revision"] = 3;
+            await Assert.ThrowsAsync<AgentControlException>(() => service.CheckResource(db, tx, check, principal, capabilities, ct));
+            await tx.RollbackAsync(ct);
+        }
         await using var read = new NpgsqlCommand("""
             select assigned_modules#>'{0,config,roots}',
                 public.file_permissions_allowed405(id,'3',null,false),
@@ -305,12 +322,21 @@ public sealed class FileAuditReportTests
     {
         public JsonArray Roots = [Root()]; public int Opens, Pages, Decisions, Commits;
         public object?[]? Last; public Exception? Failure; public JsonObject? Page;
+        public JsonArray OverviewMass = [], OverviewAcl = [], OverviewSeverities = [];
         public Task<ISemanticSession> OpenAsync(bool write, CancellationToken ct) { Assert.False(write); Opens++; return Task.FromResult<ISemanticSession>(this); }
         public Task<JsonArray> QueryAsync(string sql, CancellationToken ct, params object?[] values)
         {
             if (Failure is not null) throw Failure;
             if (sql.Contains("report_roots")) return Task.FromResult(new JsonArray(new JsonObject { ["roots"] = Roots.DeepClone() }));
             if (sql.Contains("read_file_ransom_details")) { Decisions++; return Task.FromResult(new JsonArray(new JsonObject { ["decisions"] = new JsonObject() })); }
+            if (sql.Contains("ids(fingerprint)")) return Task.FromResult(OverviewSeverities.DeepClone().AsArray());
+            if (sql.Contains("null,true,null,null,$5"))
+            {
+                var candidates = (string)values[1]! == "mass-operations" ? OverviewMass : OverviewAcl;
+                return Task.FromResult(new JsonArray(new JsonObject { ["data"] = new JsonObject {
+                    ["service_filter_version"] = 1, ["items"] = candidates.DeepClone(), ["has_more"] = false,
+                } }));
+            }
             if (sql.Contains("as r(root)") || sql.Contains("ad_context_entity_aliases")) return Task.FromResult(new JsonArray());
             Assert.Contains("report_rows($1::jsonb", sql); Pages++; Last = values;
             var row = Root(); row["id"] = "row-1"; row["subject_sid"] = "S-1-5-21-100000001-200000002-300000003-1001"; row["rule_code"] = "file-audit.mass-write";
@@ -319,6 +345,48 @@ public sealed class FileAuditReportTests
         }
         public Task CommitAsync(CancellationToken ct) { Commits++; return Task.CompletedTask; }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    [Fact]
+    public async Task Overview_prioritizes_stored_severity_and_filters_roots_before_paging()
+    {
+        var root = Root();
+        var quiet = Root("other");
+        var mass = root.Copy();
+        mass["rule_code"] = "file-audit.mass-write";
+        mass["id"] = "mass";
+        mass["result_id"] = "mass";
+        mass["observed_at"] = "2026-11-26T08:00:00Z";
+        mass["details"] = new JsonObject { ["distinct_files"] = 110 };
+        var acl = root.Copy();
+        acl["rule_code"] = "file-audit.broad-write";
+        acl["id"] = "acl";
+        acl["result_id"] = "acl";
+        acl["observed_at"] = "2026-11-26T09:00:00Z";
+        acl["details"] = new JsonObject { ["layer"] = "ntfs" };
+        var db = new Database
+        {
+            Roots = [root, quiet], OverviewMass = [mass], OverviewAcl = [acl],
+            OverviewSeverities = [
+                new JsonObject { ["fingerprint"] = "file-audit:mass", ["severity"] = "medium" },
+                new JsonObject { ["fingerprint"] = "file-audit:acl", ["severity"] = "low" },
+            ],
+        };
+        await using var host = await ReportFixture.Start(Facts("overview"),
+            new ReportDefinitionRegistry().Get("file-audit.overview"), nativeReader: new FileAuditReportReader(db));
+        using var response = await host.Client.GetAsync("/api/v2/reports/file-audit.overview/data?deviations_only=true",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await ReportFixture.Body(response);
+        var fact = Assert.Single(result["items"]!.AsArray())!["top_fact"]!;
+        Assert.Equal("mass", fact["kind"]!.GetValue<string>());
+        Assert.Equal("medium", fact["severity"]!.GetValue<string>());
+        Assert.Equal(110, fact["paths"]!.GetValue<int>());
+        Assert.Single((JsonArray)db.Last![0]!);
+        Assert.Equal(1, result["filtered_count"]!.GetValue<int>());
+        root["path"] = @"C:\Shares\FinanceOld";
+        Assert.False(FileAuditReportReader.ResourceMatches(root, @"c:/shares/Finance", nested: true));
+        Assert.True(FileAuditReportReader.ResourceMatches(root, @"c:/shares", nested: true));
     }
     [Theory] [MemberData(nameof(Routes))]
     public async Task Every_file_report_route_obeys_reference_contract(string tab, string action)

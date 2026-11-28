@@ -156,6 +156,12 @@ public sealed partial class FileAuditReportReader
                 sum(weight) as weight,sum(count_min) as count_min,sum(count_max) as count_max,
                 min(first_seen) as first_seen,max(last_seen) as last_seen
             from native group by agent_id,source_instance_id,collection_scope_id
+        ), last_in_window as (
+            select distinct on (agent_id,source_instance_id,collection_scope_id)
+                agent_id,source_instance_id,collection_scope_id,id,path,
+                case when last_seen < $4 then last_seen else first_seen end as observed
+            from native where last_seen < $4 or first_seen >= $3
+            order by agent_id,source_instance_id,collection_scope_id,observed desc,id desc
         )
         select data||jsonb_build_object('items',coalesce((
             select jsonb_agg(row||jsonb_build_object(
@@ -165,10 +171,13 @@ public sealed partial class FileAuditReportReader
                 'permission_change_count_max',coalesce(t.count_max,0),
                 'permission_change_boundary_groups',coalesce(t.boundary_groups,0),
                 'first_permission_change',t.first_seen,'last_permission_change',t.last_seen,
+                'latest_change_at',last.observed,'latest_change_id',last.id,'latest_change_path',last.path,
                 'permission_change_unit','saved_4670_events') order by n)
             from jsonb_array_elements(data->'items') with ordinality l(row,n)
             left join totals t on t.agent_id::text=row->>'agent_id'
                 and t.source_instance_id=row->>'source_instance_id' and t.collection_scope_id=row->>'collection_scope_id'
+            left join last_in_window last on last.agent_id::text=row->>'agent_id'
+                and last.source_instance_id=row->>'source_instance_id' and last.collection_scope_id=row->>'collection_scope_id'
         ),'[]'::jsonb)) as data from legacy
         """;
 }

@@ -26,7 +26,7 @@ export function FileAuditObjectWorkspace({ snapshotId: initialSnapshot, objectPa
   const [comparing, setComparing] = useState(initial.get("object_tab") === "comparison");
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [compareId, setCompareId] = useState(initial.get("compare_snapshot_id") ?? "");
-  const [copied, setCopied] = useState<"idle" | "copied" | "failed">("idle");
+  const [copied, setCopied] = useState<"idle" | "path" | "unc" | "failed">("idle");
   const params = new URLSearchParams([...new URLSearchParams(initialParams)].filter(([key]) => detailQueryKeys.has(key)));
   params.set("path", path); params.set("include_nested", "false");
   if (compareId && comparing) params.set("compare_snapshot_id", compareId);
@@ -65,11 +65,14 @@ export function FileAuditObjectWorkspace({ snapshotId: initialSnapshot, objectPa
   const comparison = detail?.comparison;
   const unavailable = comparison?.reason && knownReasons.has(comparison.reason)
     ? t(`file-audit.compare.reason.${comparison.reason}` as MessageKey) : t("file-audit.compare.missing");
-  const copy = async () => {
-    try { await navigator.clipboard.writeText(path); setCopied("copied"); } catch { setCopied("failed"); }
-  };
   const server = detail?.resource?.source_name?.slice(0, 256);
   const share = detail?.share.name?.slice(0, 256);
+  const copy = async (kind: "path" | "unc") => {
+    try {
+      await navigator.clipboard.writeText(kind === "unc" ? `\\\\${server}\\${share}` : path);
+      setCopied(kind);
+    } catch { setCopied("failed"); }
+  };
   const folders = [...new Set(objects.filter(row => row.object_type === "directory" && typeof row.path === "string").map(row => String(row.path)))];
   const byParent = new Map<string | undefined, string[]>();
   for (const folder of folders) {
@@ -105,7 +108,8 @@ export function FileAuditObjectWorkspace({ snapshotId: initialSnapshot, objectPa
         <span>{params.get("tz")}</span><span>{t("file-audit.workspace.owner")} · {object.owner_sid ?? "—"}</span></> : null}
       actions={<><a className="sli-ds-button" href={backHref} onClick={onBack ? event => { event.preventDefault(); onBack(); } : undefined}>{t("file-audit.workspace.back")}</a>
         {!denied && detail ? <Button aria-pressed={comparing} onClick={openComparison}>{t("file-audit.compare.title")}</Button> : null}
-        {!denied && object && navigator.clipboard ? <Button onClick={() => void copy()}>{t(copied === "copied" ? "file-audit.workspace.copied" : "file-audit.workspace.copy_path")}</Button> : null}</>}>
+        {!denied && object && navigator.clipboard ? <Button onClick={() => void copy("path")}>{t(copied === "path" ? "file-audit.workspace.copied" : "file-audit.workspace.copy_path")}</Button> : null}
+        {!denied && server && share && navigator.clipboard ? <Button onClick={() => void copy("unc")}>{t(copied === "unc" ? "file-audit.workspace.copied" : "file-audit.overview.copy_unc")}</Button> : null}</>}>
       {copied === "failed" ? <p role="alert">{t("file-audit.workspace.copy_error")}</p> : null}
       {detail && !comparing ? <div className="sli-file-audit__object-grid">
         {folders.length ? <nav className="sli-file-audit__object-tree" aria-label={t("file-audit.workspace.retained_objects")}>
