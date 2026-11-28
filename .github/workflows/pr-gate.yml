@@ -264,6 +264,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+          fetch-depth: 2
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Last installed beta before migration 421.
@@ -287,6 +288,8 @@ jobs:
           tests/unit/test_linux_native_upgrade_prepare.py::test_package_upgrade_api_readiness_controls_checkpoint_restore
           tests/unit/test_linux_native_upgrade_prepare.py::test_rollback_waits_for_worker_backend_after_units_stop
           tests/unit/test_linux_native_upgrade_prepare.py::test_new_package_finishes_verified_previous_recovery_before_install
+          tests/unit/test_linux_native_upgrade_prepare.py::test_prepare_publishes_a_pending_result_before_fencing
+          tests/unit/test_linux_native_upgrade_prepare.py::test_kit_rejects_a_modified_runtime_before_checkpoint_admission
           tests/unit/test_linux_beta_kit.py::test_install_helper_uses_the_verified_package_set
       - name: Ensure PostgreSQL 18 binaries
         shell: bash
@@ -301,6 +304,14 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y --no-install-recommends postgresql-18 postgresql-client-18
           fi
+      - name: Activate a package with a changed runtime helper on PostgreSQL 18
+        shell: bash
+        env:
+          SLI_UPGRADE_TEST_PG_BIN: /usr/lib/postgresql/18/bin
+        run: |
+          export SLI_UPGRADE_TEST_PREVIOUS_RUNTIME="$RUNNER_TEMP/sli-previous-native-runtime.py"
+          git show HEAD^1:deploy/linux/native_runtime.py > "$SLI_UPGRADE_TEST_PREVIOUS_RUNTIME"
+          python -m pytest -q tests/unit/test_linux_install_upgrade_checks.py::test_apt_candidate_migrates_and_reconfigures_without_manual_steps
       - name: Install the previous schema and run the candidate package migration
         shell: bash
         run: |
@@ -385,7 +396,7 @@ jobs:
         env:
           SLI_UPGRADE_TEST_PG_BIN: /usr/lib/postgresql/18/bin
         run: |
-          python -m pytest -q tests/unit/test_linux_install_upgrade_checks.py -k 's5_restore or apt_candidate'
+          python -m pytest -q tests/unit/test_linux_install_upgrade_checks.py -k s5_restore
           python -m pytest -q tests/unit/test_linux_native_pg_migrate.py
       - name: Start disposable PostgreSQL 18
         shell: bash

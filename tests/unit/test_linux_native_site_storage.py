@@ -13,6 +13,7 @@ import pytest
 from deploy.linux import native_clickhouse_endpoint as ch
 from deploy.linux import native_host as host
 from deploy.linux import native_install as install
+from deploy.linux import native_preinstall
 from deploy.linux import native_runtime as runtime
 
 
@@ -70,9 +71,11 @@ def test_agents_validate_all_four_secrets_and_render_runtime(tmp_path, monkeypat
 def test_agents_runtime_publishes_json_for_generated_api_unit(tmp_path, monkeypatch):
     writes = {}
     machine = SimpleNamespace(receipt=lambda: None, directory=lambda *args, **kwargs: None,
+                              path=lambda name: tmp_path / name.lstrip('/'),
                               write=lambda path, body, *args, **kwargs: writes.update({path: body}))
     monkeypatch.setattr(host, "administrative_lock", nullcontext)
     monkeypatch.setattr(host, "Host", lambda: machine)
+    monkeypatch.setattr(native_preinstall, "trusted", lambda path: None)
     monkeypatch.setattr(host, "validate_identity", lambda: None)
     monkeypatch.setattr(host, "account", lambda name: object())
     monkeypatch.setattr(host, "group", lambda name: None)

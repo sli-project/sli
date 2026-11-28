@@ -369,7 +369,7 @@ def test_transaction_requires_durable_terminal_result(accepted, status, valid):
 
 def test_missing_transaction_result_fences_readiness(accepted):
     (accepted.transactions / "interrupted").mkdir()
-    with pytest.raises(OSError):
+    with pytest.raises(native.RuntimeErrorCode, match="^native_transaction_pending$"):
         native.ready()
 
 
@@ -628,12 +628,16 @@ def test_cli_reports_database_deadline(monkeypatch, capsys):
     assert diagnostic.endswith("native_runtime_failed reason=native_databases_not_ready\n")
 
 
-def test_configure_retires_legacy_writers_before_reload_without_starting(config, monkeypatch):
+def test_configure_retires_legacy_writers_before_reload_without_starting(config, tmp_path, monkeypatch):
+    from deploy.linux import native_preinstall
+
     calls = []
     files = {}
     machine = SimpleNamespace(receipt=lambda: calls.append("receipt"),
+                              path=native_host.Host(tmp_path).path,
                               directory=lambda *a, **kw: calls.append((a, kw)),
                               write=lambda path, body, mode: files.update({path: (body, mode)}))
+    monkeypatch.setattr(native_preinstall, "trusted", lambda path: None)
     monkeypatch.setattr(native_host, "administrative_lock", lambda: nullcontext())
     monkeypatch.setattr(native_host, "Host", lambda: machine)
     monkeypatch.setattr(native_host, "validate_identity", lambda: None)
@@ -667,7 +671,9 @@ def test_configure_retires_legacy_writers_before_reload_without_starting(config,
 
 @pytest.mark.parametrize("primary", [False, True])
 def test_foreign_data_group_refused_before_permission_changes(config, monkeypatch, primary):
-    machine = SimpleNamespace(receipt=lambda: None, directory=lambda *a, **kw: pytest.fail("must not modify permissions"))
+    machine = SimpleNamespace(receipt=lambda: None,
+                              directory=lambda *a, **kw: pytest.fail("must not modify permissions"),
+                              path=lambda name: pytest.fail("must refuse the group before configuring the helper"))
     monkeypatch.setattr(native_host, "administrative_lock", lambda: nullcontext())
     monkeypatch.setattr(native_host, "Host", lambda: machine)
     monkeypatch.setattr(native_host, "validate_identity", lambda: None)

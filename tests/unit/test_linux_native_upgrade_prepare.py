@@ -660,6 +660,54 @@ def fail_fence():
     raise runtime.RuntimeErrorCode('native_writers_still_running')
 
 
+def test_other_unfinished_transaction_blocks_prepare(preparation):
+    (preparation.transactions / ('b' * 32)).mkdir()
+    with pytest.raises(runtime.RuntimeErrorCode, match='^native_transaction_pending$'):
+        upgrade.prepare('new', TX)
+    assert not (preparation.transactions / TX).exists() and not preparation.events
+
+
+def test_prepare_publishes_a_pending_result_before_fencing(preparation, monkeypatch):
+    atomic = install.atomic
+
+    def write(path, value):
+        atomic(path, value)
+        if path.name == 'journal.json' and value['status'] == 'preflight' and value['step'] == 'before':
+            runtime.no_transaction()  # Readers can still use the accepted release before publication.
+
+    def fence():
+        result = json.loads((preparation.transactions / TX / 'result.json').read_text())
+        assert result['status'] == 'preflight' and result['terminal'] is False
+        with pytest.raises(runtime.RuntimeErrorCode, match='native_transaction_pending'):
+            runtime.no_transaction()
+
+    monkeypatch.setattr(install, 'atomic', write)
+    monkeypatch.setattr(upgrade, 'fence', fence)
+    assert upgrade.prepare('new', TX)['status'] == 'checkpoint_verified'
+
+
+def test_kit_rejects_a_modified_runtime_before_checkpoint_admission(preparation, tmp_path, monkeypatch, capsys):
+    helper = tmp_path / 'usr/lib/sli/native_runtime.py'
+    helper.parent.mkdir(parents=True)
+    helper.write_text('# operator edit')
+    helper.chmod(0o644)
+    original = Path.lstat
+    monkeypatch.setattr(Path, 'lstat', lambda path, *a, **kw: (
+        SimpleNamespace(st_mode=stat.S_IFREG | 0o644, st_uid=0, st_gid=0)
+        if path == helper else original(path, *a, **kw)))
+    monkeypatch.setattr(upgrade, 'RUNTIME_HELPER', helper)
+    monkeypatch.setattr(upgrade, 'RECOVERY', tmp_path / 'recovery')
+    monkeypatch.setattr(preinstall, 'trusted', lambda path: None)
+    monkeypatch.setattr(preinstall, 'recovery_required', lambda: True)
+    monkeypatch.setattr(upgrade, 'check_checkpoint_space', lambda: pytest.fail('checkpoint was admitted'))
+
+    assert upgrade.main(['check-package-space', VERSION, 'candidate.deb']) == 1
+    message = capsys.readouterr().err
+    assert '/usr/lib/sli/native_runtime.py' in message and 'release' in message
+    assert helper.read_text() == '# operator edit'
+    assert not preparation.events and not list(preparation.transactions.iterdir())
+
+
 def test_prepare_package_creates_transaction_after_legacy_cache(preparation, sealed_recovery, monkeypatch):
     for root in sealed_recovery:
         cache = root / '__pycache__'
@@ -800,7 +848,7 @@ def test_killed_prepare_keeps_closed_gate_until_explicit_resume(preparation, mon
         upgrade.prepare_package(VERSION)
     with pytest.raises(RuntimeError, match='native_upgrade_reconciliation_required'):
         upgrade.prepare_package(VERSION)
-    with pytest.raises(OSError):
+    with pytest.raises(runtime.RuntimeErrorCode, match='native_transaction_pending'):
         runtime.no_transaction()
     assert 'start-checked' not in preparation.events
     monkeypatch.setattr(upgrade, 'fence', fence)
@@ -969,6 +1017,8 @@ def test_new_package_finishes_verified_previous_recovery_before_install(reuse_tr
     upgrade.prepare_package(VERSION)
     journal = upgrade.package_transaction(VERSION)
     recovery_root = journal.path.parent.parent / 'recovery'
+    monkeypatch.setattr(upgrade, 'RUNTIME_HELPER', recovery_root / 'native_runtime.py')
+    monkeypatch.setattr(preinstall, 'trusted', lambda path: None)
     old_seal = recovery_root / 'old/recovery.json'
     old_seal.write_text(json.dumps({'python': '/accepted/python', 'manifest_sha256': 'old-digest'}))
     journal.value.update(status='candidate_testing', step='before', candidate='new', testing_release='old',

@@ -26,7 +26,7 @@ def test_legacy_coordinator_configures_new_worker_without_ledger_change(monkeypa
     from types import SimpleNamespace
 
     from deploy.linux import backup, native_host as host, native_install as install
-    from deploy.linux import native_runtime as runtime, native_worker_accounts
+    from deploy.linux import native_preinstall, native_runtime as runtime, native_worker_accounts
 
     events = []
     users = set()
@@ -64,7 +64,9 @@ def test_legacy_coordinator_configures_new_worker_without_ledger_change(monkeypa
         assert len(bootstrapped) == 1
         files[path] = body
 
-    machine = SimpleNamespace(receipt=lambda: None, directory=lambda *a, **kw: None, write=write)
+    machine = SimpleNamespace(receipt=lambda: None, directory=lambda *a, **kw: None,
+                              path=host.Host(tmp_path).path, write=write)
+    monkeypatch.setattr(native_preinstall, 'trusted', lambda path: None)
     monkeypatch.setattr(host, 'administrative_lock', lambda: nullcontext())
     monkeypatch.setattr(host, 'Host', lambda: machine)
     monkeypatch.setattr(host, 'validate_identity', lambda: None)

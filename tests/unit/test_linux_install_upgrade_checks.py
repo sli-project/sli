@@ -2,6 +2,7 @@
 
 from contextlib import contextmanager, nullcontext, redirect_stderr
 from fnmatch import fnmatchcase
+import hashlib
 from io import StringIO
 import json
 import os
@@ -16,6 +17,7 @@ from types import SimpleNamespace
 import pytest
 
 from deploy.linux import native_dotnet_generator as generator
+from deploy.linux import native_preinstall
 from deploy.linux import backup, native_backup as native, native_install as install
 from deploy.linux import native_host as host, native_runtime as runtime
 from deploy.linux import native_upgrade as upgrade, restore_existing, update_checkpoint
@@ -42,18 +44,19 @@ def runtime_host(tmp_path, monkeypatch):
     guarded_write = host.Host(tmp_path).write
     config = tmp_path / "etc/sli/runtime.json"
     monkeypatch.setattr(runtime, "CONFIG", config)
-    if os.name == "nt":
-        # NTFS chmod cannot model POSIX write bits. Match the trusted 0644
-        # service files created below; production trust checks remain enabled.
-        lstat = Path.lstat
+    lstat = Path.lstat
 
-        def unit_stat(path, *args, **kwargs):
-            info = lstat(path, *args, **kwargs)
-            if path.parent == tmp_path / "etc/systemd/system" and path.name.startswith("sli-clickhouse-"):
-                return SimpleNamespace(st_mode=stat.S_IFREG | 0o644)
-            return info
+    def host_stat(path, *args, **kwargs):
+        info = lstat(path, *args, **kwargs)
+        if path == tmp_path / "usr/lib/sli/native_runtime.py":
+            # The private tree represents a Debian package unpacked by root.
+            return SimpleNamespace(st_mode=stat.S_IFREG | 0o644, st_uid=0, st_gid=0)
+        if os.name == "nt" and path.parent == tmp_path / "etc/systemd/system" and path.name.startswith("sli-clickhouse-"):
+            return SimpleNamespace(st_mode=stat.S_IFREG | 0o644)
+        return info
 
-        monkeypatch.setattr(Path, "lstat", unit_stat)
+    monkeypatch.setattr(Path, "lstat", host_stat)
+
 
     def local(name):
         path = Path(name)
@@ -64,7 +67,7 @@ def runtime_host(tmp_path, monkeypatch):
     def write(name, body, mode=0o644):
         path = local(name)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(body, encoding="utf-8")
+        path.write_text(body, encoding="utf-8", newline="")
         path.chmod(mode)
 
     states = {"sli-postgresql.service": {"enabled": True, "active": True}}
@@ -115,6 +118,7 @@ def runtime_host(tmp_path, monkeypatch):
 
     machine = SimpleNamespace(
         receipt=lambda: None,
+        path=local,
         directory=lambda name, *a, **kw: local(name).mkdir(parents=True, exist_ok=True),
         write=write,
     )
@@ -145,6 +149,7 @@ def runtime_host(tmp_path, monkeypatch):
 
     monkeypatch.setattr(runtime, "release_rendered_unit", release_rendered_unit)
     monkeypatch.setattr(runtime, "trusted", lambda path: path.read_bytes())
+    monkeypatch.setattr(native_preinstall, "trusted", lambda path: None)
     return SimpleNamespace(root=tmp_path, states=states, commands=commands, write=write, command=command,
                            machine=machine, guarded_write=guarded_write)
 
@@ -261,6 +266,11 @@ def test_notification_upgrade_accepts_retained_layout(runtime_host, monkeypatch,
     source = candidate / "deploy/linux/native_runtime.py"
     source.parent.mkdir(parents=True)
     shutil.copyfile(runtime.__file__, source)
+    old_body = b"# previous release runtime helper\n"
+    installed_helper = system.machine.path(runtime.HELPER)
+    installed_helper.parent.mkdir(parents=True, exist_ok=True)
+    installed_helper.write_bytes(old_body)
+    record_runtime_helper(system.root / "state", system.root / "recovery", "old", old_body, monkeypatch)
 
     def run_candidate(argv, **kwargs):
         if argv[0] != "/synthetic/python":
@@ -289,6 +299,7 @@ def test_notification_upgrade_accepts_retained_layout(runtime_host, monkeypatch,
         return
 
     upgrade.configure_candidate(candidate, manifest)
+    assert installed_helper.read_text(encoding="utf-8") == source.read_text(encoding="utf-8")
     assert runtime.CONFIG.read_bytes() == previous_bytes
     assert (system.root / "etc/systemd/system/telegram-via-vpn.service").read_text() == unrelated
     destination = system.root / "generated-candidate"
@@ -306,6 +317,24 @@ def test_notification_upgrade_accepts_retained_layout(runtime_host, monkeypatch,
     upgrade.configure_candidate(candidate, manifest)
     upgrade.testing_units()
     assert not drop_in.exists()
+
+
+def record_runtime_helper(state, recovery, release, body, monkeypatch):
+    state.mkdir(parents=True, exist_ok=True)
+    seal = recovery / release / "recovery.json"
+    seal.parent.mkdir(parents=True, exist_ok=True)
+    digest = "a" * 64
+    (state / "installed.json").write_text(json.dumps({
+        "schema_version": 1, "release": f"/opt/sli/releases/{release}", "manifest_sha256": digest,
+    }))
+    seal.write_text(json.dumps({
+        "schema_version": 1, "release": release, "manifest_sha256": digest,
+        "content_checksums": {"release/deploy/linux/native_runtime.py": {
+            "sha256": hashlib.sha256(body).hexdigest(), "size": len(body),
+        }},
+    }))
+    monkeypatch.setattr(runtime, "STATE", state)
+    monkeypatch.setattr(runtime, "RECOVERY", recovery)
 
 
 @pytest.mark.parametrize("migration_failure", [False, True])
@@ -342,6 +371,20 @@ def test_apt_candidate_migrates_and_reconfigures_without_manual_steps(runtime_ho
     ledger_query = "select json_agg(m order by version) from public.schema_migrations m;"
     previous_ledger = postgres(ledger_query).stdout
     shutil.copyfile(Path(runtime.__file__), candidate / "deploy/linux/native_runtime.py")
+    installed_helper = system.machine.path(runtime.HELPER)
+    if not migration_failure:
+        previous_runtime = os.environ.get("SLI_UPGRADE_TEST_PREVIOUS_RUNTIME")
+        old_body = Path(previous_runtime).read_bytes() if previous_runtime else b"# previous release runtime helper\n"
+        if old_body == (candidate / "deploy/linux/native_runtime.py").read_bytes():
+            old_body += b"\n# Simulate a changed helper when this PR does not edit it.\n"
+        installed_helper.parent.mkdir(parents=True, exist_ok=True)
+        installed_helper.write_bytes(old_body)
+        def checked_write(name, body, mode):
+            if name == runtime.HELPER and installed_helper.read_text(encoding="utf-8") != body:
+                system.guarded_write(name, body, mode)
+            system.write(name, body, mode)
+
+        monkeypatch.setattr(system.machine, "write", checked_write)
     for root, version in ((old, "1.0-1~deb13"), (candidate, "2.0-1~deb13")):
         (root / "native-package.json").write_text(json.dumps({"schema_version": 1, "release": root.name, "version": version}))
     manifest = {"python": "/synthetic/python", "python_sha256": "a" * 64, "postgres_version": "18.test",
@@ -350,6 +393,8 @@ def test_apt_candidate_migrates_and_reconfigures_without_manual_steps(runtime_ho
     previous = {**manifest, "migration_ledger": [row for row in manifest["migration_ledger"] if row["version"] < 342]}
     recovery = system.root / "recovery"
     recovery.mkdir()
+    if not migration_failure:
+        record_runtime_helper(state, recovery, old.name, old_body, monkeypatch)
     (recovery / "units").mkdir()
     (recovery / "recovery.json").write_text("{}")
     transaction = system.root / "transactions" / ("a" * 32)
@@ -400,6 +445,7 @@ def test_apt_candidate_migrates_and_reconfigures_without_manual_steps(runtime_ho
 
     monkeypatch.setattr(upgrade, "switch", switch)  # OS symlink replacement is covered by POSIX tests.
     monkeypatch.setattr(upgrade, "fence", lambda: None)
+    monkeypatch.setattr(upgrade, "stop_application", lambda: None)
     monkeypatch.setattr(upgrade, "testing_units", lambda *a: None)
     monkeypatch.setattr(install, "preserve_recovery", lambda *a: None)
     monkeypatch.setattr(install, "site_configuration", dict)
@@ -466,6 +512,7 @@ def test_apt_candidate_migrates_and_reconfigures_without_manual_steps(runtime_ho
         journal = upgrade.Journal(transaction).value
         assert journal["status"] == "committed" and journal["services_restored"] is True
         assert current[0] == candidate
+        assert installed_helper.read_bytes() == (candidate / "deploy/linux/native_runtime.py").read_bytes()
         assert json.loads((state / "package-install.json").read_text())["release"] == candidate.name
         assert packet.read_bytes() == b"original-agent-packet"
         assert all(path.read_bytes() == content for path, content in retained.items())

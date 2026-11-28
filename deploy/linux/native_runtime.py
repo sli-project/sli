@@ -615,6 +615,7 @@ def configure_worker_accounts():
 
 def configure(config):
     from deploy.linux import native_host as host
+    from deploy.linux import native_preinstall
 
     # Candidate code can be invoked by an older retained upgrade coordinator.
     # Preserve a notification proxy explicitly configured on the destination.
@@ -636,6 +637,10 @@ def configure(config):
             require(set(data_group.gr_mem) <= users and not any(
                 entry.pw_gid == data_group.gr_gid and entry.pw_name not in users
                 for entry in host.pwd.getpwall()), "native_data_group_conflict")
+        helper = machine.path(HELPER)
+        body = Path(__file__).read_bytes()
+        replace_helper = native_preinstall.check_runtime_helper(
+            hashlib.sha256(body).hexdigest(), path=helper, state=STATE, recovery=RECOVERY)
         # No existing private directory is opened to runtime groups.
         machine.directory("/run/sli", 0o711)
         machine.directory("/var/lib/sli", 0o755)
@@ -654,7 +659,10 @@ def configure(config):
             machine.directory("/var/lib/sli/" + name, mode, group_name=group)
         machine.directory("/etc/sli/secrets/notifications", 0o750, group_name="sli-secrets")
         machine.write(str(CONFIG), json.dumps(config, sort_keys=True) + "\n", 0o644)
-        machine.write(HELPER, Path(__file__).read_text(), 0o644)
+        if replace_helper:
+            native_preinstall.write_guard(helper, body, 0o644)
+        elif not helper.exists():
+            machine.write(HELPER, body.decode("utf-8"), 0o644)
         # Old enabled writers can otherwise return on reboot. Fence them before
         # daemon-reload changes dependencies; keep operator files untouched.
         stop_services(SERVICES, dotnet=False)
@@ -766,7 +774,10 @@ def no_transaction(*, agents_reconfigure=False):
     # layouts and interrupted writes fence startup, rather than imply success.
     for path in TRANSACTIONS.iterdir():
         require(path.is_dir() and not path.is_symlink(), "native_transaction_pending")
-        result = document(path / "result.json")
+        try:
+            result = document(path / "result.json")
+        except FileNotFoundError:
+            raise RuntimeErrorCode("native_transaction_pending") from None
         if result.get("status") == "aborted_before_checkpoint":
             require(result.get("terminal") is True, "native_transaction_pending")
         elif result.get("status") not in {"committed", "rolled_back"}:

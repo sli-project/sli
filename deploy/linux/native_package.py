@@ -6,6 +6,7 @@ The input release includes its immutable native-runtime.json acceptance inventor
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import shutil
@@ -29,7 +30,10 @@ def require(condition, code):
 def write(root, name, body, mode=0o644):
     path = root / name
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(body, encoding="utf-8")
+    if isinstance(body, bytes):
+        path.write_bytes(body)
+    else:
+        path.write_text(body, encoding="utf-8")
     path.chmod(mode)
 
 
@@ -144,6 +148,9 @@ def build(source, output, release, version, runtime_version, previous=None, *, c
             and ID.fullmatch(python.parts[4]) and python.parts[5:] == ("bin", "python3.14")
             and re.fullmatch(r"[0-9a-f]{64}", manifest.get("python_sha256", "")), "native_package_runtime_invalid")
     runtime = python.parts[4]
+    helpers = Path(__file__).parent
+    runtime_helper = (helpers / 'native_runtime.py').read_bytes()
+    manifest['runtime_helper_sha256'] = hashlib.sha256(runtime_helper).hexdigest()
     from deploy.linux.native_plugins import release_inventory
     manifest["plugins"] = release_inventory(source, manifest["plugins"])
     output.mkdir(parents=True, exist_ok=True)
@@ -155,13 +162,13 @@ def build(source, output, release, version, runtime_version, previous=None, *, c
                 "SLI native host management")
         with (host / 'DEBIAN/control').open('a', encoding='utf-8') as stream:
             stream.write('Pre-Depends: python3, postgresql-common\n')
-        helpers = Path(__file__).parent
         preinstall = (helpers / 'native_preinstall.py').read_text(encoding='utf-8')
         write(host, 'DEBIAN/preinst', '#!/bin/sh\nset -eu\numask 022\ncase "$1" in\n install|upgrade)\n'
-              "/usr/bin/python3 -I -B - <<'SLI_PREINSTALL'\n" + preinstall +
+              f"/usr/bin/python3 -I -B - --host-preinstall {manifest['runtime_helper_sha256']} <<'SLI_PREINSTALL'\n" + preinstall +
               '\nSLI_PREINSTALL\n ;;\n abort-upgrade) ;;\n *) exit 1 ;;\nesac\n', 0o755)
         for name in HELPERS:
-            write(host, "usr/lib/sli/" + name, (helpers / name).read_text(encoding='utf-8'), 0o640 if name.endswith(".json") else 0o644)
+            body = runtime_helper if name == 'native_runtime.py' else (helpers / name).read_text(encoding='utf-8')
+            write(host, "usr/lib/sli/" + name, body, 0o640 if name.endswith(".json") else 0o644)
         write(host, "usr/sbin/sli-native-install", "#!/bin/sh\nset -eu\numask 022\nexec /usr/bin/python3 -I -B /usr/lib/sli/native_install.py \"$@\"\n", 0o755)
         write(host, "usr/sbin/sli-setup", "#!/bin/sh\nset -eu\numask 022\nexec /usr/bin/python3 -I -B /usr/lib/sli/native_setup.py \"$@\"\n", 0o755)
         write(host, "usr/sbin/sli-cold-tables", "#!/bin/sh\nset -eu\numask 022\nexec /usr/bin/python3 -I -B /usr/lib/sli/native_host.py cold-tables \"$@\"\n", 0o755)

@@ -1,6 +1,7 @@
 """Stdlib guard embedded in sli-host preinst, before vendor DB postinsts run."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -13,6 +14,8 @@ from pathlib import Path
 
 START_FILES = ('/lib/systemd/system/clickhouse-server.service', '/etc/init.d/clickhouse-server')
 POSTGRES_DATA_DIRECTORY = '/srv/sli-db/pgdata/18/main'
+RUNTIME_HELPER = '/usr/lib/sli/native_runtime.py'
+RUNTIME_HELPER_KEY = 'release/deploy/linux/native_runtime.py'
 
 
 def ensure_directory(path, mode=0o755, uid=0, gid=0, *, parent_mode=0o755, exist_ok=True):
@@ -133,8 +136,8 @@ def cluster_guard(config, backup):
 def write_guard(path, text, mode):
     fd, temporary = tempfile.mkstemp(dir=path.parent)
     try:
-        with os.fdopen(fd, 'w') as stream:
-            stream.write(text)
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(text.encode('utf-8') if isinstance(text, str) else text)
             stream.flush()
             os.fsync(stream.fileno())
         os.chmod(temporary, mode)
@@ -157,6 +160,56 @@ def trusted(path):
             info = item.lstat()
             if info.st_uid != 0 or info.st_mode & 0o022:
                 raise RuntimeError('native_path_untrusted')
+
+
+def runtime_helper_conflict():
+    return GuardError(
+        'native_existing_configuration_conflict', RUNTIME_HELPER,
+        'the file differs from the installed SLI release',
+        'Save your changes, restore the original file from the installed release with '
+        'sudo install -o root -g root -m 0644 -- '
+        f'/opt/sli/current/deploy/linux/native_runtime.py {RUNTIME_HELPER}, then retry',
+        conflict_paths=(RUNTIME_HELPER,),
+    )
+
+
+def check_runtime_helper(candidate_sha256, *, path=Path(RUNTIME_HELPER),
+                         state=Path('/var/lib/sli/state'), recovery=Path('/var/lib/sli/recovery')):
+    """Return whether a trusted, different predecessor helper can be replaced."""
+    checked_trusted(path, RUNTIME_HELPER)
+    if not path.exists():
+        return False
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_gid != 0 or stat.S_IMODE(info.st_mode) != 0o644:
+        raise GuardError('native_existing_configuration_permissions', RUNTIME_HELPER,
+                         'expected a regular root-owned file with mode 0644',
+                         'Verify the file against the installed release and restore its ownership and mode')
+    current = hashlib.sha256(path.read_bytes()).hexdigest()
+    if current == candidate_sha256:
+        return False  # Already unpacked by dpkg, or identical across releases.
+    try:
+        receipt_path = state / 'installed.json'
+        trusted(receipt_path)
+        installed = json.loads(receipt_path.read_bytes())
+        release = re.fullmatch(r'/opt/sli/releases/([a-z0-9][a-z0-9.+-]{0,63})', installed['release'])
+        if installed.get('schema_version') == 1 and release:
+            if 'runtime_helper_sha256' in installed:
+                if installed['runtime_helper_sha256'] == current:
+                    return True
+            else:
+                # Legacy receipts omit the helper hash. Recovery sealed the installed release's bytes.
+                seal_path = recovery / release[1] / 'recovery.json'
+                trusted(seal_path)
+                seal = json.loads(seal_path.read_bytes())
+                manifest_digest = installed['manifest_sha256']
+                if (seal.get('schema_version') == 1 and seal.get('release') == release[1]
+                        and re.fullmatch(r'[0-9a-f]{64}', manifest_digest)
+                        and seal.get('manifest_sha256') == manifest_digest
+                        and seal['content_checksums'][RUNTIME_HELPER_KEY]['sha256'] == current):
+                    return True
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, RuntimeError):
+        pass  # An unreadable or unmatched receipt cannot authorize replacement.
+    raise runtime_helper_conflict()
 
 
 def package_install(action, release, *, root=Path('/')):
@@ -349,7 +402,10 @@ if __name__ == '__main__':
         if os.geteuid() != 0:
             raise RuntimeError('native_root_required')
         os.umask(0o022)
-        if len(sys.argv) == 4 and sys.argv[1] == '--package-install':
+        if len(sys.argv) == 3 and sys.argv[1] == '--host-preinstall':
+            check_runtime_helper(sys.argv[2])
+            prepare()
+        elif len(sys.argv) == 4 and sys.argv[1] == '--package-install':
             package_install(sys.argv[2], sys.argv[3])
         elif sys.argv[1:] == ['--retain-legacy-dotnet']:
             retain_legacy_dotnet()
