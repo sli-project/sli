@@ -19,6 +19,43 @@ public sealed class DomainEventRowsTests(ITestOutputHelper output)
     static JsonObject Event(int code) => new() { ["event_db_id"] = 1, ["event_id"] = code, ["time_created_utc"] = AdJson.Iso(Attempt) };
 
     [Fact]
+    public async Task Domain_changes_group_one_object_and_initiator_before_counts_and_paging()
+    {
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(Ct);
+        await using var owner = await fixture.Pg.OpenAsync(Ct);
+        await PostCollectionPostgres.Sql(owner, """
+            insert into servers(id,domain_id,hostname,role) values (900001,1,'dc01.example.test','domain_controller');
+            """, Ct);
+        const string fixtureSid = "S-1-5-21-100000001-200000002-300000003-";
+        ShortEventRow Change(long id, int code, int delay, int actor, int target) => new(id, Attempt.AddSeconds(delay).UtcDateTime,
+            code, "fact", fixtureSid + actor, fixtureSid + target, null, "dc01.example.test", 1,
+            """{"$server_id":900001,"$channel":"Security","$provider":"Microsoft-Windows-Security-Auditing"}""",
+            "{}", new Dictionary<string, string?>());
+        await ShortEventAdmissionPostgresTests.WriteAsync(fixture,
+            [Change(1, 4720, 2, 1001, 1002), Change(2, 4722, 5, 1001, 1002), Change(3, 4722, 7, 1001, 1003),
+             Change(4, 4722, 8, 1004, 1002), Change(5, 4722, 62, 1001, 1002)], Ct);
+        await using var db = new NpgsqlConnection(fixture.Dsn("adlog_user"));
+        await db.OpenAsync(Ct);
+        var filters = new JsonObject { ["changes_view"] = "all", ["repeat_mode"] = "collapsed" };
+        var request = Request(limit: 1, filters: filters) with { Domain = 1 };
+        var first = await AdSecurity.ReadAsync(db, request, Ct, null!);
+        Assert.Equal(4, first["filtered_count"]!.GetValue<long>());
+        Assert.Equal(4, first["change_counts"]!["all"]!.GetValue<long>());
+        Assert.True(first["change_columns"]!["field"]!.GetValue<bool>());
+        Assert.False(first["change_columns"]!["result"]!.GetValue<bool>());
+        var all = await AdSecurity.ReadAsync(db, request with { Limit = 50 }, Ct, null!);
+        Assert.Equal(new long[] { 5, 4, 3, 2 }, all["items"]!.AsArray().Select(row => row!["event_db_id"]!.GetValue<long>()));
+        var series = all["items"]![3]!;
+        Assert.Equal(2, series["repeat_count"]!.GetValue<long>());
+        Assert.True(series["repeat_mixed_operations"]!.GetValue<bool>());
+        var expanded = (JsonObject)filters.DeepClone();
+        expanded["batch"] = series["event_db_id"]!.DeepClone();
+        var members = await AdSecurity.ReadAsync(db, request with { Limit = 50, Filters = expanded }, Ct, null!);
+        Assert.Equal(new long[] { 2, 1 }, members["items"]!.AsArray().Select(row => row!["event_db_id"]!.GetValue<long>()));
+    }
+
+    [Fact]
     public async Task Windows_failure_pair_is_one_row_before_paging_without_hiding_other_attempts()
     {
         await using var fixture = new SqlPostgresFixture();

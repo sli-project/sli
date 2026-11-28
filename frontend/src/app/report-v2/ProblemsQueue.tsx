@@ -522,7 +522,7 @@ function ProblemPanel({ publicRow, detail, detailError, retryDetails, domain, zo
 }) {
   const row = detail ?? publicRow;
   const evidence = useProblemEvidence(row.id, domain, zone, canEvidence, openEntity);
-  const options = new URLSearchParams({ finding: String(row.id), ...(domain ? { domain } : {}) });
+  const options = new URLSearchParams({ finding: String(row.id), ...(domain ? { domain } : {}), hide_open_problem_evidence: "off" });
   const event = evidence.data?.pages.flatMap((page) => page.items).find((item) => eventHref(item.event_db_id));
   const first = timeLabel(row.first, zone);
   const last = timeLabel(row.last, zone);

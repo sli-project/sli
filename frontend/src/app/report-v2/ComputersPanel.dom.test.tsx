@@ -88,6 +88,23 @@ it("labels the computer card shortcut by the tab it opens", () => {
   expect(screen.getByRole("tab", { name: t("reports.computers.changes"), selected: true })).toBeTruthy();
 });
 
+it("shows the service installed on the selected computer with its original event", async () => {
+  const read = vi.spyOn(api, "reportV2Data").mockResolvedValue(page([{
+    row_id: "service-81", change_type: "host_event", event_id: 7045, host_object: "ExampleService", source_event_id: 81,
+  }]));
+  const changes: ReportColumnDto[] = [{ key: "change_type", path: "change_type", label: "Change", kind: "state" }];
+  render(<QueryClientProvider client={new QueryClient()}>
+    <ComputerPanel row={{ ...workstation, domain_id: 7, object_guid: "test-computer-guid" }}
+      logons={false} logonParams="" changes={changes} canCompare onClose={() => {}} timeZone="UTC"/>
+  </QueryClientProvider>);
+  fireEvent.click(screen.getByRole("tab", { name: t("reports.computers.changes") }));
+  const service = await screen.findByText(`${t("events.semantic.System:Service Control Manager:7045.title")} · ExampleService`);
+  expect(within(service.closest("tr")!).getByRole("link").getAttribute("href")).toContain("/app/events/81");
+  const [report, params] = read.mock.calls[0];
+  expect(report).toBe("ad.computers.v6");
+  expect(params.get("object_guid")).toBe("test-computer-guid");
+});
+
 it("keeps individual observations selected by row ID through paging and resets on a new result", async () => {
   const first = observation("101", "53");
   const second = observation("102", "37");

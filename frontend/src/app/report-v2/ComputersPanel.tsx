@@ -184,6 +184,16 @@ function ComputerFacts({ row }: { row: Row }) {
   </>;
 }
 
+const hostEvents = {
+  "4697": "events.semantic.Security:Microsoft-Windows-Security-Auditing:4697.title",
+  "4698": "events.semantic.Security:Microsoft-Windows-Security-Auditing:4698.title",
+  "4699": "events.semantic.Security:Microsoft-Windows-Security-Auditing:4699.title",
+  "4700": "events.semantic.Security:Microsoft-Windows-Security-Auditing:4700.title",
+  "4701": "events.semantic.Security:Microsoft-Windows-Security-Auditing:4701.title",
+  "4702": "events.semantic.Security:Microsoft-Windows-Security-Auditing:4702.title",
+  "7045": "events.semantic.System:Service Control Manager:7045.title",
+} as const;
+
 function ComputerChanges({ row, columns, timeZone }: { row: Row; columns: ReportColumnDto[]; timeZone: string }) {
   const guid = text(row.object_guid);
   const params = new URLSearchParams({ ...domainOf(row), tab: "changes", object_guid: guid ?? "", limit: "50", tz: timeZone });
@@ -207,9 +217,13 @@ function ComputerChanges({ row, columns, timeZone }: { row: Row; columns: Report
   const changeColumns = tableColumns(columns.filter((column) =>
     (column.path === "observed_at_utc" || ["change_type", "before", "after", "actor"].includes(column.key))
     && (column.key !== "actor" || rows.some((change) => change.actor))), timeZone).map((column) => column.key === "change_type" ? {
-      ...column, render: (row: Row) => row.change_type === "membership_added" || row.change_type === "membership_removed"
-        ? <>{t(`reports.computers.${row.change_type}`)}{row.group_name ? ` · ${String(row.group_name)}` : null}</>
-        : column.render ? column.render(row) : column.value?.(row) as string ?? dash(),
+    ...column, render: (row: Row) => {
+      const hostEvent = row.change_type === "host_event" && hostEvents[String(row.event_id) as keyof typeof hostEvents];
+      if (hostEvent) return <>{t(hostEvent)}{row.host_object ? ` · ${String(row.host_object)}` : null}</>;
+      if (row.change_type === "membership_added" || row.change_type === "membership_removed")
+        return <>{t(`reports.computers.${row.change_type}`)}{row.group_name ? ` · ${String(row.group_name)}` : null}</>;
+      return column.render ? column.render(row) : column.value?.(row) as string ?? dash();
+    },
     } : column.key === "actor" ? { ...column, label: t("reports.computers.initiator") } : column);
   if (rows.some((change) => change.source_event_id)) changeColumns.push({ key: "source_event_id", label: t("reports.computers.source_event"), render: eventLink });
   return rows.length ? <DataTable caption={t("reports.computers.changes")} columns={changeColumns}

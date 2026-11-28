@@ -42,7 +42,7 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); setLocale("ru"); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-function openReport() {
+function openReport(noValues = false) {
   const requests: URL[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = new URL(String(input), window.location.origin);
@@ -57,7 +57,7 @@ function openReport() {
       const items = params.get("changes_view") === "accounts" ? [attributeChange, verifiedChange]
         : params.get("changes_view") === "groups" || expanded || params.has("group") ? groups : [...groups, attributeChange, verifiedChange];
       body = {
-        contract_id: "sli.report-result.v2", report_key: key, state: "ok", items,
+        contract_id: "sli.report-result.v2", report_key: key, state: "ok", items: noValues ? [{ ...groupChange, change: {}, member: null, outcome_code: "unknown" }] : items,
         change_counts: { all: 4, accounts: 2, groups: 2, passwords: 0, audit: 0 },
         has_more: false, next_cursor: null, filtered_count: items.length, metrics: [], series: {},
         filter_options: definition.filter_options, coverage: {}, limitations: [], window: windowBounds,
@@ -95,6 +95,15 @@ it("shows server counts and sends the selected tab and operation", async () => {
   await chooseOption(screen.getByLabelText("Operation", { selector: "button" }), "4728");
   await waitFor(() => expect(requests.at(-1)?.searchParams.get("event_id")).toBe("4728"));
   expect(screen.getByLabelText("Operation", { selector: "button" }).textContent).toContain("Member added to global group");
+});
+
+it("omits field, value and outcome columns when the result has none", async () => {
+  openReport(true);
+  await screen.findByText(/Group member added/);
+  const table = within(screen.getByRole("table", { name: "Domain changes" }));
+  for (const name of ["Field / group", "Value / operation", "Operation outcome"])
+    expect(table.queryByRole("columnheader", { name })).toBeNull();
+  expect(table.getByRole("columnheader", { name: "Change" })).toBeTruthy();
 });
 
 it("requests batch members only after expansion and opens their source event and group history", async () => {

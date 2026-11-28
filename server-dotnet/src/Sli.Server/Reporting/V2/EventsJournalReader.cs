@@ -11,7 +11,8 @@ using Sli.Server.Problems;
 
 namespace Sli.Server.Reporting.V2;
 
-public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsRepository facts, ISemanticDatabase database, BuiltinReportExports exports) : IReportV2Reader
+public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsRepository facts, ISemanticDatabase database,
+    BuiltinReportExports exports, IConfiguration? configuration = null) : IReportV2Reader
 {
     private static readonly HashSet<int> DomainChangeCodes = AdSecurity.ChangeEventIds().ToHashSet();
 
@@ -41,9 +42,7 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
             if (domain <= 0 || server <= 0) return false;
             var scope = (domain, server, channel);
             if (exactScopes.TryGetValue(scope, out bool allowed)) return allowed;
-            IReadOnlyList<IReadOnlyList<AccessResource>> resources = [[new("server", server), new("domain", domain), new("channel", Value: channel)]];
-            allowed = ResourceAccessDecisions.ReportAction(c.Access, "events.explorer", "view", resources, new HashSet<string> { "security", "technical", "raw_evidence" }).Allowed
-                && new[] { "field.security", "field.technical", "field.raw_evidence", "evidence.exact" }.All(cap => ResourceAccessDecisions.Capability(c.Access.Capabilities, cap, resources).Allowed);
+            allowed = EventsJournalReader.CanReadExact(c.Access, domain, server, channel);
             exactScopes.Add(scope, allowed);
             return allowed;
         }
@@ -92,7 +91,11 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
                 if (exact)
                 {
                     ids.Add(id);
-                    if (DomainChangeDomain(c.Access, origin) is { } changeDomain) row["journal_change_domain"] = changeDomain;
+                    if (DomainChangeDomain(c.Access, origin) is { } changeDomain
+                        && !(identity.EventId is 5136 or 5137 or 5141
+                            && Guid.TryParse(row.Text("target"), out var target)
+                            && target == AdSecurity.OwnAuditGpo(configuration, changeDomain)))
+                        row["journal_change_domain"] = changeDomain;
                 }
                 else row.Remove("journal_action");
                 if (members is not null)
@@ -133,8 +136,28 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
                 row["journal_evidence_available"] = row["journal_expandable"]?.GetValue<bool>() != true
                     && Integer(row["id"], out long eventId) && exactAccess.Contains(eventId);
         }
+        await RemoveOwnAuditLinksAsync(rows, ct);
         if (evidence.Count > 0) await LinkProblemsAsync(c, evidence, ct);
         return Render(c, raw, rows);
+    }
+
+    private async Task RemoveOwnAuditLinksAsync(JsonObject[] rows, CancellationToken ct)
+    {
+        var audit = rows.Where(row => row["journal_change_domain"] is not null && row.Text("event_id") == "4719")
+            .ToLookup(row => long.Parse(row.Text("id"), CultureInfo.InvariantCulture));
+        if (audit.Count == 0) return;
+        await using var db = await database.OpenAsync(false, ct);
+        var available = await db.QueryAsync(
+            "select to_regprocedure('public.sli_audit_apply421(bigint,timestamptz)') is not null as available", ct);
+        if (available.Count == 0 || !available[0].Flag("available")) return;
+        var own = await db.QueryAsync("""
+            select event_id from unnest($1::bigint[],$2::timestamptz[]) events(event_id,occurred_at)
+            where public.sli_audit_apply421(event_id,occurred_at) is not null
+            """, ct, audit.Select(group => group.Key).ToArray(), audit.Select(group => DateTimeOffset.Parse(group.First().Text("time_created_utc"),
+                CultureInfo.InvariantCulture).ToUniversalTime()).ToArray());
+        foreach (var row in own.OfType<JsonObject>())
+            if (Integer(row["event_id"], out long id))
+                foreach (var item in audit[id]) item.Remove("journal_change_domain");
     }
     internal static JsonObject PresentWorkstationEvent(JsonObject row, JsonObject fields, long code, bool exact)
     {
@@ -184,6 +207,13 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
         }
     }
 
+    internal static bool CanReadExact(AccessDecision access, long domain, long server, string channel)
+    {
+        IReadOnlyList<IReadOnlyList<AccessResource>> resources = [[new("server", server), new("domain", domain), new("channel", Value: channel)]];
+        return ResourceAccessDecisions.ReportAction(access, "events.explorer", "view", resources, new HashSet<string> { "security", "technical", "raw_evidence" }).Allowed
+            && new[] { "field.security", "field.technical", "field.raw_evidence", "evidence.exact" }.All(cap => ResourceAccessDecisions.Capability(access.Capabilities, cap, resources).Allowed);
+    }
+
     internal static JournalOptions? Options(ReportQueryContext c)
     {
         long? Id(string key) => c.Params[key] is null ? null : long.TryParse(c.Params[key]!.ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out long id) && id > 0
@@ -199,12 +229,16 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
         string? plugin = c.Params["source_plugin"]?.GetValue<string>();
         if (plugin is not null && (plugin != "sli.workstations" || source is null))
             throw new ReportRequestException("report_parameter_invalid:source_plugin");
-        return source is not null || c.WorkstationServerId.HasValue || c.Params["collapse"] is not null || expand.HasValue || before.HasValue || result.Length > 0 ||
+        bool interactive = c.Params["hide_open_problem_evidence"] is not null;
+        return interactive || source is not null || c.WorkstationServerId.HasValue || c.Params["collapse"] is not null || expand.HasValue || before.HasValue || result.Length > 0 ||
             pivot.Length > 0 || view is "groups" or "audit" or "failures" or "service"
             ? new(c.Action == "view" && c.Params.Text("collapse") != "off", expand, before, view, result, pivot, Id("domain"))
                 {
                     ServerId = c.WorkstationServerId, SourceInstanceId = source, SourcePlugin = plugin,
-                    PageOnly = c.Action == "view" && c.WorkstationServerId is null && source is null && before is null,
+                    IncludePeriodMetadata = interactive,
+                    HideOpenEvidenceFor = c.Params.Text("hide_open_problem_evidence") == "on" ? c.Access : null,
+                    PageOnly = c.Action == "view" && c.WorkstationServerId is null && source is null && before is null
+                        && (!interactive || expand.HasValue || c.Paging.Cursor is not null),
                 } : null;
     }
 
@@ -232,19 +266,23 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
                    case findings.severity when 'critical' then 0 when 'high' then 1 when 'medium' then 2 else 3 end as priority
             from (select distinct event_db_id,finding_id from finding_event_details337 where event_db_id=any($1)) linked
             join findings_active findings on findings.id=linked.finding_id
-            where is_semantic_finding_published_v1(findings.id)
-              and (findings.rule_code<>'semantic.qw.file-acl-broad-write' or semantic_finding_in_domains_v265(findings.id,null))
-              and ($2::bigint[] is null or semantic_finding_in_domains_v265(findings.id,$2::bigint[]))
-              and not ({ProblemRepository.Suppressed})
-              and not exists(select 1 from semantic_suppressions risk where risk.finding_id=findings.id
-                  and risk.kind='risk_acceptance' and risk.state='active' and risk.expires_at>statement_timestamp())
+            where {ProblemLinkVisibility("$2")}
             order by linked.event_db_id,priority,findings.id desc
             """;
+
+    internal static string ProblemLinkVisibility(string domains) => $"""
+        is_semantic_finding_published_v1(findings.id)
+          and (findings.rule_code<>'semantic.qw.file-acl-broad-write' or semantic_finding_in_domains_v265(findings.id,null))
+          and ({domains}::bigint[] is null or semantic_finding_in_domains_v265(findings.id,{domains}::bigint[]))
+          and not ({ProblemRepository.Suppressed})
+          and not exists(select 1 from semantic_suppressions risk where risk.finding_id=findings.id
+              and risk.kind='risk_acceptance' and risk.state='active' and risk.expires_at>statement_timestamp())
+        """;
 
     internal static long? DomainChangeDomain(AccessDecision access, JsonObject origin) =>
         origin.Text("server_role") == "domain_controller" && origin.Text("channel") == "Security" &&
         Integer(origin["event_id"], out long code) && code is > 0 and <= int.MaxValue && DomainChangeCodes.Contains((int)code) &&
-        origin.Text("provider_name") == (code == 1102 ? "Microsoft-Windows-Eventlog" : "Microsoft-Windows-Security-Auditing") &&
+        origin.Text("provider_name") == "Microsoft-Windows-Security-Auditing" &&
         Integer(origin["domain_id"], out long domain) && domain > 0 && AdReportEndpoints.Allowed(access, "security", domain) ? domain : null;
     internal static JsonObject Render(ReportQueryContext c, JsonObject raw, JsonObject[] rows)
     {
