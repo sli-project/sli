@@ -13,6 +13,7 @@ using Sli.Server.Storage.Lifecycle;
 using Sli.Server.Agents.Control;
 using Sli.Server.Agents.FileAudit;
 using Sli.Server.Auth;
+using Sli.Server.Problems;
 using Sli.Server.Tests.Agents;
 using Sli.Server.Tests.Storage;
 
@@ -145,28 +146,77 @@ public sealed class FileAuditReportTests
         public Task<NpgsqlConnection> OpenAsync(CancellationToken ct) => fixture.Pg.OpenAsync(ct, "adlog_user");
     }
 
-    internal static async Task CheckActivity(SqlPostgresFixture fixture, DateTimeOffset observed, CancellationToken ct)
+    internal static async Task CheckActivity(SqlPostgresFixture fixture, DateTimeOffset observed, long problem, string root, CancellationToken ct)
     {
         var from = observed.AddMinutes(-1).UtcDateTime.ToString("O",CultureInfo.InvariantCulture);
         var to = observed.AddMinutes(1).UtcDateTime.ToString("O",CultureInfo.InvariantCulture);
         var filter = $"period=custom&from={Uri.EscapeDataString(from)}&to={Uri.EscapeDataString(to)}&source_kind=server";
         var reader = new FileAuditReportReader(new SemanticDatabase(new PostgresConnections(fixture)));
+        static AccessFacts WithProblemGrant(AccessFacts facts) => facts with
+            {
+                ReportAssignments = [..facts.ReportAssignments, ReportFixture.J("""
+                    {"report_key":"security.queue","effect":"allow","allowed_actions":["view"],
+                     "field_categories":["security","technical","identity_basic"],"scope_json":{"kind":"all"}}
+                    """)],
+                Definitions = [..facts.Definitions, ReportFixture.J("""
+                    {"report_key":"security.queue","version":1,"dataset_version":1,"actions_json":["view"],
+                     "fields_json":[{"category":"security"},{"category":"technical"},{"category":"identity_basic"}],
+                     "definition_json":{"actions":["view"]}}
+                    """)]
+            };
         foreach (string tab in new[] { "actions", "overview" })
         {
             string key = "file-audit." + tab;
-            await using var host = await ReportFixture.Start(Facts(tab),new ReportDefinitionRegistry().Get(key),nativeReader:reader);
-            using var response = await host.Client.GetAsync($"/api/v2/reports/{key}/data?{filter}",ct);
+            await using var host = await ReportFixture.Start(WithProblemGrant(Facts(tab)),new ReportDefinitionRegistry().Get(key),nativeReader:reader);
+            host.Client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("ru");
+            using var response = await host.Client.GetAsync($"/api/v2/reports/{key}/data?{filter}&limit=200",ct);
             Assert.Equal(HttpStatusCode.OK,response.StatusCode);
             var body = await ReportFixture.Body(response);
             Assert.Equal("server_file_activity",body["coverage"]!["supported_collection_mode"]!.GetValue<string>());
             if (tab == "actions")
-                Assert.Equal(113,body["filtered_count"]!.GetValue<int>());
+            {
+                Assert.Equal(115,body["filtered_count"]!.GetValue<int>());
+                var items = body["items"]!.AsArray().OfType<JsonObject>().ToArray();
+                var rename = Assert.Single(items, r => r["operation"]?.ToString()=="rename");
+                Assert.Equal(root + @"\item-1.txt",rename["old_path"]?.GetValue<string>());
+                Assert.Equal(root + @"\item-1.txt.moved",rename["path"]?.GetValue<string>());
+                Assert.Equal("Система",rename["subject_name"]?.GetValue<string>());
+                Assert.DoesNotContain(items, r => r["operation"]?.ToString()=="delete_right");
+                var checks = items.Where(r => r["operation"]?.ToString()=="access_check").ToArray();
+                Assert.Equal(2,checks.Length);
+                Assert.All(checks, denied => Assert.Equal("failure",denied["outcome"]?.GetValue<string>()));
+                var writes = items.Where(r => r["operation"]?.ToString()=="write").ToArray();
+                Assert.Equal(110,writes.Length);
+                Assert.All(writes, r => {
+                    Assert.Equal(problem,r["problem_id"]?.GetValue<long>());
+                    Assert.Equal(@"example.test\FixtureAdmin",r["subject_name"]?.GetValue<string>());
+                });
+                Assert.Null(rename["problem_id"]);
+                var oldPath = Uri.EscapeDataString(root + @"\item-1.txt");
+                using var oldName = await host.Client.GetAsync($"/api/v2/reports/{key}/data?{filter}&operation=rename&path={oldPath}",ct);
+                var oldNameRows = (await ReportFixture.Body(oldName))["items"]!.AsArray();
+                Assert.Equal(rename["id"]!.ToString(),Assert.Single(oldNameRows)!["id"]!.ToString());
+            }
             else
             {
                 var resource = Assert.Single(body["items"]!.AsArray())!;
                 Assert.NotNull(resource["audit_received_at"]);
             }
         }
+        var queue = WithProblemGrant(Facts("actions"));
+        var decision = new ReportEligibility().Compose(queue,new CapabilityComposer().Compose(queue));
+        var access = new ProblemAccess(decision);
+        var repository = new ProblemRepository(new PostgresConnections(fixture),TimeProvider.System);
+        var responseBody = await repository.FindingsAsync(new FindingQuery(null,null,null,null,null,null,null,[1],50,false)
+            { PageQueue=true,QueueView="open",QueueList=true,GroupQueue=true },access,ct);
+        var finding = Assert.Single(responseBody["items"]!.AsArray().OfType<JsonObject>(),
+            item => item["id"]!.GetValue<long>()==problem);
+        var title = ProblemPresentation.RuleMessage(finding,"title","ru",access);
+        Assert.Contains("110 файлов за 1 мин",title["text"]!.ToString());
+        Assert.Contains(@"example.test\FixtureAdmin",title["text"]!.ToString());
+        var action = ProblemPresentation.RuleMessage(finding,"next","ru",access)["text"]!.ToString();
+        Assert.Contains(root,action);
+        Assert.Contains("Остановите процесс",action);
     }
 
     internal static async Task CheckNativePermissionChanges(SqlPostgresFixture fixture, NpgsqlConnection owner,

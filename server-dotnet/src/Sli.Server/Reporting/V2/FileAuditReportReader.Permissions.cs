@@ -91,12 +91,8 @@ public sealed partial class FileAuditReportReader
         """;
 
     // Only durable facts are queried, never their duplicate hot copies.
-    private const string PermissionChangesSql = NativePermissionCandidates + """
-        , legacy as materialized (
-            select case when $9->>'record_unit'='saved_event_group' then
-                jsonb_build_object('service_filter_version',1,'items','[]'::jsonb,'filtered_count',0,'has_more',false,'after',null)
-                else sli_plugin_file_audit.report_rows($1::jsonb,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10) end as data
-        ), native_page as (
+    private const string ActionMerge = """
+        , native_page as (
             select * from native where $9->>'at' is null or
                 (observed_at,id)<(($9->>'at')::timestamptz,$9->>'id')
             order by observed_at desc,id desc limit ($10+1)
@@ -132,6 +128,22 @@ public sealed partial class FileAuditReportReader
                 from page order by observed_at desc,id desc offset ($10-1) limit 1)) as data
         from legacy
         """;
+
+    private const string PermissionChangesSql = NativePermissionCandidates + """
+        , legacy as materialized (
+            select case when $9->>'record_unit'='saved_event_group' then
+                jsonb_build_object('service_filter_version',1,'items','[]'::jsonb,'filtered_count',0,'has_more',false,'after',null)
+                else sli_plugin_file_audit.report_rows($1::jsonb,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10) end as data
+        )
+        """ + ActionMerge;
+
+    private const string FileActionsSql = NativePermissionCandidates + """
+        , legacy as materialized (
+            select case when $9->>'record_unit'='saved_event_group' then
+                jsonb_build_object('service_filter_version',1,'items','[]'::jsonb,'filtered_count',0,'has_more',false,'after',null)
+                else public.file_action_page461($1::jsonb,$3,$4,$5,$6,$7,$8,$9::jsonb,$10) end as data
+        )
+        """ + ActionMerge;
 
     private const string PermissionOverviewSql = NativePermissionCandidates + """
         , legacy as materialized (

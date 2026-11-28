@@ -190,7 +190,7 @@ public sealed partial class FileAuditReportReader
                     foreach (string key in new[] { "path", "operation", "client_ip", "outcome", "access_mask", "denial_layer" })
                         if (action?[key] is { } value) row[key] = value.DeepClone();
                 }
-            await ResolveSubjectsAsync(session, rows, ct);
+            await ResolveSubjectsAsync(session, context, rows, ct);
             return response;
         }
 
@@ -237,35 +237,37 @@ public sealed partial class FileAuditReportReader
     private static bool Contains(JsonObject row, string field, string needle) =>
         Text(row, field)?.Contains(needle, StringComparison.OrdinalIgnoreCase) == true;
 
-    private static async Task ResolveSubjectsAsync(ISemanticSession session, JsonArray rows, CancellationToken ct)
+    private static async Task ResolveSubjectsAsync(ISemanticSession session, ReportQueryContext context, JsonArray rows, CancellationToken ct)
     {
+        bool english = Sli.Server.Domains.DomainHttp.SelectEnglish(context.Language);
+        foreach (var row in rows.OfType<JsonObject>())
+        {
+            string? key = Text(row, "subject_sid") switch
+            {
+                "S-1-5-18" => "file-audit.screen.system",
+                "S-1-5-19" => "file-audit.screen.local_service",
+                "S-1-5-20" => "file-audit.screen.network_service",
+                _ => null
+            };
+            if (key is not null) row["subject_name"] = ReportResult.Message(key, english)["text"]?.DeepClone();
+        }
         var candidates = new JsonArray(rows.OfType<JsonObject>().Where(row => Text(row, "subject_sid")?.StartsWith("S-1-5-21-", StringComparison.OrdinalIgnoreCase) == true)
             .Select(row => (JsonNode)new JsonObject { ["id"] = row["id"]?.DeepClone(), ["sid"] = row["subject_sid"]?.DeepClone(),
                 ["observed_at"] = row["observed_at"]?.DeepClone() }).ToArray());
         if (candidates.Count == 0) return;
-        var names = await session.QueryAsync("""
+        var names = await session.QueryAsync($"""
             select a.id,name.account
             from jsonb_to_recordset($1::jsonb) a(id text,sid text,observed_at timestamptz)
-            cross join lateral (
-                select min(concat(coalesce(nullif(d.netbios_name,''),d.fqdn),chr(92),v.attributes_json#>>'{attributes,sam_account_name}')) as account
-                from public.domains d
-                join public.ad_context_entity_aliases alias on alias.domain_id=d.id and alias.alias_type='object_sid'
-                  and alias.normalized_value=lower(a.sid)
-                join public.ad_context_entity_versions v on v.entity_id=alias.entity_id
-                join public.ad_context_runs run on run.run_id=v.source_run_id and run.status='completed'
-                where lower(d.domain_sid)=lower(regexp_replace(a.sid,'-[0-9]+$',''))
-                  and v.source_section='directory_accounts'
-                  and v.valid_from_utc<=a.observed_at and (v.valid_to_utc is null or v.valid_to_utc>a.observed_at)
-                  and nullif(v.attributes_json#>>'{attributes,sam_account_name}','') is not null
-                having count(distinct concat(coalesce(nullif(d.netbios_name,''),d.fqdn),chr(92),v.attributes_json#>>'{attributes,sam_account_name}'))=1
-            ) name
+            cross join lateral ({FileAuditAdEnrichment.AccountAtSql}) name
+            where name.account is not null
             """, ct, candidates);
         var byId = names.OfType<JsonObject>().ToDictionary(row => Text(row, "id")!, row => Text(row, "account")!);
         foreach (var row in rows.OfType<JsonObject>())
             if (byId.TryGetValue(Text(row, "id")!, out var name)) row["subject_name"] = name[..Math.Min(name.Length, 256)];
     }
 
-    private static async Task LinkActionProblemsAsync(ISemanticSession session, ReportQueryContext context, JsonArray rows, string tab, CancellationToken ct)
+    private static async Task LinkActionProblemsAsync(ISemanticSession session, ReportQueryContext context, JsonArray rows,
+        string tab, bool actionEpisodes, CancellationToken ct)
     {
         if (context.Action != "view" || rows.Count == 0) return;
         long[]? domains;
@@ -285,13 +287,16 @@ public sealed partial class FileAuditReportReader
                 keys.Add(new JsonObject { ["row_id"] = id, ["event_id"] = reference });
             if (tab == "out-of-hours") keys.Add(new JsonObject { ["row_id"] = id, ["fingerprint"] = "file-audit:" + id });
         }
-        if (keys.Count == 0) return;
+        if (keys.Count == 0 && !actionEpisodes) return;
+        string episodeLinks = actionEpisodes ? "union all select row_id,finding_id from public.file_action_problems461($3::jsonb)" : "";
+        object?[] arguments = actionEpisodes ? [keys, domains, rows] : [keys, domains];
         var problems = await session.QueryAsync($"""
             with keys as (select * from jsonb_to_recordset($1::jsonb) k(row_id text,event_id bigint,fingerprint text)),
             links as (
                 select k.row_id,e.finding_id from keys k join public.finding_event_details337 e on e.event_db_id=k.event_id
                 union all
                 select k.row_id,f.id from keys k join public.findings_active f using(fingerprint)
+                {episodeLinks}
             )
             select distinct on (row_id) row_id,findings.id as problem_id
             from links join public.findings_active findings on findings.id=links.finding_id
@@ -301,7 +306,7 @@ public sealed partial class FileAuditReportReader
               and not exists(select 1 from semantic_suppressions risk where risk.finding_id=findings.id
                   and risk.kind='risk_acceptance' and risk.state='active' and risk.expires_at>statement_timestamp())
             order by row_id,case findings.severity when 'critical' then 0 when 'high' then 1 when 'medium' then 2 else 3 end,findings.id desc
-            """, ct, keys, domains);
+            """, ct, arguments);
         var byId = problems.OfType<JsonObject>().ToDictionary(row => Text(row, "row_id")!);
         foreach (var row in rows.OfType<JsonObject>())
             if (byId.TryGetValue(Text(row, "id")!, out var problem)) row["problem_id"] = problem["problem_id"]?.DeepClone();

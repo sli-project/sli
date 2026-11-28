@@ -110,7 +110,7 @@ function problemRow(row: RecordRow) {
     objects: accounts.length ? accounts : entities.length ? entities : [entity].filter(Boolean),
     actors: sources.length ? sources : [addresses].filter(Boolean),
     objectCount: accounts.length ? readableCount : null, addressCount: asCount(attack.address_count),
-    assignee: asText(row.assigned_to), cohort: asText(row.problem_cohort), isAttack,
+    assignee: asText(row.assigned_to), cohort: asText(row.problem_cohort), isAttack, fileEpisode: rule === "semantic.qw.file-ransom",
     evidence: asCount(isAttack ? attack.event_count : row.evidence_total), occurrences: asCount(row.occurrence_count) ?? 1,
     first: asText(row.first_seen_utc), last: asText(row.last_seen_utc), until: asText(row.deferred_until),
     object: accounts.join(", ") || [entities.length > 1 ? entities.join(", ") : participant || entity, group].filter(Boolean).join(", "),
@@ -370,7 +370,7 @@ export function ProblemsQueue({ definition, initialSearch }: { definition: Repor
       tabs={controls} drawer={active && selected !== null ? <div data-problems-queue-drawer>
         <ProblemPanel key={active.id} publicRow={active} detail={details.data ? detailRow : null} detailError={details.isError}
           retryDetails={() => void details.refetch()} domain={domain} zone={timeZone} openEntity={openEntity} canManage={canManage}
-          canAssign={ownerAllowed} canEvidence={typeof definition.detail === "object" && definition.detail.query_available !== false}
+          canAssign={ownerAllowed} canEvidence={!active.fileEpisode && typeof definition.detail === "object" && definition.detail.query_available !== false}
           onClose={() => select(null)} previous={position > 0 ? () => select(visibleRows[position - 1].id) : undefined}
           next={position >= 0 && position < visibleRows.length - 1 ? () => select(visibleRows[position + 1].id) : undefined}
           onChange={(kind, choose) => decide(kind, [active.id], choose)}/>

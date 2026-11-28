@@ -57,7 +57,8 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
                 select sli_plugin_file_audit.report_roots() as roots, exists (
                     select 1 from pg_attribute where attrelid=to_regclass('public.sli_file_audit_smb_catalog')
                     and attname='cached_at' and not attisdropped) as catalog_available,
-                    to_regprocedure('public.file_audit_scan_prefix458(uuid,text,uuid,integer,timestamptz)') is not null as file_activity
+                    to_regprocedure('public.file_audit_scan_prefix458(uuid,text,uuid,integer,timestamptz)') is not null as file_activity,
+                    to_regprocedure('public.file_action_problems461(jsonb)') is not null as action_episodes
                 """, ct))[0]!.AsObject();
             fileActivity = discovery.Flag("file_activity");
             var discovered = Array(discovery["roots"]);
@@ -90,7 +91,9 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
                 string? operation = context.Params["operation"]?.GetValue<string>();
                 bool objectView = tab == "permissions" && context.Params.Text("view") == "objects";
                 bool actionRows = tab is "actions" or "permission-changes" or "access-denials" or "out-of-hours";
-                var sql = tab == "overview" ? PermissionOverviewSql : actionRows && tab != "out-of-hours" ? PermissionChangesSql
+                bool actionEpisodes = tab == "actions" && discovery.Flag("action_episodes");
+                var sql = tab == "overview" ? PermissionOverviewSql : actionEpisodes ? FileActionsSql
+                    : actionRows && tab != "out-of-hours" ? PermissionChangesSql
                     : "select sli_plugin_file_audit.report_rows($1::jsonb,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10) as data";
                 var from = DateTimeOffset.Parse(context.Params["period"]!["from_utc"]!.GetValue<string>(), CultureInfo.InvariantCulture).UtcDateTime;
                 var to = WindowEnd(context);
@@ -103,7 +106,7 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
                     : (await Read(options, context.Paging.Limit))[0]!["data"]!.AsObject();
                 if (data["service_filter_version"]?.GetValue<int>() != 1) return Unreadable(context);
                 if (tab == "overview") await ResourceAuditAsync(session, context, Array(data["items"]), ct);
-                if (actionRows) await LinkActionProblemsAsync(session, context, Array(data["items"]), tab, ct);
+                if (actionRows) await LinkActionProblemsAsync(session, context, Array(data["items"]), tab, actionEpisodes, ct);
             }
             if (catalog)
             {

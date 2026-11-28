@@ -73,6 +73,18 @@ it("expands repeat rows in place and opens exact evidence", async () => {
   await user.click(screen.getByRole("button", { name: "Close" }));
 });
 
+it("shows the file episode response without an empty journal events section", async () => {
+  const user = userEvent.setup();
+  const title = "Mass file changes · Files · 110 files in 1 min";
+  const next = "Check the account and folder. Stop the process.";
+  renderQueue(() => page([{ ...second, rule_code: "semantic.qw.file-ransom", title_text: title, next_text: next }]));
+  await user.click(await screen.findByRole("link", { name: title }));
+  const panel = await screen.findByRole("dialog", { name: title });
+  expect(await within(panel).findByText(next)).toBeTruthy();
+  expect(within(panel).queryByRole("heading", { name: "Events" })).toBeNull();
+  expect(api.reportV2Detail).not.toHaveBeenCalled();
+});
+
 it("shows filter counts and requests the selected severity and domain", async () => {
   const user = userEvent.setup();
   const reads = renderQueue();

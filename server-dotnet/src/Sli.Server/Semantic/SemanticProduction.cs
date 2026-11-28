@@ -202,6 +202,8 @@ internal sealed partial class SemanticProduction(PasswordProducerRuntime runtime
             step = "default_detections"; result["detections"] = await Stage("default_detections", db, async connection => {
                 var defaults = await ProcessDefaultDetections(connection, ct); discovered = defaults.Sources; return defaults.Result;
             }, ct);
+            step = "file_ransom_risk";
+            var fileRisk = await Stage(step, db, connection => ProcessRisk(connection, ct, fileEpisodesOnly: true), ct);
             // Keep the cycle result key for existing worker telemetry. Password
             // thresholds now run alongside the other native threshold rules.
             step = "password_producer"; result["password_producer"] = await work.Run("password_producer", async () => {
@@ -218,7 +220,12 @@ internal sealed partial class SemanticProduction(PasswordProducerRuntime runtime
                 return new JsonObject { ["claimed"] = batch.Claimed, ["completed"] = batch.Completed, ["failed"] = batch.Failed, ["published"] = batch.Published };
             }, ct) ?? EmptyStage(); result["password_risk"] = passwordRisk;
             step = "sigma"; result["sigma"] = await Stage("sigma", db, connection => ProcessSigma(connection,ct), ct);
-            step = "risk"; var risk = await Stage("risk", db, connection => ProcessRisk(connection,ct), ct); result["risk"] = risk; result["risk_queued"] = risk["queued"].Copy(); result["findings_created"] = risk.Number("published") + passwordRisk.Number("published");
+            step = "risk"; var risk = await Stage("risk", db, connection => ProcessRisk(connection,ct), ct);
+            foreach (string counter in new[] { "claimed", "completed", "failed", "published" })
+                risk[counter] = risk.Number(counter) + fileRisk.Number(counter);
+            if (risk["modes"] is JsonObject modes)
+                modes["enabled"] = modes.Number("enabled") + fileRisk["modes"].Number("enabled");
+            result["risk"] = risk; result["risk_queued"] = risk["queued"].Copy(); result["findings_created"] = risk.Number("published") + passwordRisk.Number("published");
             if (result["password_producer"].Number("completed") > 0 && result["password_producer"].Number("failed") == 0)
             {
                 step = "expire_password_campaigns";

@@ -21,12 +21,13 @@ internal sealed record SemanticProposal(SemanticPolicy Policy, string SourceId, 
 internal sealed partial class SemanticProduction
 {
     internal static int RiskBatchSize(int processingLimit) => Math.Min(processingLimit, 16);
-    internal async Task<JsonObject> ProcessRisk(NpgsqlConnection db, CancellationToken ct)
+    internal async Task<JsonObject> ProcessRisk(NpgsqlConnection db, CancellationToken ct, bool fileEpisodesOnly = false)
     {
         int queued = 0, claimed = 0, completed = 0, failed = 0, published = 0;
         var modes = development ? new JsonObject { ["test"] = 0, ["shadow"] = 0 } : new JsonObject { ["shadow"] = 0, ["enabled"] = 0 };
-        await using (var tx = await db.BeginTransactionAsync(ct))
+        if (!fileEpisodesOnly)
         {
+            await using var tx = await db.BeginTransactionAsync(ct);
             var session = new SemanticSession(db, tx); int count = development ? limit : RiskBatchSize(limit);
             string[] executable = development ? ["test", "shadow"] : ["test", "shadow", "enabled"];
             var sources = await session.QueryAsync(SemanticProductionSql.Backlog0, ct, count, executable, executable, executable, count);
@@ -42,6 +43,13 @@ internal sealed partial class SemanticProduction
                 // Managed password v2 is leased exclusively by the existing exact-proof consumer.
                 string sql = SemanticProductionSql.RiskClaim0.Replace("where attempt_count < max_attempts", "where not exists(select 1 from semantic_risk_policies password where password.policy_id=job.policy_id and password.policy_version=job.policy_version and password.source_kind='qw_signal' and password.definition_json#>'{source_selector,execution,rule_version}'>='2'::jsonb and password.definition_json#>>'{source_selector,rule_id}' in('qw.password-brute-force','qw.password-spray')) and attempt_count < max_attempts");
                 if (development) sql = sql.Replace("where not exists", "where job.evaluation_mode in('test','shadow') and not exists");
+                if (fileEpisodesOnly) sql = sql.Replace("and attempt_count < max_attempts", """
+                        and job.source_kind='qw_signal' and job.evaluation_mode='enabled'
+                        and exists(select 1 from semantic_risk_policies file
+                            where file.policy_id=job.policy_id and file.policy_version=job.policy_version
+                              and file.source_kind='qw_signal' and file.definition_json#>>'{source_selector,rule_id}'='qw.file-ransom')
+                        and attempt_count < max_attempts
+                        """);
                 var rows = await new SemanticSession(db, tx).QueryAsync("with leased as(" + sql + ") select * from leased", ct, 1, Guid.NewGuid(), 300); job = rows.FirstOrDefault(); await tx.CommitAsync(ct);
             }
             if (job is null) break; claimed++;

@@ -73,13 +73,21 @@ public class FileAuditProjectionTests
         Assert.Equal("delete",deletion[0]!["operation"]!.GetValue<string>());
         Assert.Equal("C:\\synthetic\\old",deletion[0]!["path"]!.GetValue<string>());
         Assert.Equal("handle_context",deletion[0]!["evidence"]![1]!["role"]!.GetValue<string>());
-        var renamed=Run(Item(3,4663,"C:\\synthetic\\new",2),open,previous);
+        var renamed=Run(Item(3,4663,"C:\\synthetic\\new",0x80),open,previous);
         Assert.Equal("rename",renamed[0]!["operation"]!.GetValue<string>());
         Assert.Equal(3,renamed[0]!["evidence"]!.AsArray().Count);
+        Assert.Empty(Run(open));
+        var write=Assert.Single(Run(Item(2,4663,"C:\\synthetic\\old",2),open))!;
+        Assert.Equal("write",write["operation"]!.GetValue<string>());
+        Assert.Contains(write["evidence"]!.AsArray(), edge => edge!["evidence_key"]!.GetValue<string>()=="e1");
+        var denied = open.DeepClone().AsObject();
+        denied["facts"]!["outcome"]="failure";
+        Assert.Equal("failure",Assert.Single(Run(denied))!["outcome"]!.GetValue<string>());
         var conflicting=Item(2,4663,"C:\\synthetic\\other");
         Assert.Empty(Run(Item(3,4660,null),open,conflicting));
         var close=Item(2,4658,null);
         Assert.Empty(Run(Item(3,4660,null),open,close));
+        Assert.Empty(Run(Item(4,4663,"C:\\synthetic\\new",0x80),open,previous,Item(3,4658,null)));
     }    [Fact]
     public void MassWriteRuleRequiresEvidenceAndDistinctFiles()
     {

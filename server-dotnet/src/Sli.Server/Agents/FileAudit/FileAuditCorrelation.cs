@@ -46,10 +46,10 @@ internal static class FileAuditCorrelation
     private static (JsonObject Open,JsonObject Previous)? Rename(JsonObject item,IEnumerable<JsonObject> contexts)
     {
         var f=item["facts"]!.AsObject();
-        if(I(item["event_id"])!=4663 || S(f["outcome"])!="success" || string.IsNullOrEmpty(S(item["path"])) || !HasHandle(f) || (N(f["access_mask"]) & 0x10006)==0) return null;
+        if(I(item["event_id"])!=4663 || S(f["outcome"])!="success" || string.IsNullOrEmpty(S(item["path"])) || !HasHandle(f)) return null;
         var related=Related(item,contexts); long boundary=related.Where(x=>I(x["event_id"]) is 4656 or 4658 or 4660).Select(x=>I(x["record_id"])).DefaultIfEmpty().Max();
         var opened=related.FirstOrDefault(x=>I(x["record_id"])==boundary && I(x["event_id"])==4656 && S(x["facts"]!["outcome"])=="success" && !string.IsNullOrEmpty(S(x["path"])));
-        if(opened is null || (N(opened["facts"]!["access_mask"]) & 0x10000)==0) return null;
+        if(opened is null) return null;
         var previous=related.Where(x=>I(x["record_id"])>boundary && I(x["event_id"])==4663).ToList();
         string path=UnicodeCaseFold.Fold(S(opened["path"])!);
         if(previous.Count==0 || previous.Any(x=>string.IsNullOrEmpty(S(x["path"])) || UnicodeCaseFold.Fold(S(x["path"])!)!=path || S(x["facts"]!["outcome"])!="success") || UnicodeCaseFold.Fold(S(item["path"])!)==path) return null;
@@ -80,13 +80,31 @@ internal static class FileAuditCorrelation
     {
         var contexts=prior.OfType<JsonObject>().ToList(); var f=item["facts"]!.AsObject(); long id=I(item["event_id"]);
         if(FileAuditPolicy.ContextEvents.Contains((int)id) || id==4658) return [];
+        if(id==4656 && S(f["outcome"])!="failure") return [];
         var scopes=item["scopes"]!.AsArray().OfType<JsonObject>().ToList(); string? path=S(item["path"]); string state="complete";
         var evidence=new JsonArray(Ref(item,"primary")); var operations=new List<string>();
         if(id==4660) { var (status,chosen)=DeleteContext(item,contexts); state=status; if(chosen is null) return []; scopes=chosen["scopes"]!.AsArray().OfType<JsonObject>().ToList(); path=S(chosen["path"]); evidence.Add(Ref(chosen,"handle_context")); operations.Add("delete"); }
         else if(id==4663) {
             if(S(f["outcome"])!="success") return []; var mask=N(f["access_mask"]);
             if((mask&1)!=0 && objectType!="directory") operations.Add("read"); if((mask&6)!=0) operations.Add("write"); if((mask&0x10000)!=0) operations.Add("delete_right");
-            var rename=Rename(item,contexts); if(rename is not null) { var (opened,previous)=rename.Value; var admitted=opened["scopes"]!.AsArray().OfType<JsonObject>().Select(x=>S(x["collection_scope_id"])).Intersect(previous["scopes"]!.AsArray().OfType<JsonObject>().Select(x=>S(x["collection_scope_id"]))).ToHashSet(); scopes=scopes.Where(x=>admitted.Contains(S(x["collection_scope_id"]))).ToList(); operations=["rename"]; evidence.Add(Ref(opened,"handle_context")); evidence.Add(Ref(previous,"handle_context")); }
+            var rename=Rename(item,contexts);
+            if(rename is not null)
+            {
+                var (opened,previous)=rename.Value;
+                var admitted=opened["scopes"]!.AsArray().OfType<JsonObject>().Select(x=>S(x["collection_scope_id"]))
+                    .Intersect(previous["scopes"]!.AsArray().OfType<JsonObject>().Select(x=>S(x["collection_scope_id"]))).ToHashSet();
+                scopes=scopes.Where(x=>admitted.Contains(S(x["collection_scope_id"]))).ToList();
+                operations=["rename"];
+                evidence.Add(Ref(opened,"handle_context"));
+                evidence.Add(Ref(previous,"handle_context"));
+            }
+            else if(operations.Count>0 && path is not null && HasHandle(f))
+            {
+                var boundary=Related(item,contexts).Where(x=>I(x["event_id"]) is 4656 or 4658 or 4660).MaxBy(x=>I(x["record_id"]));
+                if(boundary is not null && I(boundary["event_id"])==4656 && S(boundary["facts"]!["outcome"])=="success"
+                    && S(boundary["path"]) is { } openPath && UnicodeCaseFold.Fold(openPath)==UnicodeCaseFold.Fold(path))
+                    evidence.Add(Ref(boundary,"handle_context"));
+            }
         }
         else operations.Add(id switch { 4656 or 5140 or 5145 or 5168=>"access_check",4659=>"delete_right",4670=>"permissions",5142 or 5143 or 5144=>"share_change",4907=>"audit_change",_=>"unknown" });
         string? ip=null,ipSource=null;

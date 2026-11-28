@@ -667,6 +667,8 @@
     "config/postgres_migrations/459_workstation_package.sql": "fad1f4d74e864e139fc9bf0ecd30f8a85577e00bac96b59b03a4b7dd8e141ce0",
     "config/postgres_migrations/460_account_check_rows.rollback.sql": "093f5408354b23cdc7087aefd1c0500aed9ff66627ee9258d5f4e6ed3e6c66d2",
     "config/postgres_migrations/460_account_check_rows.sql": "390c17fe4b889a2d88b5ca91e733b41506b0cedfba64e0e4583db03f9c42cf85",
+    "config/postgres_migrations/461_file_actions_and_problems.rollback.sql": "fcb07c4e282e36ea869a7fb2eae8407fd64fa029348937b97ddb231f8b0c1d4f",
+    "config/postgres_migrations/461_file_actions_and_problems.sql": "2c69128b55734748eeeb3ebe4bb2443b63402bae1ce702d5add821fe575f67f8",
     "config/postgres_migrations/storage_v2_roles.sql": "089efe6f1c62819be1445eee3bdb14ad91ce9c06fe6a023182cc7818033cff2c",
     "config/postgres_schema_v8.sql": "98a9a5e23061cfb773a923ded62515c049b08b0d585bed9e9e603ef4e5c23e80"
   },
