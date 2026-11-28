@@ -417,7 +417,7 @@ it.each(["ru", "en"] as const)("keeps the mockup sections and both channel setti
   expect(screen.getByRole("button", { name: t("notify.addRule") })).toBeTruthy();
   fireEvent.click(screen.getByRole("tab", { name: t("notify.journal") }));
   expect(screen.getByLabelText(t("notify.period"))).toBeTruthy();
-  expect(screen.getByRole("button", { name: t("notify.testProblem") })).toBeTruthy();
+  expect(screen.getByRole("cell", { name: t("notify.testProblem") })).toBeTruthy();
 });
 
 it("shows a denial instead of cached rows or zero counts", async () => {
@@ -457,7 +457,7 @@ it("keeps aggregate counts, safe reasons and a delivery drawer", async () => {
   expect(screen.getByRole("button", { name: `${t("notify.all")} 401` })).toBeTruthy();
   expect(screen.getByText(t("reports.v2.notifications.deliveries.columns.result_code.labels.smtp_unavailable"))).toBeTruthy();
   expect(screen.queryByText(/Новых с прошлого входа/)).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: t("notify.testProblem") }));
+  fireEvent.click(screen.getByRole("cell", { name: t("notify.testProblem") }).closest("tr")!);
   expect(screen.getByRole("dialog").textContent).toContain(t("notify.repeats"));
   expect(screen.getByRole("dialog").textContent).toContain("1");
 });
@@ -469,10 +469,28 @@ it("names the delivered problem and links its drawer to the exact problem", asyn
   data.items = [{ ...data.items[0], object_kind: "semantic_finding", finding_id: 42, problem_title: title }];
   mock.list.mockResolvedValue(data);
   mount();
-  fireEvent.click(await screen.findByRole("button", { name: title }));
+  fireEvent.keyDown((await screen.findByRole("cell", { name: title })).closest("tr")!, { key: "Enter" });
   expect(screen.getByRole("dialog", { name: title })).toBeTruthy();
   expect(screen.getByRole("link", { name: t("notify.openProblem") }).getAttribute("href"))
     .toBe("/app/report/security.problems?id=42");
+});
+
+it("shows the server's occurrence count and opens the original delivery records", async () => {
+  window.history.replaceState({}, "", "/app/notifications?tab=journal");
+  const data = fixture();
+  const first = { ...data.items[0], id: "fixture-first", created_at: "2026-10-17T22:00:00Z" };
+  const last = { ...data.items[0], occurrence_count: 2, first_at: first.created_at };
+  mock.list.mockImplementation(async (params: URLSearchParams) => ({ ...data,
+    items: params.has("group_id") ? [data.items[0], first] : [last],
+  }));
+  mount();
+  const table = await screen.findByRole("table", { name: t("notify.journal") });
+  expect(within(table).getByRole("cell", { name: "2" })).toBeTruthy();
+  expect(within(table).getByRole("cell", { name: "18.10.2026, 05:00" })).toBeTruthy();
+  fireEvent.click(within(table).getByRole("cell", { name: t("notify.testProblem") }).closest("tr")!);
+  const dialog = screen.getByRole("dialog");
+  expect(await within(dialog).findByRole("button", { name: "18.10.2026, 05:00" })).toBeTruthy();
+  expect(mock.list.mock.calls.some(([params]) => params.get("group_id") === last.id)).toBe(true);
 });
 
 it("requests server filters and never treats a page length as the total", async () => {
@@ -492,7 +510,7 @@ it("edits a rule through its row and confirms disabling it by name", async () =>
   expect(within(dialog).getByRole("button", { name: t("notify.save") })).toHaveProperty("disabled", true);
   fireEvent.click(within(dialog).getByLabelText(t("notify.enabled")));
   fireEvent.click(within(dialog).getByRole("button", { name: t("notify.save") }));
-  expect(screen.getByRole("dialog", { name: "Отключить «Проблемы → Почта (recipient@example.test)»?" })).toBeTruthy();
+  expect(screen.getByRole("dialog", { name: "Отключить «Проблемы → Почта»?" })).toBeTruthy();
   expect(mock.save).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: t("notify.confirm") }));
   await waitFor(() => expect(mock.save).toHaveBeenCalledWith("fixture-subscription", {

@@ -13,6 +13,8 @@ using Npgsql;
 using Sli.Server.Access;
 using Sli.Server.Access.Administration;
 using Sli.Server.Auth;
+using Sli.Server.Infrastructure;
+using Sli.Server.Tests.Agents;
 using Sli.Server.Tests.Integration;
 using Xunit;
 
@@ -29,6 +31,42 @@ public sealed class AccessReadTests
         Assert.Equal("opaque-source-value", audit.GetProperty("items")[0].GetProperty("details_json").GetProperty("created_at").GetString());
         var effective = JsonSerializer.SerializeToElement(AccessReadPresentation.Apply(new { evaluated_at_utc = "2026-01-02T03:04:05.123+00:00" }, "effective", "ru"));
         Assert.Equal("2026-01-02T03:04:05.123000Z", effective.GetProperty("evaluated_at_utc").GetString());
+    }
+
+    [Fact]
+    public async Task GroupedAuditPreservesOriginalTimesAndKeepsChannelsAndAuthorsSeparate()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct);
+        await using var owner = await fixture.Pg.OpenAsync(ct);
+        await PostCollectionPostgres.Sql(owner, """
+            insert into access_audit_v4(actor_type,actor_id,action,target_type,target_key,reason,details_json,created_at)
+            values ('session',1,'notification_channel_update','notification_channel','telegram','fixture','{"phase":"completed"}',now()),
+                   ('session',1,'notification_channel_update','notification_channel','telegram','fixture','{"phase":"requested"}',now()-interval '2 minutes'),
+                   ('session',1,'notification_channel_update','notification_channel','smtp','fixture','{}',now()),
+                   ('system',null,'notification_channel_update','notification_channel','telegram','fixture','{}',now())
+            """, ct);
+        var reader = new AccessReadService(new AuditConnection(fixture));
+
+        var raw = JsonSerializer.SerializeToElement(await reader.GetAuditAsync(100, ct));
+        Assert.Equal(4, raw.GetProperty("items").EnumerateArray().Count(item => item.GetProperty("reason").GetString() == "fixture"));
+        var result = await reader.GetAuditAsync(100, ct, collapse: true);
+        var grouped = JsonSerializer.SerializeToElement(AccessReadPresentation.Apply(result, "audit", "en"));
+        var rows = grouped.GetProperty("items").EnumerateArray()
+            .Where(item => item.GetProperty("reason").GetString() == "fixture").ToArray();
+        Assert.Equal(3, rows.Length);
+        var telegram = Assert.Single(rows, row => row.GetProperty("actor_type").GetString() == "session"
+            && row.GetProperty("target_key").GetString() == "telegram");
+        var occurrences = telegram.GetProperty("occurrences").EnumerateArray().ToArray();
+        Assert.Equal(2, occurrences.Length);
+        Assert.NotEqual(occurrences[0].GetProperty("created_at").GetString(), occurrences[1].GetProperty("created_at").GetString());
+        Assert.EndsWith("+00:00", occurrences[1].GetProperty("created_at").GetString());
+    }
+
+    private sealed class AuditConnection(SqlPostgresFixture fixture) : IPostgresConnectionFactory
+    {
+        public Task<NpgsqlConnection> OpenAsync(CancellationToken ct) => fixture.Pg.OpenAsync(ct, "adlog_user");
     }
 
     [Fact]

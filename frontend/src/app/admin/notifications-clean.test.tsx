@@ -52,6 +52,11 @@ it("separates channel configuration from recorded attempts and deliveries", asyn
   expect(within(row).getByRole("cell", { name: "Принятых доставок нет" })).toBeTruthy();
   expect(state.querySelectorAll("div, .sli-ds-badge")).toHaveLength(0);
   expect(row.textContent).not.toMatch(/Токен не задан|Чат не подключён/);
+  expect(row.querySelector('use[href="#i-send"]')).toBeTruthy();
+  expect(within(row).queryByRole("button", { name: "Проверить" })).toBeNull();
+  expect(screen.getByText("Подключите хотя бы один канал")).toBeTruthy();
+  fireEvent.click(within(row).getByRole("button", { name: "Настроить" }));
+  expect(screen.getByRole("dialog", { name: "Telegram" })).toBeTruthy();
   expect(view.container.querySelector(".sli-ds-callout, .sli-ds-header__subtitle")).toBeNull();
 });
 
@@ -60,7 +65,10 @@ it("keeps only actionable rules named after their content and destination", asyn
   mount();
   fireEvent.click(await screen.findByRole("tab", { name: "Правила" }));
   const table = await screen.findByRole("table", { name: "Правила" });
-  expect(await within(table).findByText("Telegram (Fixture chat)")).toBeTruthy();
+  expect(await within(table).findByRole("cell", { name: "Telegram" })).toBeTruthy();
+  expect(await within(table).findByRole("cell", { name: "Fixture chat" })).toBeTruthy();
+  fireEvent.click(within(table).getByRole("button", { name: "Изменить" }));
+  expect(screen.getByRole("dialog", { name: "Проблемы → Telegram" })).toBeTruthy();
   expect(within(table).getByRole("columnheader", { name: "Что отправляется" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Добавить правило" })).toBeTruthy();
   expect(screen.getByRole("tabpanel").textContent).not.toMatch(/Нет данных|недоступн|Политика по важности|Тихие часы|Подписки на отчёты|получателю №|Появятся позже/);

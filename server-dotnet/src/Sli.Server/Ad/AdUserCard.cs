@@ -20,7 +20,7 @@ internal static class AdUserCard
         long domain = source.Int("domain_id");
         var safe = raw.DeepClone().AsObject();
         AdInventoryRows.RedactUser(safe, fields);
-        var activity = AdInventoryRows.Activity(safe);
+        var activity = LatestActivity(safe, null);
         var card = new JsonObject
         {
             ["entity_id"] = entityId,
@@ -48,15 +48,22 @@ internal static class AdUserCard
             && accounts.Count(u => string.Equals(u.Text("sid"), sid, StringComparison.OrdinalIgnoreCase)) == 1)
         {
             var now = DateTimeOffset.UtcNow;
-            var today = new DateTimeOffset(now.UtcDateTime.Date, TimeSpan.Zero);
+            var period = request.Params["period"];
+            var end = AdInventoryRows.Date(period?["to_utc"]) ?? now;
+            var start = AdInventoryRows.Date(period?["from_utc"]) ?? end.AddDays(-30);
+            string zone = TimeZoneInfo.TryConvertWindowsIdToIanaId(request.Timezone, out var iana)
+                ? iana : request.Timezone;
             string[] names = new[] { safe.Text("userPrincipalName"),
                 card.Text("domain_name") is {} dns && safe.Text("samAccountName") is {} sam ? dns + "\\" + sam : null }
                 .OfType<string>().Select(s => s.ToLowerInvariant()).Distinct().ToArray();
             var rows = await AdJson.ReadAsync(db, AdAccountEvents.Source(configuration, scope: " and h.domain_id=$4",
                 filter: " and h.event_kind in (4624,4625) and (upper(h.actor)=$5 or (h.event_kind=4625 and lower(h.actor)=any($6)))") + ActivitySql, ct,
-                new[] { 4624, 4625 }, now.AddDays(-30), now, domain, sid.ToUpperInvariant(), names, today);
+                new[] { 4624, 4625 }, start, end, domain, sid.ToUpperInvariant(), names, zone);
             foreach (string key in new[] { "timeline", "computers", "logon_days", "logon_totals" })
                 card[key] = JsonNode.Parse(rows[0].Text(key) ?? "null");
+            activity = LatestActivity(safe, rows[0]["last_logon_utc"]);
+            card["activity_at"] = activity.Value?.DeepClone();
+            card["activity_source"] = activity.Source;
             var principals = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var principal in accounts)
                 if (principal.Text("sid") is {} principalSid && (principal.Text("samAccountName") ?? principal.Text("name")) is {} name)
@@ -68,7 +75,20 @@ internal static class AdUserCard
         return AdV2Store.Result(request.Key, "ok", [card]);
     }
 
-    // The day strip uses complete UTC days so a retained daily bucket is never split.
+    internal static (JsonNode? Value, string? Source) LatestActivity(JsonObject account, JsonNode? journal)
+    {
+        var candidates = new[]
+        {
+            (Value: journal, Source: "windows_event"),
+            (Value: account["exactLastLogon"], Source: "domain_controllers"),
+            (Value: account["lastLogonTimestamp"], Source: "active_directory")
+        };
+        var newest = candidates.Select(candidate => (candidate, Stamp: AdInventoryRows.Date(candidate.Value)))
+            .Where(entry => entry.Stamp.HasValue).OrderByDescending(entry => entry.Stamp).FirstOrDefault();
+        return newest.candidate;
+    }
+
+    // A retained group that spans local midnight cannot be divided into exact local counts.
     // 4624 and 4625 both store the attempted account in actor.
     internal const string ActivitySql = """
         , activity as materialized (
@@ -83,18 +103,28 @@ internal static class AdUserCard
                and (upper(actor)=$5 or (event_id=4625 and lower(actor)=any($6)))
         ), daily as (
             select calendar.day,
-                   coalesce(sum(event_count) filter (where event_id=4624),0)::bigint as successes,
-                   coalesce(sum(event_count) filter (where event_id=4625),0)::bigint as failures
-              from (select ($7::timestamptz at time zone 'UTC')::date-days as day
-                      from generate_series(1,14) offsets(days)) calendar
-              left join activity a on coalesce(a.day,(a.first_seen_utc at time zone 'UTC')::date)=calendar.day
-                and a.event_id in (4624,4625)
+                   case when not bool_or(uncertain) filter (where event_id=4624) is true
+                        then coalesce(sum(event_count) filter (where event_id=4624),0)::bigint end as successes,
+                   case when not bool_or(uncertain) filter (where event_id=4625) is true
+                        then coalesce(sum(event_count) filter (where event_id=4625),0)::bigint end as failures
+              from (select stamp::date as day
+                    from generate_series(($2::timestamptz at time zone $7)::date::timestamp,
+                         (($3::timestamptz - interval '1 microsecond') at time zone $7)::date::timestamp,
+                         interval '1 day') stamp) calendar
+              left join lateral (
+                  select event_id, event_count, event_count is null or
+                         (first_seen_utc at time zone $7)::date <> (last_seen_utc at time zone $7)::date as uncertain
+                    from activity
+                   where calendar.day between (least(first_seen_utc,last_seen_utc) at time zone $7)::date
+                                          and (greatest(first_seen_utc,last_seen_utc) at time zone $7)::date
+              ) a on true
              group by calendar.day
         ), totals as (
-            select sum(successes) as successes, sum(failures) as failures,
-                   percentile_disc(0.5) within group (order by successes)
-                       filter (where day<($7::timestamptz at time zone 'UTC')::date-1) as typical
-              from daily having sum(successes+failures)>0
+            select case when count(*) filter (where event_id=4624 and event_count is null)=0
+                        then coalesce(sum(event_count) filter (where event_id=4624),0) end as successes,
+                   case when count(*) filter (where event_id=4625 and event_count is null)=0
+                        then coalesce(sum(event_count) filter (where event_id=4625),0) end as failures
+              from activity having count(*)>0
         ), timeline_rows as (
             select id, event_id, last_seen_utc as at_utc, first_seen_utc, event_count, actor, target, source, summary_key
               from activity
@@ -110,6 +140,7 @@ internal static class AdUserCard
         select (select jsonb_agg(to_jsonb(r) order by r.at_utc desc, r.id desc nulls last, r.summary_key) from recent r)::text as timeline,
                (select jsonb_agg(to_jsonb(c) order by c.at_utc desc, c.computer) from computers c)::text as computers,
                (select jsonb_agg(to_jsonb(d) order by d.day) from daily d where exists(select 1 from totals))::text as logon_days,
-               (select to_jsonb(t) from totals t)::text as logon_totals
+               (select to_jsonb(t) from totals t)::text as logon_totals,
+               (select max(last_seen_utc) from activity where event_id=4624) as last_logon_utc
         """;
 }

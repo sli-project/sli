@@ -80,7 +80,7 @@ public static class AccessReadEndpoints
                                 : "invalid literal for int() with base 10: " + PythonRepr(value);
                             await ErrorAsync(context, error, 400, ct); return;
                         }
-                        body = await service.GetAuditAsync((int)BigInteger.Clamp(limit, 1, 500), ct);
+                        body = await service.GetAuditAsync((int)BigInteger.Clamp(limit, 1, 500), ct, Values(context, "collapse").FirstOrDefault() == "1");
                     }
                     await DomainHttp.WriteAsync(context, AccessReadPresentation.Apply(body, leaf, context.Request.Headers.AcceptLanguage.ToString()), 200, ct);
                 }

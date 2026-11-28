@@ -83,7 +83,6 @@ public static class SetupCollectionHealth
     }
     public static async Task<JsonObject> ReadAsync(IInstallationDatabase database, CancellationToken ct)
     {
-        var now = DateTimeOffset.UtcNow;
         try
         {
             var agents = await database.ReadAsync(s => s.QueryAsync(InstallationService.Sql("setup-agents.sql"), ct), ct);
@@ -100,7 +99,7 @@ public static class SetupCollectionHealth
             {
                 streams = new(); diagnostics = new() { ["state"] = "unavailable", ["reason"] = e is PostgresException p && p.SqlState == "57014" || e is TimeoutException ? "timeout" : "read_failed" };
             }
-            var result = View(agents, streams, now, diagnostics is null);
+            var result = View(agents, streams, DateTimeOffset.UtcNow, diagnostics is null);
             if (diagnostics is not null) result["diagnostics"] = diagnostics;
             result["_setup_bindings"] = Bindings(agents);
             return result;
@@ -108,7 +107,7 @@ public static class SetupCollectionHealth
         catch (Exception e) when (e is NpgsqlException or InvalidOperationException or ArgumentException or AgentException or TimeoutException)
         {
             return new() { ["state"] = "unavailable", ["items"] = new JsonArray(), ["active_agents"] = 0, ["current_agents"] = 0,
-                ["completeness"] = new JsonObject { ["state"] = "not_assessed" }, ["checked_at_utc"] = Iso(now), ["_setup_bindings"] = new JsonArray() };
+                ["completeness"] = new JsonObject { ["state"] = "not_assessed" }, ["checked_at_utc"] = Iso(DateTimeOffset.UtcNow), ["_setup_bindings"] = new JsonArray() };
         }
     }
     public static JsonObject View(JsonArray agents, JsonArray streams, DateTimeOffset now, bool diagnosticsAvailable = true)
@@ -121,8 +120,9 @@ public static class SetupCollectionHealth
             bool enabled = T(agent["status"]) == "active" && (T(policy["state"]) is "" or "active");
             bool applied = N(agent["policy_revision"]) == N(agent["applied_policy_revision"]) && T(agent["applied_collection_state"]) == "active";
             long interval = N(policy["interval_seconds"], 60);
-            long? connectionAge = Age(agent["last_seen"], now);
-            string connection = connectionAge is null ? "never_seen" : connectionAge <= ContactBudgetSeconds(interval) ? "online" : "offline";
+            var lastSeen = Time(agent["last_seen"]);
+            string connection = lastSeen is not { } seen ? "never_seen"
+                : seen <= now && (long)(now - seen).TotalSeconds <= ContactBudgetSeconds(interval) ? "online" : "offline";
             var assignments = Array(agent["assigned_modules"]);
             if (T(agent["status"]) == "active" && connection == "online" && assignments.Any(a =>
                 T(a is JsonObject assignment ? assignment["module_id"] : a) is "sli.windows.ad-dc" or "sli.windows.ad-dc-history"))
@@ -194,14 +194,15 @@ public static class SetupCollectionHealth
                 .Select(a => T(a["config"]?["source_name"]).Trim()).FirstOrDefault() ?? "";
             if (name == T(agent["host_id"]) || name == T(agent["id"])) name = "";
             if(agent["server_id"] is null) name = string.Join(" · ", new[] { name, T(agent["instance_name"]) }.Where(s => s.Length > 0));
-            var lastPacket = activeChecks.Select(c => Time(c["last_packet_at"])).Append(Time(agent["last_packet_at"])).Max();
+            var lastPacket = activeChecks.Select(c => Time(c["last_packet_at"]))
+                .Append(Time(agent["last_packet_at"])).Where(receipt => receipt <= now).DefaultIfEmpty().Max();
             items.Add(new JsonObject { ["id"] = T(agent["id"]), ["host_id"] = T(agent["host_id"]), ["name"] = name,
                 ["can_restore"]=B(agent["can_restore"]), ["server_id"]=agent["server_id"]?.DeepClone(),["status"]=agent["status"]?.DeepClone(),["agent_version"]=agent["agent_version"]?.DeepClone(),["replaced_by"]=agent["replaced_by"]?.DeepClone(),["identity_conflict"]=B(agent["identity_conflict"]),
                 ["certificate_reissue_required"]=B(agent["certificate_reissue_required"]),
                 ["domains"] = new JsonArray(domains.Select(d => (JsonNode?)JsonValue.Create(d)).ToArray()), ["state"] = stateForAgent, ["connection"] = connection,
                 ["data_gaps"] = DataGaps(agent["packet_expiry"], TimeSpan.FromMinutes(5)),
                 ["completeness"] = new JsonObject { ["state"] = agent["last_accepted_gap_at"] is null ? "not_assessed" : "known_gaps", ["last_accepted_gap_at"] = Iso(Time(agent["last_accepted_gap_at"])) },
-                ["last_seen"] = Iso(Time(agent["last_seen"])), ["last_packet_at"] = Iso(lastPacket),
+                ["last_seen"] = Iso(lastSeen), ["last_packet_at"] = Iso(lastPacket),
                 ["modules"] = modules, ["policy_revision"] = agent["policy_revision"]?.DeepClone(), ["applied_policy_revision"] = agent["applied_policy_revision"]?.DeepClone(),
                 ["collection_interval_seconds"] = interval,
                 ["windows_audit"] = agent["windows_audit"] is JsonObject audit && audit["families"] is JsonObject

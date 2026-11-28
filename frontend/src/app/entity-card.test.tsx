@@ -18,7 +18,7 @@ const SEARCH = "time_from=2026-09-10&time_to=2026-09-11&timezone=UTC";
 
 const workspace = (patch: Partial<EntityWorkspaceDetail> = {}): EntityWorkspaceDetail => ({
   api_version: "v1",
-  entity: { id: 7, type: "ad_user", natural_key: "S-1-5-21-7", display_name: "CORP\analyst", first_seen_utc: "2026-09-01T08:00:00Z", last_seen_utc: "2026-09-10T12:00:00Z" },
+  entity: { id: 7, type: "account", natural_key: "S-1-5-21-100000001-200000002-300000003-7", display_name: "CORP\analyst", first_seen_utc: "2026-09-01T08:00:00Z", last_seen_utc: "2026-09-10T12:00:00Z" },
   current_states: [], current_states_state: "available", ad_context_state: "available",
   ad_context: { resolution: "not_found", items: [], returned_count: 0, bounded: true },
   events: [], events_state: "available", events_scope_filtered: false,
@@ -74,7 +74,7 @@ it.each(["ru", "en"] as const)("localizes entity tabs and known warnings while p
 });
 
 it("mounts watch controls for the exact AD account card only", async () => {
-  expect(await render("overview", workspace())).toContain('data-watch-entity="7"');
+  expect(await render("overview", workspace({ entity: { ...workspace().entity, type: "ad_user" } }))).toContain('data-watch-entity="7"');
   expect(await render("overview", workspace({ entity: { ...workspace().entity, type: "ad_group" } }),
     { ...object, object: { ...object.object, object_type: "ad_group" } })).not.toContain("data-watch-entity");
 });

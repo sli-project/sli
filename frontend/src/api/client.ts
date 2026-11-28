@@ -394,7 +394,7 @@ export type V4AccessSubjects = {
 
 export type V4AccessAuditItem = {
   id: number; actor_type: string; actor_id?: number | null; action: string;
-  subject_type?: string | null; subject_id?: number | null; target_key?: string | null;
+  subject_type?: string | null; subject_id?: number | null; target_type?: string | null; target_key?: string | null;
   reason?: string | null; outcome: string; details_json?: Record<string, unknown>; created_at: string;
 };
 
@@ -1736,12 +1736,15 @@ export type InvestigationCaseSummary = Omit<InvestigationCase, "events" | "evide
 };
 
 export type EntitiesWorkspace = { api_version: "v1"; query: string; state: "empty" | "ok"; items: Array<{ id: number; type: string; natural_key: string; display_name?: string | null; first_seen_utc?: string | null; last_seen_utc?: string | null; latest_state?: { status: string; summary?: string | null; observed_at_utc?: string | null; evidence_event_db_id: number } | null }>; has_more: boolean; filters?: { entity_types?: string[]; exclude_entity_types?: string[] }; type_counts?: Array<{ entity_type: string; count: number }>; type_counts_scope?: string; total_entities?: number; limits: Record<string, unknown> };
-export type EntityWorkspaceItem = EntitiesWorkspace["items"][number];
+export type EntityWorkspaceItem = EntitiesWorkspace["items"][number] & { domain_id?: number | null };
 
 export type EntityWorkspaceEvent = {
   event_db_id: number;
+  summary_key?: string | null;
   event_id?: number | null;
   label?: string | null;
+  severity?: string | null;
+  title_code?: string | null;
   time_utc?: string | null;
   server?: string | null;
   channel?: string | null;
@@ -1808,7 +1811,7 @@ export type EntityWorkspaceDetail = {
   semantic_relations_state: string;
   semantic_relations: SemanticRelationItem[];
   has_more: boolean;
-  next_cursor?: { time_utc?: string | null; event_db_id: number } | null;
+  next_cursor?: { time_utc?: string | null; event_db_id: number; summary_key?: string | null } | null;
   context?: { time_from_utc?: string | null; time_to_utc_exclusive?: string | null; timezone?: string | null };
   limits: Record<string, unknown>;
 };
@@ -2441,6 +2444,9 @@ export const api = {
   v4AccessSubjectsForAccountType: (accountType: "people" | "service") => request<V4AccessSubjects>(`/api/v1/access/subjects?account_type=${accountType}`),
   v4AccessGrantOptions: () => request<{ api_version: "v4"; items: V4ReportGrantOption[]; limits: { reports: number } }>("/api/v1/access/grant-options"),
   v4AccessAudit: () => request<{ items: V4AccessAuditItem[]; limit: number }>("/api/v1/access/audit?limit=100"),
+  v4AccessJournal: (collapse: boolean) => request<{ items: (V4AccessAuditItem & { occurrences?: V4AccessAuditItem[] | null })[] }>(
+    `/api/v1/access/audit?limit=100${collapse ? "&collapse=1" : ""}`,
+  ),
   v4ReportAccessRequests: (includeAll = false) => request<{ api_version: "v4"; items: V4ReportAccessRequest[]; limit: number; review_allowed: boolean }>(`/api/v1/access/report-requests?scope=${includeAll ? "all" : "mine"}&limit=100`),
   v4CreateReportAccessRequest: (body: Record<string, unknown>) => requestMutation<{ item: V4ReportAccessRequest }>("/api/v1/access/report-requests", "POST", body),
   v4DecideReportAccessRequest: (requestId: number, body: Record<string, unknown>) => requestMutation<{ item: V4ReportAccessRequest }>(`/api/v1/access/report-requests/${requestId}/decision`, "POST", body),

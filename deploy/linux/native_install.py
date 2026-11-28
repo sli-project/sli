@@ -481,38 +481,50 @@ def select(root):
     CURRENT.symlink_to(root)
 
 
-def wait_api(config):
+def wait_api(config, *, startup_timeout=None):
     import ssl
     from urllib.error import URLError
     from urllib.request import urlopen
 
     context = ssl.create_default_context(cafile=str(SECRETS / "tls_ca"))
     operation = operations()
-    watch = operation.Watch('api_ready', minimum=3600, history=operation.readiness_history(), native=True)
+    watch = operation.Watch('api_ready', minimum=3600, history=operation.readiness_history(),
+                            native=True, stall=startup_timeout)
+    delay = 1 if startup_timeout is not None else 30
     while True:
+        started = time.monotonic()
         try:
-            with urlopen(config["health_url"], context=context, timeout=3) as response:
-                require(response.status == 200, "native_install_api_unready")
-            watch.success()
-            return
-        except (URLError, TimeoutError, ssl.SSLCertVerificationError) as exc:
+            remaining = watch.check()
+        except operation.OperationTimeout:
+            raise RuntimeError('native_install_api_unready') from None
+        try:
+            with urlopen(config["health_url"], context=context, timeout=min(3, remaining)) as response:
+                ready = response.status == 200
+        except OSError as exc:
             if isinstance(exc, ssl.SSLCertVerificationError) or (
                 isinstance(exc, URLError) and isinstance(exc.reason, ssl.SSLCertVerificationError)
             ):
                 raise RuntimeError("native_api_tls_untrusted") from None
-            try:
-                watch.check()
-            except RuntimeError:
-                raise RuntimeError('native_install_api_unready') from None
-            time.sleep(30)
+            ready = False
+        if ready:
+            watch.success()
+            return
+        remaining -= time.monotonic() - started
+        if startup_timeout is not None and remaining > 1:
+            remaining -= 1  # Leave time for one last probe within the startup budget.
+        time.sleep(max(0, min(delay, remaining)))
+        if startup_timeout is not None:
+            delay = min(delay * 2, 4)
 
 
-def wait_health():
+def wait_health(*, check_services=None):
     operation = operations()
     watch = operation.Watch('workers_ready', minimum=3600, history=operation.readiness_history(), native=True)
     while True:
         try:
             command(["systemctl", "start", "sli-health.service"], timeout=30)
+            if check_services is not None:
+                check_services()
             watch.success()
             return
         except (RuntimeError, subprocess.TimeoutExpired) as error:
@@ -526,6 +538,8 @@ def wait_health():
                 watch.check(pending, components=pending)
             except RuntimeError:
                 if isinstance(error, UnitCommandFailure):
+                    if str(error) != 'native_install_command_failed':
+                        raise error from None
                     detail = error.detail
                     raise UnitCommandFailure(detail['unit'], detail['exit_code'], detail['error'],
                                              code='native_install_workers_unhealthy') from None

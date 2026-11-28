@@ -91,6 +91,14 @@ it("links a connected workstation with no assigned collection to its plugin", as
   expect(row.queryByText(t("systemStatus.action.agent"))).toBeNull();
 });
 
+it("shows no connection when the only agent contact is in the future", async () => {
+  const future = new Date(Date.now() + 60_000).toISOString();
+  state.list.mockResolvedValue({ items: [{ ...agent, last_seen: future }] });
+  mount();
+  const row = within((await screen.findByText("fixture-host")).closest("tr")!);
+  expect(row.getByRole("cell", { name: t("agents.notConnected") })).toBeTruthy();
+});
+
 it.each([
   ["updating", null, "Обновляется до 26.0.185"],
   ["updated", null, "Обновлён"],

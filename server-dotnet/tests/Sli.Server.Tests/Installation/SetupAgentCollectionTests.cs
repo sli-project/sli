@@ -337,6 +337,7 @@ public sealed class SetupAgentCollectionTests
     [Theory]
     [InlineData("sli.windows.ad-dc", "active", 600, 1)]
     [InlineData("sli.windows.ad-dc", "active", 601, 0)]
+    [InlineData("sli.windows.ad-dc", "active", -1, 0)]
     [InlineData("sli.windows.ad-dc", "active", null, 0)]
     [InlineData("sli.windows.ad-dc", "disabled", 0, 0)]
     [InlineData("sli.windows.ad-dc-history", "active", 0, 1)]

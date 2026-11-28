@@ -79,6 +79,7 @@ internal static class AdReviewChecks
         bool accountRows = UsesAccountRows(request);
         var accounts = new List<JsonObject>();
         var accountCounts = new Dictionary<string, int>();
+        long entityFilter = request.Params.Int("entity_id");
         if(request.Params.Text("check") is {} requested&&!Templates[kind]!.AsObject().ContainsKey(requested))throw new AdInputException("report_check_invalid");
         var matched=Templates[kind]!.AsObject().ToDictionary(p=>p.Key,_=>new List<JsonObject>());var unknown=matched.Keys.ToDictionary(k=>k,_=>0);int population=0;
         var oldCounts=matched.Keys.ToDictionary(k=>k,_=>0);var baseCounts=matched.Keys.ToDictionary(k=>k,_=>0);
@@ -111,7 +112,11 @@ internal static class AdReviewChecks
             var predecessor=accountRows||previous is null?null:await AdV2Store.PreviousSnapshot(db,previous,family,ct);
             var baselinePredecessor=baseline is null?null:await AdV2Store.PreviousSnapshot(db,baseline,family,ct);
             string Identity(JsonObject r)=>(r.Text("objectGuid")??r.Text("sid")??r.Text("entityId")??"").ToLowerInvariant();
-            bool Matches(JsonObject r)=>request.Params.Text("q") is not {} q||new[]{r.Text(users?"samAccountName":"name"),r.Text(users?"displayName":"name"),r.Text("ou")}.Any(s=>s?.Contains(q,StringComparison.OrdinalIgnoreCase)==true);
+            long EntityId(JsonObject r) => users ? r.Int("entityId")
+                : source["entity_ids"].Int((r.Text("objectGuid") ?? "").ToLowerInvariant());
+            bool Matches(JsonObject r) => (entityFilter == 0 || EntityId(r) == entityFilter)
+                && (request.Params.Text("q") is not {} q || new[] { r.Text(users ? "samAccountName" : "name"),
+                    r.Text(users ? "displayName" : "name"), r.Text("ou") }.Any(s => s?.Contains(q, StringComparison.OrdinalIgnoreCase) == true));
             JsonObject[] Objects(JsonObject? s)=>s?["snapshot"]?[collection] is JsonArray array?array.OfType<JsonObject>().Where(r=>Identity(r).Length>0).GroupBy(Identity).Select(g=>(JsonObject)g.Last().DeepClone()).ToArray():[];
             var currentObjects=Objects(source);var previousObjects=Objects(previous);var baseObjects=Objects(baseline);
             var before=previousObjects.ToDictionary(Identity);var beforeOld=Objects(predecessor).ToDictionary(Identity);var beforeBase=Objects(baselinePredecessor).ToDictionary(Identity);
@@ -159,7 +164,8 @@ internal static class AdReviewChecks
                     if(value is null){unknown[key]++;unassessed.Add((source.Int("domain_id"),identity));continue;}if(value!=true)continue;
                     affected.Add((source.Int("domain_id"),identity));
                     matchedIdentities[key].Add((source.Int("domain_id"),identity));
-                    var item=Obj(new{entity_id=users?(long?)raw.Int("entityId"):source["entity_ids"]?[raw.Text("objectGuid")??""]?.GetValue<long>(),name=users?raw.Text("samAccountName")??raw.Text("displayName"):raw.Text("name"),observed_at_utc=Iso(at),domain_id=source.Int("domain_id"),domain_name=source.Text("fqdn"),computer_type=users?null:raw.Text("deviceType")});
+                    long entityId = EntityId(raw);
+                    var item=Obj(new{entity_id=users||entityId>0?(long?)entityId:null,name=users?raw.Text("samAccountName")??raw.Text("displayName"):raw.Text("name"),observed_at_utc=Iso(at),domain_id=source.Int("domain_id"),domain_name=source.Text("fqdn"),computer_type=users?null:raw.Text("deviceType")});
                     item["change"]=Change(related,key,raw);
                     if(users){var activity=AdInventoryRows.Activity(raw);item["enabled"]=raw["enabled"]?.DeepClone();item["sam"]=raw["samAccountName"]?.DeepClone();item["activity_at"]=activity.Value?.DeepClone();item["ou"]=raw["ou"]?.DeepClone();item["password_last_set"]=raw["passwordLastSet"]?.DeepClone();item["membership_paths"]=raw["memberships"]?["paths"]?.DeepClone();}
                     else{var computer=AdInventoryRows.Computer(raw,source,Iso(at),new());foreach(string field in new[]{"operating_system","last_logon_utc","ou_path","laps_state","enabled"})item[field]=computer[field]?.DeepClone();item["sli_agent"]=raw["sli_agent"]?.DeepClone();item["dns_ip"]=AdComputerPosture.Dns(raw);}
@@ -170,6 +176,7 @@ internal static class AdReviewChecks
         var rows=new List<JsonObject>();bool missing=sources.Count==0||sources.Any(s=>s["snapshot"] is null);
         foreach(var (key,template) in accountRows ? new JsonObject() : Templates[kind]!.AsObject())
         {
+            if (entityFilter > 0 && matched[key].Count == 0) continue;
             var row=(JsonObject)template!.DeepClone();row["id"]=kind+":"+key;row["key"]=key;row["section"]=row.Text("severity")=="low"?"hygiene":"review";
             bool uncertain=missing||unknown[key]>0;
             int? total=population-unknown[key]>0||matched[key].Count>0||allComplete&&!uncertain?matched[key].Count:null;

@@ -47,6 +47,9 @@ def test_clean_install_units_have_complete_boot_chain(tmp_path, monkeypatch, mod
 
     ready = rendered["sli-ready.service"]
     assert set(runtime.DATABASES) <= values(ready, "Wants") & values(ready, "After")
+    health = rendered["sli-health.service"]
+    assert "sli-dotnet-api.service" in values(health, "Wants") & values(health, "After")
+    assert values(rendered["sli-health.timer"], "Unit") == {"sli-health.service"}
     target = rendered["sli-dotnet.target"]
     assert values(target, "PartOf") == {"sli.target"}
     names = set(map(runtime.dotnet_unit_name, runtime.selected(config)))

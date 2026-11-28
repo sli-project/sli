@@ -32,8 +32,9 @@ export function agentAvailability(agent: AgentObservation | AgentItem) {
     return { state: agent.connection === "online" ? "online" : "unknown" } as const;
   }
   if (agent.status !== "active") return { state: "disabled" } as const;
-  const lastSeen = Date.parse(agent.last_seen ?? "");
-  return !Number.isFinite(lastSeen) || Date.now() - lastSeen > Math.max(300, (agent.collection_policy?.interval_seconds ?? 60) * 3) * 1000
+  const contactAge = Date.now() - Date.parse(agent.last_seen ?? "");
+  if (!Number.isFinite(contactAge) || contactAge < 0) return { state: "offline" } as const;
+  return contactAge > Math.max(300, (agent.collection_policy?.interval_seconds ?? 60) * 3) * 1000
     ? { state: "offline", since: agent.last_seen } as const : { state: "online" } as const;
 }
 
