@@ -119,6 +119,7 @@ internal sealed class LifecycleRuntime : ILifecycleSession
             ["last_blocked_phase"] = result["blocked_phase"]?.DeepClone(), ["last_blocked_step"] = result["blocked_step"]?.DeepClone(),
             ["last_successful_watermark"] = result["last_successful_watermark"]?.DeepClone(), ["watermark_updated_at"] = result["watermark_updated_at"]?.DeepClone(),
             ["active_phase"] = result["active_phase"]?.DeepClone(),
+            ["account_check_cleanup"] = result["account_check_cleanup"]?.DeepClone(),
             ["file_audit_retention"] = result["file_audit_retention"]?.DeepClone(),
             ["file_audit_check_receipts_deleted_count"] = result["file_audit_check_receipts_deleted_count"]?.DeepClone(),
             ["file_audit_observations_selected_count"] = result["file_audit_observations_selected_count"]?.DeepClone(),
@@ -207,28 +208,91 @@ internal sealed class LifecycleRuntime : ILifecycleSession
             } while (count == batch);
             result["account_detection_pending_deleted"] = deleted;
         }
-        ready.CommandText = "select to_regprocedure('public.prune_account_check_rows460(text,integer)') is not null";
-        if (await ready.ExecuteScalarAsync(ct) is true)
-        {
-            long deleted = 0;
-            foreach (string family in new[] { "decoy", "watch" })
-            {
-                bool more;
-                do
-                {
-                    await EnsureLocksAsync(ct);
-                    // Commit each page to release row locks and let vacuum
-                    // reclaim its dead tuples during the cleanup.
-                    var page = (await LifecyclePostgres.Rows(db, null,
-                        "select * from public.prune_account_check_rows460(@family,@batch)", ct,
-                        ("family", family), ("batch", batch))).Single();
-                    deleted += LifecycleJson.Number(page, "deleted");
-                    more = page["more"]?.GetValue<bool>() == true;
-                } while (more);
-            }
-            result["account_check_rows_deleted"] = deleted;
-        }
         return result;
+    }
+
+    public async Task PruneAccountCheckRowsAsync(Action<JsonObject, bool> progress, CancellationToken ct)
+    {
+        await using var db = await Maintenance().OpenConnectionAsync(ct);
+        await using var ready = new NpgsqlCommand(
+            "select to_regprocedure('public.account_check_cleanup_status461(text,boolean)') is not null", db);
+        if (await ready.ExecuteScalarAsync(ct) is not true)
+            return;
+
+        var families = new[] { (Name: "decoy", Table: "public.semantic_account_decoy_checks"),
+                               (Name: "watch", Table: "public.semantic_account_watch_checks") };
+        var cleanup = new JsonObject { ["status"] = "running", ["deleted"] = 0L, ["remaining"] = 0L };
+        async Task<JsonObject> Status(string family, bool count) => (await LifecyclePostgres.Rows(db, null,
+            "select * from public.account_check_cleanup_status461(@family,@count)", ct,
+            ("family", family), ("count", count))).Single();
+        foreach (var (family, _) in families)
+        {
+            var status = await Status(family, true);
+            long remaining = LifecycleJson.Number(status, "remaining");
+            cleanup[family] = new JsonObject {
+                ["status"] = status["vacuumed"]!.GetValue<bool>() ? "complete"
+                    : status["complete"]!.GetValue<bool>() ? "vacuum_pending" : "pruning",
+                ["deleted"] = 0L, ["remaining"] = remaining
+            };
+            StorageLifecycleWorker.Add(cleanup, "remaining", remaining);
+        }
+        progress(cleanup, true);
+
+        for (long round = 1; ; round++)
+        {
+            bool pending = false, changed = false;
+            foreach (var (family, table) in families)
+            {
+                var lane = cleanup[family]!.AsObject();
+                string status = LifecycleJson.Text(lane, "status");
+                if (status == "complete")
+                    continue;
+
+                await EnsureLocksAsync(ct);
+                if (status == "vacuum_pending")
+                {
+                    lane["status"] = "vacuuming";
+                    progress(cleanup, true);
+                    // Avoid the exclusive lock used for heap tail truncation.
+                    await using var vacuum = new NpgsqlCommand($"vacuum (analyze, truncate false) {table}", db);
+                    await vacuum.ExecuteNonQueryAsync(ct);
+                    await EnsureLocksAsync(ct);
+                    await using var mark = new NpgsqlCommand("select public.mark_account_check_vacuumed461(@family)", db);
+                    mark.Parameters.AddWithValue("family", family);
+                    await mark.ExecuteNonQueryAsync(ct);
+                    lane["status"] = "complete";
+                    changed = true;
+                    continue;
+                }
+
+                pending = true;
+                // Each statement commits its page, including any seed cursor update.
+                var page = (await LifecyclePostgres.Rows(db, null,
+                    "select * from public.prune_account_check_rows460(@family,1000)", ct, ("family", family))).Single();
+                long deleted = LifecycleJson.Number(page, "deleted");
+                StorageLifecycleWorker.Add(lane, "deleted", deleted);
+                StorageLifecycleWorker.Add(lane, "remaining", -deleted);
+                StorageLifecycleWorker.Add(cleanup, "deleted", deleted);
+                StorageLifecycleWorker.Add(cleanup, "remaining", -deleted);
+                string next = "pruning";
+                if (!page["more"]!.GetValue<bool>())
+                {
+                    // Migration 460 also returns more=false for busy checkpoints
+                    // and when the scan wraps to pick up skipped rows.
+                    var current = await Status(family, false);
+                    next = current["complete"]!.GetValue<bool>() ? "vacuum_pending" : "retrying";
+                }
+                lane["status"] = next;
+                changed |= status != next;
+            }
+
+            if (!pending)
+                break;
+            progress(cleanup, changed || round % 50 == 0);
+            await Task.Delay(TimeSpan.FromMilliseconds(100), ct);
+        }
+        cleanup["status"] = "complete";
+        progress(cleanup, true);
     }
     public Task<JsonObject> RetainInboxAsync(DateTime cutoff, DateTime afterReceivedAt, Guid after, int limit, CancellationToken ct) =>
         new InboxRetention(Maintenance(), files, WaitingForLock).RunAsync(cutoff, after, limit, ct, afterReceivedAt);
