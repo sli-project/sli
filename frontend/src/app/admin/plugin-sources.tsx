@@ -2,7 +2,7 @@ import { Select } from "../../design-system/Select";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiResponseError, type AgentCollectionHealth, type SetupStatus } from "../../api/client";
-import { Button, StateView } from "../../design-system";
+import { Button, DataTable, StateView, type TableColumn } from "../../design-system";
 import { t } from "../../i18n";
 import { formatDateTime } from "../../shared/date-time";
 import { useTimeZone } from "../App";
@@ -14,8 +14,6 @@ const packs: Record<string, string[]> = {
 };
 const modules: Record<string, string[]> = {
   "sli.ad": ["sli.windows.ad-dc", "sli.windows.ad-dc-history", "sli.ad-snapshot"], "sli.gpo": ["sli.gpo-snapshot"],
-  "sli.workstations": ["sli.workstations"],
-  "sli.sigma": ["sli.windows.ad-dc"],
 };
 
 export function PluginReadState({ loading, error, retry, message = t("plugins.unavailable") }: {
@@ -41,10 +39,33 @@ export function PluginSources({ pluginId, connection, sourceCount }: {
     {connection && (pluginId === "sli.ad" || pluginId === "sli.gpo") ? <p><a href="/app/setup#setup-domains">{t("pluginPage.manageDomains")}</a></p> : null}
     {showSources ? <>
       <PluginReadState loading={status.isLoading} error={status.error} message={t("pluginPage.sourcesFailed")} retry={() => void status.refetch()}/>
-      {status.data && !status.isError ? <SourceObjects pluginId={pluginId} data={status.data}/> : null}
+      {status.data && !status.isError ? pluginId === "sli.sigma"
+        ? <SigmaSources data={status.data}/>
+        : <SourceObjects pluginId={pluginId} data={status.data}/> : null}
     </> : null}
   </>;
 }
+
+function SigmaSources({ data }: { data: SetupStatus }) {
+  const { timeZone } = useTimeZone();
+  const rows = data.sources.filter(source => packs["sli.sigma"].includes(source.pack_id))
+    .flatMap(source => (source.instances ?? []).filter(instance => isDomainSource(instance.source_instance_id))
+      .map(instance => ({ ...instance, packId: source.pack_id })));
+  const columns: TableColumn<(typeof rows)[number]>[] = [
+    { key: "source", label: t("pluginPage.source"), render: row => row.source_instance_id },
+    { key: "data", label: t("pluginPage.sourceData"), render: row => t(row.packId === "sli.windows.ad-dc"
+      ? "pluginPage.sourceEvents" : "setup.source.name.adContext") },
+    { key: "latest", label: t("pluginPage.sourceLatest"), render: row => row.last_data_utc
+      ? formatDateTime(row.last_data_utc, timeZone)
+      : t(row.data_state === "unavailable" ? "pluginPage.sourceDataUnavailable" : "pluginPage.sourceNotCollected") },
+  ];
+  if (!rows.length) return <p role="status">{t(data.agent_collection?.state === "unavailable" || data.agent_collection?.diagnostics
+    ? "pluginPage.sourcesFailed" : "pluginPage.noSigmaSources")}</p>;
+  return <DataTable columns={columns} rows={rows} rowKey={row => JSON.stringify([row.packId, row.source_instance_id])}
+    caption={t("pluginPage.tab.connection")}/>;
+}
+
+const isDomainSource = (name: string) => name.trim().toLowerCase() !== "workstations.invalid";
 
 function SourceObjects({ pluginId, data }: { pluginId: string; data: SetupStatus }) {
   const { timeZone } = useTimeZone();
@@ -54,7 +75,7 @@ function SourceObjects({ pluginId, data }: { pluginId: string; data: SetupStatus
   const health = data.agent_collection;
   const agents = health?.items.filter((agent) => agent.modules.some((module) => modules[pluginId]?.includes(module.module_id))) ?? [];
   const domains = domainPlugin ? [...new Set([...data.domains.filter((domain) => !domain.is_archived).map((domain) => domain.fqdn),
-    ...data.domain_controllers.flatMap((controller) => controller.domain ? [controller.domain] : []), ...agents.flatMap((agent) => agent.domains)])] : [];
+    ...data.domain_controllers.flatMap((controller) => controller.domain ? [controller.domain] : []), ...agents.flatMap((agent) => agent.domains)].filter(isDomainSource))] : [];
   const last = (stamp: string) => t("pluginPage.latest", { time: formatDateTime(stamp, timeZone) });
   const agentRow = (agent: AgentCollectionHealth["items"][number]) => {
     const stamp = lastImport(agent, pluginId);
@@ -88,7 +109,7 @@ function SourceObjects({ pluginId, data }: { pluginId: string; data: SetupStatus
     </> : agents.length > 0 ? <ul>{agents.map(agentRow)}</ul> : null}
     {sources.map((source) => <details key={source.pack_id} open className="sli-ds-filters__additional"><summary>{setupSourceName(source)}</summary>
       {!source.enabled ? <p>{t("plugins.status.disabled")}</p> : null}
-      {source.instances?.length ? <ul>{source.instances.map((instance) => <li key={instance.source_instance_id}>
+      {source.instances?.some(instance => isDomainSource(instance.source_instance_id)) ? <ul>{source.instances.filter(instance => isDomainSource(instance.source_instance_id)).map((instance) => <li key={instance.source_instance_id}>
         {instance.source_instance_id}{instance.last_data_utc ? ` · ${last(instance.last_data_utc)}` : null}
       </li>)}</ul> : null}
     </details>)}

@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Npgsql;
+using Sli.Server.InstallationSetup;
 namespace Sli.Server.Workstations;
 internal static partial class WorkstationEvaluators
 {
@@ -19,9 +20,14 @@ internal static partial class WorkstationEvaluators
     {
         try
         {
-            if(raw.Length>1024)throw new FormatException();
+            if (raw.Length > 1040) throw new FormatException();
             var value=JsonNode.Parse(raw)!.AsObject();
-            if(value.Count!=2||value.Number("version") is <1 or >=int.MaxValue||value["version"]?.GetValueKind()!=JsonValueKind.Number||value["policies"] is not JsonArray policies)throw new FormatException();
+            if (value.Any(entry => entry.Key is not ("version" or "policies" or "enabled"))
+                || value.ContainsKey("enabled") && value["enabled"]?.GetValueKind() is not (JsonValueKind.True or JsonValueKind.False)
+                || value.Number("version") is <1 or >=int.MaxValue || value["version"]?.GetValueKind() != JsonValueKind.Number
+                || value["policies"] is not JsonArray policies) throw new FormatException();
+            int limit = InstallationSettings.LogonPolicyLengthLimit(value);
+            if (raw.Length > limit) throw new FormatException();
             var scopes=new HashSet<string>();
             foreach(var node in policies)
             {
@@ -35,13 +41,15 @@ internal static partial class WorkstationEvaluators
                 _=TimeZoneInfo.FindSystemTimeZoneById(r.Text("timezone")!);
                 if(new[]{"start","end"}.Any(k=>!Regex.IsMatch(r.Text(k)??"",@"\A(?:[01][0-9]|2[0-3]):[0-5][0-9]\z"))||r.Text("start")==r.Text("end"))throw new FormatException();
             }
-            if(Sli.Agent.Protocol.CanonicalJson.Serialize(value,false).Length>1024)throw new FormatException();return value;
+            if (Sli.Agent.Protocol.CanonicalJson.Serialize(value, false).Length > limit) throw new FormatException();
+            return value;
         }
         catch(Exception e)when(e is FormatException or System.Text.Json.JsonException or InvalidOperationException or ArgumentException or TimeZoneNotFoundException){throw new WorkstationException("workstation_logon_policy_invalid");}
     }
     internal static async Task<JsonObject?> LoadPolicy(NpgsqlConnection db,CancellationToken ct)=>await Ws.Scalar(db,"select value from public.platform_settings where key='workstations.logon_policy'",ct) is string raw?ValidatePolicy(raw):null;
     static JsonObject? SelectPolicy(JsonObject? config,JsonObject station)
     {
+        if (config?["enabled"]?.GetValueKind() == JsonValueKind.False) return null;
         var policies=config?["policies"]?.AsArray().OfType<JsonObject>().ToArray()??[];
         return policies.FirstOrDefault(p=>p["scope"].Text("kind")=="station"&&p["scope"].Text("station_id")==station.Text("station_id"))??policies.FirstOrDefault(p=>p["scope"].Text("kind")=="ou"&&p["scope"].Number("domain_id")==station.Number("domain_id")&&Ou(p["scope"].Text("ou_path"))==Ou(station["metadata"].Text("ou_path")));
     }
