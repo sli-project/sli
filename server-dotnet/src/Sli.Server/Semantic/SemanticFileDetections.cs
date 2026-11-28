@@ -83,8 +83,27 @@ internal sealed partial class SemanticProduction
                 await session.QueryAsync("insert into semantic_file_ransom_members(checkpoint_key,result_id,episode_key,scope_json,exclusion_json,evaluation_mode) values($1,$2,null,$3,$4,$5)",ct,checkpoint,result.Text("result_id"),scope,exclusion,rule!.Mode); members++; continue;
             }
             string entity = Digest(new JsonArray(checkpoint, result["subject_sid"].Copy()));
-            var episodes = await session.QueryAsync("select * from semantic_file_ransom_episodes where checkpoint_key=$1 and entity_key=$2 and(incomplete or $3 or(first_seen<=$4 and last_seen>=$5)) order by first_seen,episode_key for update", ct, checkpoint, entity, !row.Flag("complete"), end.AddSeconds(window), start.AddSeconds(-window));
-            if (episodes.Count > 1) throw new InvalidDataException("file_ransom_episode_conflict"); var episode = episodes.FirstOrDefault(); string key = episode.Text("episode_key") ?? Digest(new JsonArray(checkpoint, entity, result["result_id"].Copy())); bool complete = row.Flag("complete") && !episode.Flag("incomplete");
+            // The event-time deadline is exclusive. Late results can still
+            // contribute to their original episode inside that deadline.
+            var episode = (await session.QueryAsync("""
+                select * from semantic_file_ransom_episodes
+                where checkpoint_key=$1 and entity_key=$2 and not sealed
+                  and first_seen<$3 and last_seen>$4
+                order by (first_seen<=$6 and last_seen>=$5) desc,
+                    greatest(first_seen-$6,$5-last_seen,interval '0 seconds'),first_seen,episode_key
+                limit 1 for update
+                """, ct, checkpoint, entity, end.AddSeconds(window), start.AddSeconds(-window), start, end)).FirstOrDefault();
+            string key = episode.Text("episode_key") ?? Digest(new JsonArray(checkpoint, entity, result["result_id"].Copy()));
+            bool complete = row.Flag("complete") && !episode.Flag("incomplete");
+            if(complete && episode is not null)
+            {
+                var previousStart=SigmaProjection.At(episode,"first_seen");
+                var previousEnd=SigmaProjection.At(episode,"last_seen");
+                var coverage=await session.QueryAsync("""
+                    select public.file_ransom_window_has_gap464($1::jsonb,$2,$3,$4) as gap
+                    """,ct,scope,Guid.Parse(agent),previousStart<start ? previousStart : start,previousEnd>end ? previousEnd : end);
+                complete=!coverage.Single().Flag("gap");
+            }
             var refs = SemanticJson.Array(row["evidence"]!.AsArray().Select(x => Reference(scope, "file_audit_observation", x.Text("native_id")!, x.Text("sha256")!)).DistinctBy(x => x!.ToJsonString()).OrderBy(x => x.Text("native_id"), StringComparer.Ordinal)); if (refs.Count is < 1 or > 32768) throw new InvalidDataException("file_ransom_evidence_invalid");
             for (int offset = 0; offset < refs.Count; offset += 256) { var signal = Signal(definition, entity, key, end, now ?? DateTimeOffset.UtcNow, SemanticJson.Array(refs.Skip(offset).Take(256)), reason: "mass_file_changes", quality: complete ? "good" : "degraded", total: refs.Count); int count = await EnqueueQW(session, rule?.Apply(signal) ?? signal, ct); if (count == 0) throw new InvalidOperationException("file_ransom_policy_unavailable"); jobs += count; }
             await session.QueryAsync("insert into semantic_file_ransom_episodes(episode_key,checkpoint_key,scope_json,entity_key,first_seen,last_seen,incomplete) values($1,$2,$3,$4,$5,$6,$7) on conflict(episode_key) do update set first_seen=least(semantic_file_ransom_episodes.first_seen,excluded.first_seen),last_seen=greatest(semantic_file_ransom_episodes.last_seen,excluded.last_seen),incomplete=semantic_file_ransom_episodes.incomplete or excluded.incomplete", ct, key, checkpoint, scope, entity, start, end, !complete);

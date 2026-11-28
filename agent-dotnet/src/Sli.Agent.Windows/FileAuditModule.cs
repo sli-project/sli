@@ -118,7 +118,7 @@ public sealed class FileAuditModule(string hostId, FileAuditPolicy policy, IFile
                 if (allowed && path is not null)
                 {
                     if (!permissionsOnly && !policy.Workstation && scopes.Length == 1 && pathKind is not null
-                        && eventId == 4663 && data.GetValueOrDefault("ObjectType") == "File")
+                        && eventId is 4656 or 4663 && data.GetValueOrDefault("ObjectType") == "File")
                         kind = pathKind(path,scopes[0]["path"]!.ToString());
                     else
                         foreach (var scope in scopes) pathCheck(path,scope["path"]!.ToString());

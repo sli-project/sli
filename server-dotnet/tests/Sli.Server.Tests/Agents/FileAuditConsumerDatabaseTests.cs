@@ -479,6 +479,7 @@ public class FileAuditConsumerDatabaseTests
         await SemanticOutboxThroughputPostgresTests.Seed(owner, 1, 149_998, ct);
         string lanes = Path.Combine(PostCollectionPostgres.Repository(), "config/postgres_migrations/463_semantic_outbox_lanes.sql");
         await fixture.Pg.ApplyFileAsync(lanes, null, ct);
+        string episodes = Path.Combine(PostCollectionPostgres.Repository(), "config/postgres_migrations/464_file_ransom_episodes.sql");
         await Register(owner, ct, root);
         await PostCollectionPostgres.Sql(owner, "update sli_agents set collection_policy=jsonb_set(collection_policy,'{manage_windows_audit}','true')", ct);
         await PostCollectionPostgres.Sql(owner, """
@@ -505,6 +506,7 @@ public class FileAuditConsumerDatabaseTests
         policy.Roots[0]!["path"] = root;
         var now = Iso8601.Truncate(DateTimeOffset.UtcNow);
         var observed = now.AddMilliseconds(-31);
+        var referenceAt = now.AddHours(-8);
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         using var cert = new CertificateRequest("CN=example.test",key,HashAlgorithmName.SHA256).CreateSelfSigned(now.AddDays(-1),now.AddDays(1));
         var signer = new EcdsaPacketSigner(key);
@@ -534,7 +536,7 @@ public class FileAuditConsumerDatabaseTests
         string PathOf(int index) => $"{root}\\item-{index}.txt";
         JsonObject Page(int page, string scanId, int seconds)
         {
-            var report = ReportForRoot(policy,"directory",now.AddSeconds(seconds),commandId);
+            var report = ReportForRoot(policy,"directory",referenceAt.AddSeconds(seconds),commandId);
             var snapshot = report["snapshots"]![0]!.AsObject();
             snapshot["share"]!["path"] = root;
             snapshot["scan_id"] = scanId;
@@ -575,12 +577,13 @@ public class FileAuditConsumerDatabaseTests
             await tx.CommitAsync(ct);
         }
 
-        PacketRecord Row(int record, int eventId, string fields, bool failure = false, int? handle = null, string subject = sid)
+        PacketRecord Row(int record, int eventId, string fields, bool failure = false, int? handle = null, string subject = sid,
+            DateTimeOffset? eventTime = null)
         {
             string xml = $$"""
                 <Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event"><System>
                 <Provider Name="{{FileAuditPolicy.Provider}}"/><EventID>{{eventId}}</EventID><Keywords>{{(failure ? "0x8010000000000000" : "0x8020000000000000")}}</Keywords>
-                <EventRecordID>{{record}}</EventRecordID><TimeCreated SystemTime="{{observed.UtcDateTime:O}}"/><Channel>Security</Channel></System>
+                <EventRecordID>{{record}}</EventRecordID><TimeCreated SystemTime="{{(eventTime ?? referenceAt).UtcDateTime:O}}"/><Channel>Security</Channel></System>
                 <EventData><Data Name="SubjectUserSid">{{subject}}</Data><Data Name="SubjectLogonId">0x12</Data>
                 <Data Name="ProcessId">0x10</Data><Data Name="HandleId">0x{{(handle ?? (eventId == 4660 ? record - 1 : record)):x}}</Data>{{fields}}</EventData></Event>
                 """;
@@ -714,6 +717,36 @@ public class FileAuditConsumerDatabaseTests
 
         await using (var tx = await worker.BeginTransactionAsync(ct))
         {
+            var sourceBinding = (await new SemanticSession(worker,tx).QueryAsync("""
+                select source from public.default_detection_sources()
+                where source#>>'{scope,plugin_id}'='sli.file-audit'
+                """,ct)).Single()!["source"]!;
+            var scope = sourceBinding["scope"]!;
+            var config = sourceBinding["config"]!;
+            string checkpoint = Packets.Digest(new JsonObject
+            {
+                ["scope"]=scope.DeepClone(), ["agent_id"]=sourceBinding["agent_id"]!.DeepClone(),
+                ["policy_revision"]=1, ["evaluation_mode"]="enabled",
+                ["source_policy_revision"]=config["policy_revision"]!.DeepClone(),
+                ["threshold"]=config["mass_operation_files"]?.DeepClone() ?? JsonValue.Create(100),
+                ["window_seconds"]=config["mass_operation_seconds"]?.DeepClone() ?? JsonValue.Create(300)
+            });
+            await using var legacy = new NpgsqlCommand("""
+                insert into semantic_file_ransom_episodes(episode_key,checkpoint_key,scope_json,entity_key,first_seen,last_seen,incomplete)
+                values(repeat('a',64),@checkpoint,@scope,@entity,@first,@last,true)
+                """,owner);
+            legacy.Parameters.AddWithValue("checkpoint",checkpoint);
+            legacy.Parameters.AddWithValue("scope",NpgsqlDbType.Jsonb,scope.ToJsonString());
+            legacy.Parameters.AddWithValue("entity",Packets.Digest(new JsonArray(checkpoint,sid)));
+            legacy.Parameters.AddWithValue("first",referenceAt.AddHours(-1));
+            legacy.Parameters.AddWithValue("last",referenceAt.AddMinutes(-1));
+            await legacy.ExecuteNonQueryAsync(ct);
+            await tx.CommitAsync(ct);
+        }
+        await fixture.Pg.ApplyFileAsync(episodes, null, ct);
+        Assert.Equal(1, await Number(owner,"select count(*) from semantic_file_ransom_episodes where incomplete and sealed",ct));
+        await using (var tx = await worker.BeginTransactionAsync(ct))
+        {
             var diagnostics = new DetectionDiagnostics();
             var session = new SemanticSession(worker,tx,diagnostics:diagnostics);
             var sources = await session.QueryAsync("""
@@ -729,7 +762,7 @@ public class FileAuditConsumerDatabaseTests
             Assert.True(detection.Jobs > 0);
             await tx.CommitAsync(ct);
         }
-        Assert.Equal(1, await Number(owner,"select count(*) from semantic_file_ransom_episodes",ct));
+        Assert.Equal(2, await Number(owner,"select count(*) from semantic_file_ransom_episodes",ct));
         var risk = await production.ProcessRisk(worker, ct, fileEpisodesOnly: true);
         Assert.True(risk.Number("published") == 1, risk.ToJsonString() + " " +
             (await fixture.Pg.DiagnosticsAsync(ct)).Split('\n').LastOrDefault(line => line.Contains("ERROR:")));
@@ -747,7 +780,110 @@ public class FileAuditConsumerDatabaseTests
             select repeat('c',64),1,agent_id,source_instance_id,collection_scope_id,observed_at,subject_sid,path,
                 'access_check','success',1 from sli_plugin_file_audit.actions where operation='rename'
             """,ct);
-        await FileAuditReportTests.CheckActivity(fixture,now,problem,root,ct);
+        await FileAuditReportTests.CheckActivity(fixture,referenceAt,problem,root,ct);
+
+        // The generation starts with a transport gap. Keep the generation and
+        // the same root/account for three matching native bursts hours apart.
+        Assert.Equal(0, await Number(owner,"select count(*) from semantic_file_ransom_episodes where incomplete and not sealed",ct));
+        async Task ImportBurstBatch(PacketRecord[] batch, long last, JsonObject context, int lost=0)
+        {
+            var next = Bookmark(last);
+            var payload = CollectionPacket.Make(source,"Security",generation,
+                new JsonObject { ["after_record_id"] = previous, ["last_record_id"] = last },
+                batch,"not_proven",context,observed);
+            var sample = new Sample(FileAuditPolicy.ModuleId,host.ToString(),"Security",generation,cursor,next,payload,
+                PolicyRevision:"2",ContinuityState:lost>0 ? "gap" : "not_proven",FilteredCount:0,LostCount:lost);
+            await using var tx = await app.BeginTransactionAsync(ct);
+            var signed = Packets.Make(signer,Agent.ToString(),++sequence,sample,now);
+            var receipt = await service.ReceiveAsync(app,tx,identity,cert,signed.ToJson(),ct);
+            Assert.True(receipt["status"]?.ToString() == "committed",receipt.ToJsonString());
+            var imported = await AgentWorkstationInboxConsumer.ProcessNextAsync(app,tx,null,ct);
+            if (!imported.Imported)
+            {
+                await using var read = new NpgsqlCommand("select event_rows::text from sli_agent_packet_inbox where packet_id=@packet",app,tx);
+                read.Parameters.AddWithValue("packet",imported.PacketId);
+                var eventRows=JsonNode.Parse((string)(await read.ExecuteScalarAsync(ct))!)!.AsArray();
+                await FileAuditInboxConsumer.ImportClaimedAsync(app,tx,imported.PacketId,signed.Envelope.ToJson(),payload,eventRows,ct);
+            }
+            Assert.True(imported.Imported,$"{imported.PendingReason}, records ending at {last}");
+            await tx.CommitAsync(ct);
+            cursor = next;
+            previous = last;
+        }
+        for (int burst = 0; burst < 3; burst++)
+        {
+            var end = now.AddHours(2*burst - 6);
+            string folder = $@"{root}\burst-{burst}";
+            int record = checked((int)previous!.Value);
+            var burstRows = new List<PacketRecord>();
+            var destinationRecords = new HashSet<long>();
+            for (int file = 0; file < 110; file++)
+            {
+                string path = $@"{folder}\doc-{file+1:000}.txt";
+                var at = end.AddMilliseconds(-40_000 + file * 350);
+                int handle = record + 1;
+                burstRows.Add(Row(++record,4663,Access(path,"0x2"),handle:handle,eventTime:at));
+                burstRows.Add(Row(++record,4663,Access(path,"0x4"),handle:handle,eventTime:at.AddMilliseconds(1)));
+                burstRows.Add(Row(++record,4663,Access(path,"0x10000"),handle:handle,eventTime:at.AddMilliseconds(2)));
+                burstRows.Add(Row(++record,file % 2 == 0 ? 4656 : 4663,Access(path+".locked","0x80"),
+                    handle:file % 2 == 0 ? handle + 10000 : handle,eventTime:at.AddMilliseconds(3)));
+                destinationRecords.Add(record);
+                if (file == 109)
+                {
+                    burstRows.Add(Row(++record,4663,Access(path+".locked","0x10000"),handle:handle+1,eventTime:at.AddMilliseconds(5)));
+                    burstRows.Add(Row(++record,4660,"",handle:handle+1,eventTime:at.AddMilliseconds(6)));
+                }
+            }
+            foreach (var batch in burstRows.Chunk(25))
+            {
+                long last = (long)batch[^1].RecordId!.Value;
+                var context = Context();
+                // The old names can already be gone when the agent reads
+                // the journal. Only the surviving destination has a kind.
+                context["object_kinds"] = new JsonObject(batch.Where(row => destinationRecords.Contains((long)row.RecordId!.Value))
+                    .Select(row => KeyValuePair.Create(row.RecordId!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                        (JsonNode?)JsonValue.Create("file"))));
+                await ImportBurstBatch(batch,last,context);
+            }
+            await using (var tx = await worker.BeginTransactionAsync(ct))
+            {
+                var session = new SemanticSession(worker,tx);
+                var sources = await session.QueryAsync("""
+                    select source from public.default_detection_sources()
+                    where source#>>'{scope,plugin_id}'='sli.file-audit'
+                    """,ct);
+                var detection = await SemanticProduction.ManagedRansom(session,Assert.Single(sources)!["source"]!,now,ct);
+                Assert.Equal(0,detection.Failed);
+                Assert.True(detection.Jobs > 0);
+                await tx.CommitAsync(ct);
+            }
+            var burstRisk = await new SemanticProduction(null!,new(true,true,false,true,true,true),SemanticRuntimeSettings.FindingsMode,16)
+                .ProcessRisk(worker,ct,fileEpisodesOnly:true);
+            Assert.True(burstRisk.Number("published") == 1,burstRisk.ToJsonString());
+            Assert.Equal(burst + 2,await Number(owner,"select count(*) from semantic_file_ransom_episodes where not incomplete",ct));
+            await FileAuditReportTests.CheckBurst(fixture,end,folder,burst+2,ct);
+        }
+        int nextRecord=checked((int)previous!.Value)+1;
+        var lostAt=now.AddHours(-1);
+        await ImportBurstBatch([Row(nextRecord,4663,Access(PathOf(1),"0x2"),eventTime:lostAt)],nextRecord,Context());
+        var lostContext=Context();
+        lostContext["lost_count"]=1;
+        await ImportBurstBatch([],++nextRecord,lostContext,lost:1);
+        await ImportBurstBatch([Row(++nextRecord,4663,Access(PathOf(2),"0x4"),eventTime:lostAt.AddSeconds(1))],nextRecord,Context());
+        await using (var tx=await worker.BeginTransactionAsync(ct))
+        {
+            var session=new SemanticSession(worker,tx);
+            var coverage=(await session.QueryAsync("""
+                select public.file_ransom_window_has_gap464(source->'scope',$1,$2,$3) as gap,
+                    public.file_ransom_window_has_gap464(source->'scope',$1,$4,$5) as earlier_gap
+                from public.default_detection_sources()
+                where source#>>'{scope,plugin_id}'='sli.file-audit'
+                """,ct,Agent,lostAt,lostAt.AddSeconds(1),now.AddHours(-2).AddMinutes(-1),now.AddHours(-2))).Single();
+            Assert.True(coverage.Flag("gap"));
+            Assert.False(coverage.Flag("earlier_gap"));
+            await tx.CommitAsync(ct);
+        }
+        long projected = await Number(owner,"select count(*) from sli_plugin_file_audit.actions",ct);
 
         // The preceding schema accepts the migration and rollback preserves
         // the imported projection and its evidence.
@@ -756,7 +892,7 @@ public class FileAuditConsumerDatabaseTests
         Assert.Equal(0, await Number(owner, "select count(*) from pg_indexes where indexname in ('semantic_outbox_lane_claim463','semantic_outbox_lane_age463')", ct));
         await using (var tx = await app.BeginTransactionAsync(ct))
             Assert.False(await AgentPolicyAssignments.FileActivityAvailableAsync(app,tx,ct));
-        Assert.Equal(117, await Number(owner,"select count(*) from sli_plugin_file_audit.actions",ct));
+        Assert.Equal(projected, await Number(owner,"select count(*) from sli_plugin_file_audit.actions",ct));
     }
 
     [Fact]

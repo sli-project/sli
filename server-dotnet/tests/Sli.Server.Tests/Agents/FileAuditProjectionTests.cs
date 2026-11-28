@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.Json.Nodes;
+using Sli.Server.Agents.FileAudit;
 using Xunit;
 
 namespace Sli.Server.Tests.Agents;
@@ -88,7 +89,32 @@ public class FileAuditProjectionTests
         var close=Item(2,4658,null);
         Assert.Empty(Run(Item(3,4660,null),open,close));
         Assert.Empty(Run(Item(4,4663,"C:\\synthetic\\new",0x80),open,previous,Item(3,4658,null)));
-    }    [Fact]
+    }
+
+    [Theory]
+    [InlineData(4663, 68)]
+    [InlineData(4656, 69)]
+    public void RenamePairsNativeDeleteWithImmediateDestination(int eventId, int handle)
+    {
+        const string oldPath = @"C:\synthetic\doc-001.txt";
+        var previous = Item(1,4663,oldPath);
+        var target = Item(2,eventId,oldPath+".locked",0x80);
+        target["observed_at"] = "2026-10-07T00:00:01.003+00:00";
+        target["facts"]!["handle_id"] = handle;
+        var action = Assert.Single(FileAuditCorrelation.ProjectActions(target,new JsonArray(previous.DeepClone()),"file"))!;
+        Assert.Equal("rename",action["operation"]!.ToString());
+        Assert.Equal(oldPath+".locked",action["path"]!.ToString());
+        Assert.Equal(oldPath,action["old_path"]!.ToString());
+        Assert.Contains(action["evidence"]!.AsArray(), edge => edge!["evidence_key"]!.ToString()=="e1");
+
+        var unrelated = target.DeepClone().AsObject();
+        unrelated["path"] = @"C:\synthetic\other.txt";
+        unrelated["facts"]!["handle_id"] = 69;
+        Assert.DoesNotContain(FileAuditCorrelation.ProjectActions(unrelated,new JsonArray(previous.DeepClone()),"file"),
+            row => row!["operation"]!.ToString()=="rename");
+    }
+
+    [Fact]
     public void MassWriteRuleRequiresEvidenceAndDistinctFiles()
     {
         var type=typeof(Sli.Server.Agents.Ingress.AgentFileAuditValidator).Assembly.GetType("Sli.Server.Agents.FileAudit.FileAuditActivityRules");
@@ -100,6 +126,15 @@ public class FileAuditProjectionTests
         Assert.Single(result);
         Assert.Equal("file-audit.mass-write",result[0]!["rule_code"]!.GetValue<string>());
         Assert.Equal(2,result[0]!["details"]!["distinct_files"]!.GetValue<int>());
+        var renamed=Action("rename",@"C:\synthetic\one.locked");
+        renamed["operation"]="rename";
+        renamed["old_path"]=@"C:\synthetic\one";
+        var deleted=Action("delete",@"C:\synthetic\two");
+        deleted["operation"]="delete";
+        var mixed=new JsonArray(actions[0]!.DeepClone(),renamed,deleted);
+        var mixedResult=Assert.Single(FileAuditActivityRules.Evaluate(mixed,config,"a","h",new JsonArray(),null))!;
+        Assert.Equal(2,mixedResult["details"]!["distinct_files"]!.GetValue<int>());
+        Assert.Equal(3,mixedResult["action_ids"]!.AsArray().Count);
         var calendar=JsonNode.Parse("{\"timezone\":\"UTC\",\"weekdays\":[0,1,2,3,4],\"start\":\"09:00\",\"end\":\"17:00\",\"excluded_dates\":[],\"exceptions\":[]}")!.AsObject();
         var outside=(JsonArray)type.GetMethod("Evaluate")!.Invoke(null,[actions,config,"a","h",new JsonArray(),calendar])!;
         Assert.Equal(2,outside.OfType<JsonObject>().Count(x=>x["rule_code"]!.GetValue<string>()=="file-audit.out-of-hours"));
