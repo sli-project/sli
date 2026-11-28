@@ -1,5 +1,4 @@
 import { EMPTY_VALUE, formatNumber } from "../shared/format";
-import { AccountWatch } from "./account-watch";
 import { useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
@@ -21,6 +20,7 @@ import { shortEntityProfile, entityProfileValue } from "./entity-profile";
 import { objectTypeLabel } from "./report-labels";
 import { VpnConnectionSessionEvidence } from "./vpn-session-evidence";
 import { defaultEntityWindow, ENTITY_WINDOW_MAX_DAYS, entityBoundDay, entityTypeLacksTab, entityWindowDays, recentEntityWindow, type EntityWindow } from "./entity-window";
+import { AdEntityCard } from "./ad-entity-card";
 
 type Row = Record<string, unknown>;
 type TabId = "overview" | "groups" | "privileges" | "states" | "findings" | "events" | "security" | "vpn" | "technical";
@@ -121,7 +121,7 @@ export function EntityCardPage() {
   const { entityId } = useParams({ from: "/entities/$entityId" });
   const returnTo = safeInvestigationReturnTo(new URLSearchParams(search).get("return_to"), "/app/objects");
   const back = <a className="sli-ds-button" href={returnTo}>{t("entities.crumbs.back")}</a>;
-  const requestedTab = new URLSearchParams(search).get("tab") ?? "overview";
+  const requestedTab = new URLSearchParams(search).get("tab") ?? "";
   const entityRequest = useMemo(() => {
     try {
       const parameters = entityWorkspaceApiParameters(search, 50);
@@ -137,6 +137,7 @@ export function EntityCardPage() {
   const object = useQuery({ queryKey: ["v4", "object", "entity", entityId], queryFn: () => api.v4Object("entity", entityId), enabled: !entityRequest.error, staleTime: 30_000, refetchOnWindowFocus: false, retry: false });
   const serverTabs = new Set((object.data?.tabs ?? []).filter((tab) => tab.available).map((tab) => tab.id));
   const entityType = object.data?.object.object_type ?? detail.data?.entity.type ?? null;
+  const adCard = detail.data?.entity.type === "ad_user" || detail.data?.entity.type === "ad_computer";
   const tabs = TAB_ORDER.filter((tab) => (!SERVER_TABS.includes(tab) || serverTabs.has(tab)) && !entityTypeLacksTab(entityType, tab));
   const wanted = (TAB_ALIASES[requestedTab] ?? requestedTab) as TabId;
   const active: TabId = tabs.includes(wanted) || (object.isLoading && SERVER_TABS.includes(wanted)) ? wanted : "overview";
@@ -153,8 +154,8 @@ export function EntityCardPage() {
     return parameters;
   }, [hasUrlWindow, entityRequest.parameters, defaultWindow]);
   const vpnParameters = urlVpnParameters ?? (detail.data ? defaultParameters : null);
-  const windowed = useQuery({ queryKey: ["entity", entityId, "default-window", defaultParameters?.toString() ?? "none"], queryFn: () => api.entityWorkspace(entityId, defaultParameters!), enabled: active === "security" && Boolean(defaultParameters) && Boolean(detail.data) && !entityRequest.error, staleTime: 30_000, refetchOnWindowFocus: false, retry: false });
-  const vpn = useQuery({ queryKey: ["entity", entityId, "vpn", vpnParameters?.toString() ?? "no-window"], queryFn: () => api.entityVpnSessions(entityId, vpnParameters!), enabled: active === "vpn" && Boolean(vpnParameters) && Boolean(detail.data) && !entityRequest.error, staleTime: 30_000, refetchOnWindowFocus: false, retry: false });
+  const windowed = useQuery({ queryKey: ["entity", entityId, "default-window", defaultParameters?.toString() ?? "none"], queryFn: () => api.entityWorkspace(entityId, defaultParameters!), enabled: !adCard && active === "security" && Boolean(defaultParameters) && Boolean(detail.data) && !entityRequest.error, staleTime: 30_000, refetchOnWindowFocus: false, retry: false });
+  const vpn = useQuery({ queryKey: ["entity", entityId, "vpn", vpnParameters?.toString() ?? "no-window"], queryFn: () => api.entityVpnSessions(entityId, vpnParameters!), enabled: !adCard && active === "vpn" && Boolean(vpnParameters) && Boolean(detail.data) && !entityRequest.error, staleTime: 30_000, refetchOnWindowFocus: false, retry: false });
   const format = (value: string | null | undefined) => formatDateTime(value, timeZone, { seconds: true });
 
   if (entityRequest.error) {
@@ -173,7 +174,10 @@ export function EntityCardPage() {
 
   const data = detail.data;
   const v4 = object.data;
-  const selectTab = (tab: TabId) => void navigate({ to: "/entities/$entityId", params: { entityId }, search: ((previous: Record<string, unknown>) => ({ ...previous, tab })) as never, replace: true });
+  const selectTab = (tab: string) => void navigate({ to: "/entities/$entityId", params: { entityId }, search: ((previous: Record<string, unknown>) => ({ ...previous, tab })) as never, replace: true });
+  if (adCard) return <AdEntityCard key={entityId} data={data} object={v4}
+    fields={entityProfileFields(v4?.directory_context.items ?? [])} requestedTab={requestedTab}
+    selectTab={selectTab} returnTo={returnTo} location={location.href} timeZone={globalTimeZone}/>;
 
   const effectiveWindow: EntityWindow = hasUrlWindow
     ? { from: entityBoundDay(urlVpnParameters!.get("time_from")), to: entityBoundDay(urlVpnParameters!.get("time_to")) }
@@ -197,7 +201,6 @@ export function EntityCardPage() {
         : <span className="sli-ds-chip">{t("entities.lastSeen")}: {format(entity.last_seen_utc)}</span>}
       actions={<>{back}<a className="sli-ds-button" data-variant="primary" href={investigateHref}>{t("entities.investigateAction")}</a></>}
     />
-    {entityType === "ad_user" ? <AccountWatch key={entity.id} entityId={entity.id}/> : null}
     {object.isError ? <StateView compact state="partial" detail={t("entities.error.v4Partial")}/> : null}
     <Tabs items={tabs.map((tab) => ({ key: tab, label: getTabLabels()[tab] }))} active={active} onChange={(key) => selectTab(key as TabId)}>
     <TabList label={t("entities.tabs.aria")}/>
