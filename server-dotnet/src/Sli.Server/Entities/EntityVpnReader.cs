@@ -11,6 +11,12 @@ public sealed partial class EntityReader
 {
     public async Task<JsonObject> Vpn(JsonObject entity, EntityReadOptions options, CapabilityDecisionSet caps, AccessDecision access, CancellationToken ct)
     {
+        long id = Number(entity, "id"), domain = entity["domain_id"] is null ? 0 : Number(entity, "domain_id");
+        if (domain <= 0) throw new EntityInputException("entity_vpn_domain_invalid");
+        if (options.Limit is < 1 or > 100) throw new EntityInputException("entity_vpn_limit_invalid");
+        var start = DateTimeOffset.Parse(options.From!, CultureInfo.InvariantCulture); var end = DateTimeOffset.Parse(options.To!, CultureInfo.InvariantCulture);
+        if (end - start > TimeSpan.FromDays(31)) throw new EntityInputException("entity_vpn_period_too_wide");
+
         string? root = new FileAuditHookAdmission(services.GetRequiredService<IHostEnvironment>()).PackageRoot();
         if (root is null) throw new InvalidOperationException("plugin_not_installed");
         using var admission = AgentAssignmentPluginAdmission.Enter("sli.remote-access", Environment.GetEnvironmentVariable("SLI_PLUGIN_RUNTIME_DIR"), Environment.GetEnvironmentVariable("SLI_PLUGIN_LOCK_DIR"));
@@ -21,11 +27,6 @@ public sealed partial class EntityReader
             string actual = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(CanonicalJson.ToBytes(JsonNode.Parse(input))));
             if (actual != expected) throw new InvalidOperationException("plugin_generation_unavailable");
         }
-        long id = Number(entity, "id"), domain = entity["domain_id"] is null ? 0 : Number(entity, "domain_id");
-        if (domain <= 0) throw new EntityInputException("entity_vpn_domain_invalid");
-        if (options.Limit is < 1 or > 100) throw new EntityInputException("entity_vpn_limit_invalid");
-        var start = DateTimeOffset.Parse(options.From!, CultureInfo.InvariantCulture); var end = DateTimeOffset.Parse(options.To!, CultureInfo.InvariantCulture);
-        if (end - start > TimeSpan.FromDays(31)) throw new EntityInputException("entity_vpn_period_too_wide");
         IReadOnlyList<IReadOnlyList<AccessResource>> groups = [[new("domain", domain)]];
         bool report = ResourceAccessDecisions.ReportAction(access, "vpn.audit", "view", groups).Allowed;
         JsonObject Branch(string name, string capability)
