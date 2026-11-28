@@ -1,5 +1,6 @@
 """Vendor autostart guard runs before dependency configuration."""
 
+import hashlib
 import json
 import stat
 from pathlib import Path
@@ -24,7 +25,7 @@ def debian_tree(tmp_path, monkeypatch):
 
     def metadata(path, *args, **kwargs):
         info = original_lstat(path, *args, **kwargs)
-        return SimpleNamespace(st_uid=123 if path in postgres_paths else 0,
+        return SimpleNamespace(st_uid=123 if path in postgres_paths else 0, st_gid=0,
                                st_mode=stat.S_IFDIR | 0o755 if stat.S_ISDIR(info.st_mode)
                                else stat.S_IFREG | 0o644)
 
@@ -240,6 +241,40 @@ def test_recovery_gate_handles_first_start_that_published_registry(tmp_path, mon
     assert pre.recovery_required(root=tmp_path) is sealed
     pre.package_install('install', 'new', root=tmp_path)
     assert (state / 'reuse-package.json').exists() is sealed
+
+
+@pytest.mark.parametrize(('receipt_kind', 'outcome'), [
+    ('recorded', True), ('legacy', True), ('unbound-seal', 'conflict'), ('local-edit', 'conflict'), ('candidate', False),
+])
+def test_runtime_helper_guard_accepts_only_release_bytes(debian_tree, receipt_kind, outcome):
+    path = debian_tree / pre.RUNTIME_HELPER.lstrip('/')
+    path.parent.mkdir(parents=True)
+    previous, candidate = b'# previous release\n', b'# candidate release\n'
+    current = {'local-edit': b'# local edit\n', 'candidate': candidate}.get(receipt_kind, previous)
+    path.write_bytes(current)
+    state = debian_tree / 'var/lib/sli/state'
+    state.mkdir(parents=True)
+    recovery = debian_tree / 'var/lib/sli/recovery'
+    saved = recovery / 'old'
+    saved.mkdir(parents=True)
+    previous_sha = hashlib.sha256(previous).hexdigest()
+    candidate_sha = hashlib.sha256(candidate).hexdigest()
+    receipt = {'schema_version': 1, 'release': '/opt/sli/releases/old', 'manifest_sha256': 'a' * 64}
+    if receipt_kind in {'recorded', 'local-edit'}:
+        receipt['runtime_helper_sha256'] = previous_sha
+    (state / 'installed.json').write_text(json.dumps(receipt))
+    (saved / 'recovery.json').write_text(json.dumps({
+        'schema_version': 1, 'release': 'old',
+        'manifest_sha256': 'b' * 64 if receipt_kind == 'unbound-seal' else receipt['manifest_sha256'],
+        'content_checksums': {pre.RUNTIME_HELPER_KEY: {'sha256': previous_sha, 'size': len(previous)}},
+    }))
+    if outcome == 'conflict':
+        with pytest.raises(pre.GuardError, match='^native_existing_configuration_conflict$') as error:
+            pre.check_runtime_helper(candidate_sha, path=path, state=state, recovery=recovery)
+        assert pre.RUNTIME_HELPER in error.value.console_message and 'sudo install' in error.value.console_message
+    else:
+        assert pre.check_runtime_helper(candidate_sha, path=path, state=state, recovery=recovery) is outcome
+    assert path.read_bytes() == current
 
 
 def test_postinst_stages_fresh_install_instead_of_starting_database():

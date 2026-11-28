@@ -80,7 +80,7 @@ def plan_jobs(paths: list[str]) -> dict[str, bool]:
     postgres = broad or bool(risks) or any(
         path.startswith(POSTGRES_INSTALLER_PATHS
                         + ("agent-dotnet/src/Sli.Agent.Protocol/", "agent-dotnet/src/Sli.Agent.Core/", f"{SERVER}Agents/"))
-        or path in {"deploy/linux/native_install.py",
+        or path in {"deploy/linux/native_install.py", "deploy/linux/native_preinstall.py", "deploy/linux/native_runtime.py",
                     "deploy/linux/build_beta_kit.py", "deploy/linux/migrate.py",
                     "deploy/linux/runtime_grants.sql", "deploy/linux/default_semantic_policy.sql",
                     "tests/unit/test_linux_install_upgrade_checks.py"}

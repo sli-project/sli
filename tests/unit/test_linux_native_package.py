@@ -216,6 +216,7 @@ def test_package_split_exact_dependencies_and_previous_retention(payload, dotnet
     assert len(result) == 5
     assert captured["sli-release-new"]["opt/sli/releases/new/app.py"] == "pass\n"
     inventory = json.loads(captured["sli-release-new"]["opt/sli/releases/new/native-runtime.json"])
+    assert inventory["runtime_helper_sha256"] == hashlib.sha256(Path(runtime.__file__).read_bytes()).hexdigest()
     assert len(inventory["plugins"]) == 6
     assert inventory["plugins"]["sli.remote-access"]["version"] == "0.1.0"
     assert inventory["plugins"]["sli.remote-access"]["manifest_sha256"] == (
