@@ -246,6 +246,7 @@ export const en: Record<MessageKey, string> = {
   "systemStatus.passwordDomainRequired": "Password attack detection domain is missing for agent {name}.",
   "systemStatus.setPasswordDomain": "Set domain",
   "systemStatus.services": "Server services",
+  "systemStatus.liveEventLag": "The oldest recent event has been waiting for analysis for {minutes} min {seconds} s.",
   "systemStatus.adDcImport.catalog": "The server cannot process domain controller events because its event catalog is unavailable.",
   "systemStatus.adDcImport.connection": "The server cannot process domain controller events because its storage connection is missing or invalid.",
   "systemStatus.adDcImport.authorizationMissing": "The server cannot process domain controller events because event storage has not been authorized.",

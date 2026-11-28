@@ -1306,6 +1306,7 @@ export type OperationsOverview = {
     error_type?: string | null;
     items?: RuntimeWorker[];
     password_detection?: PasswordDetectionStatus;
+    semantic_outbox_lag?: { status: "ok" | "unavailable"; live_age_seconds?: number | null; backfill_age_seconds?: number | null };
     /**
      * `H4` и `L3`: глубина очередей, возраст старейшего готового задания,
      * повторы, карантин и просроченные аренды. Источник —

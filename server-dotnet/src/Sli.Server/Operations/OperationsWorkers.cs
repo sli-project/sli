@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Npgsql;
+using Sli.Server.Semantic;
 using static Sli.Server.Operations.OpsJson;
 
 namespace Sli.Server.Operations;
@@ -62,6 +63,7 @@ public sealed partial class OperationsService
             items.Add(item);
         }
         var result = new JsonObject { ["status"] = errorType is null ? "ok" : "unavailable", ["source"] = "postgres_runtime_worker_heartbeats", ["error_type"] = errorType, ["items"] = items };
+        result["semantic_outbox_lag"] = await SemanticOutboxLagAsync(ct);
         if (includeQueues) result["semantic_queues"] = await QueuesAsync(ct);
         else
         {
@@ -71,6 +73,33 @@ public sealed partial class OperationsService
             result["password_detection"] = await PasswordDetectionAsync(semanticStopped, semanticStale, ct);
         }
         return result;
+    }
+
+    internal const string SemanticOutboxLagSql = $"""
+        select (select floor(greatest(0,extract(epoch from (now()-created_at))))::bigint
+                  from public.semantic_processing_outbox where {SemanticProduction.PendingOutboxJobs}
+                    and {SemanticProduction.OutboxVersion}=@version
+                    and {SemanticProduction.OutboxLane}=1 order by created_at limit 1) as live_age_seconds,
+               (select floor(greatest(0,extract(epoch from (now()-created_at))))::bigint
+                  from public.semantic_processing_outbox where {SemanticProduction.PendingOutboxJobs}
+                    and {SemanticProduction.OutboxVersion}=@version
+                    and (job_kind<>'semantic_replay' or processor_version like @replay)
+                    and {SemanticProduction.OutboxLane}=0 order by created_at limit 1) as backfill_age_seconds
+        """;
+
+    private async Task<JsonObject> SemanticOutboxLagAsync(CancellationToken ct)
+    {
+        try
+        {
+            var row = (await queries.ReadAsync(SemanticOutboxLagSql, ct,
+                ("version", SemanticEvent.Version), ("replay", SemanticEvent.Version + "+r7-%"))).Single()!;
+            return new() { ["status"] = "ok", ["live_age_seconds"] = Copy(row["live_age_seconds"]),
+                ["backfill_age_seconds"] = Copy(row["backfill_age_seconds"]) };
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            return new() { ["status"] = "unavailable" };
+        }
     }
 
     // The ordinary web role supplies its active domain inventory. Only the

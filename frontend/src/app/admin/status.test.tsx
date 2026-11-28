@@ -119,6 +119,25 @@ it.each(["en", "ru"] as const)("names the missing authorization in one line and 
   await waitFor(() => expect(screen.queryByText(message)).toBeNull());
 });
 
+it.each(["en", "ru"] as const)("shows one line for recent event lag above five minutes and clears it after recovery (%s)", async (locale) => {
+  setLocale(locale);
+  const lag = { status: "ok", live_age_seconds: 301, backfill_age_seconds: 7200 } as const;
+  vi.mocked(api.operationsWorkers).mockResolvedValue({ workers: { ...operations.workers, semantic_outbox_lag: lag } });
+  renderPage();
+  const message = t("systemStatus.liveEventLag", { minutes: 5, seconds: 1 });
+  const line = await screen.findByText(message);
+  expect(line.tagName).toBe("P");
+  expect(line.closest(".sli-ds-state--banner")).toBeNull();
+
+  vi.mocked(api.operationsWorkers).mockResolvedValue({ workers: { ...operations.workers,
+    semantic_outbox_lag: { ...lag, live_age_seconds: 300 },
+  } });
+  const client = clients[clients.length - 1];
+  await client.invalidateQueries({ queryKey: ["operations-workers"] });
+  await waitFor(() => expect(screen.queryByText(message)).toBeNull());
+  expect(screen.queryByText(t("systemStatus.liveEventLag", { minutes: 5, seconds: 0 }))).toBeNull();
+});
+
 it.each(["ru", "en"] as const)("shows the retained packet refusal in the source row in %s", async (locale) => {
   setLocale(locale);
   const data = setup([{ ...agent, modules: [{ module_id: "sli.windows.ad-dc", channels: [{ ...agent.modules[0].channels[0],
