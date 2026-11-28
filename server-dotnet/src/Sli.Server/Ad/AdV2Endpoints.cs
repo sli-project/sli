@@ -173,7 +173,8 @@ public static class AdV2Endpoints
             string name = param!.Text("key")!, kind = param.Text("kind")!; string? value = First(name); if (string.IsNullOrEmpty(value)) value = param.Text("default");
             if (kind == "period")
             {
-                string preset = value ?? "7d"; var end = DateTimeOffset.UtcNow; DateTimeOffset start;
+                string preset = value ?? (action == "detail" && key == "ad.users.v2" ? "30d" : "7d");
+                var end = DateTimeOffset.UtcNow; DateTimeOffset start;
                 if (preset == "custom")
                 {
                     try { var period = AdPeriod.Parse(First("from"), First("to"), zone, "report", (int)(param.Int("max_days") is > 0 and var max ? max : 365)); start = period.Start; end = period.End; } catch (AdInputException e) { throw new AdInputException(e.Message == "report_period_too_wide" ? e.Message : "report_period_invalid"); }
@@ -200,6 +201,13 @@ public static class AdV2Endpoints
         int limit = (int)d["limits"]!.Int("default"); if (First("limit") is {} raw && !int.TryParse(raw, out limit) || limit < 1 || limit > d["limits"]!.Int("max")) throw new AdInputException("report_limit_invalid");
         string tab = First("tab") ?? (key == "ad.computers.v6" ? "computers" : d["views"]![0]!.Text("key")!), direction = First("direction") ?? "asc";
         if (!d["views"]!.AsArray().Any(v => v!.Text("key") == tab)) throw new AdInputException("report_tab_invalid");
+        if (action == "view" && (tab == "checks" && (key is "ad.users.v2" or "ad.computers.v6")
+            || tab == "computers" && key == "ad.computers.v6") && First("entity_id") is {} entityId)
+        {
+            if (!long.TryParse(entityId, NumberStyles.None, CultureInfo.InvariantCulture, out long entity) || entity <= 0)
+                throw new AdInputException("report_parameter_invalid:entity_id");
+            p["entity_id"] = entity;
+        }
         if (key == "ad.infrastructure" && action == "detail")
         {
             if (tab != "controls") throw new KeyNotFoundException();

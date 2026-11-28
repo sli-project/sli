@@ -177,7 +177,7 @@ public sealed class UsersActivityV2Tests
         }
     }
     [Fact]
-    public async Task UserCardCountsDailyLogonsWithinTheDomainAndOmitsDirectoryChanges()
+    public async Task UserCardCountsLogonsOnTheApplicationCalendarWithinTheDomain()
     {
         await using var pg = new PostCollectionPostgres(canonicalSchema: true);
         await pg.StartAsync(Ct);
@@ -186,7 +186,7 @@ public sealed class UsersActivityV2Tests
         var today = new DateTimeOffset(DateTime.UtcNow.Date, TimeSpan.Zero);
         await using (var command = new NpgsqlCommand("""
             insert into event_hot
-            select id, @stamp::timestamptz - interval '1 day' + id * interval '1 minute',
+            select id, @stamp::timestamptz - interval '6 hours' + id * interval '1 minute',
                    code, domain_id, actor, target, 'test-ws', 'dc01.example.test',
                    jsonb_build_object('$server_id', server_id, '$channel', 'Security',
                                       '$provider', 'Microsoft-Windows-Security-Auditing', 'LogonType', '2'),
@@ -201,6 +201,11 @@ public sealed class UsersActivityV2Tests
                 (@stamp::timestamptz at time zone 'UTC')::date-10,4624,1,@sid,null,'test-ws','dc01.example.test',
                 jsonb_build_object('$server_id',7,'$channel','Security','$provider','Microsoft-Windows-Security-Auditing','LogonType','2'),
                 '{}'::jsonb,decode('01','hex'),3,@stamp::timestamptz-interval '10 days',@stamp::timestamptz-interval '10 days');
+            insert into event_cold_daily values(
+                (@stamp::timestamptz at time zone 'UTC')::date-11,4625,1,@sid,null,'test-ws','dc01.example.test',
+                jsonb_build_object('$server_id',7,'$channel','Security','$provider','Microsoft-Windows-Security-Auditing','LogonType','2'),
+                '{}'::jsonb,decode('02','hex'),4,@stamp::timestamptz-interval '11 days  -16 hours',
+                @stamp::timestamptz-interval '11 days -18 hours');
             """, db))
         {
             command.Parameters.AddWithValue("stamp", today);
@@ -211,15 +216,35 @@ public sealed class UsersActivityV2Tests
             { ["Sli:Storage:HotRetentionDays"] = "7" }).Build();
         var result = Assert.Single(await AdJson.ReadAsync(db,
             AdAccountEvents.Source(config) + AdUserCard.ActivitySql, Ct, new[] { 4624, 4625 }, today.AddDays(-30),
-            today, 1L, Sid, new[] { "test-user@example.test" }, today));
+            today, 1L, Sid, new[] { "test-user@example.test" }, "Asia/Bangkok"));
         var totals = JsonNode.Parse(result.Text("logon_totals")!)!;
         Assert.Equal(4, totals.Int("successes"));
-        Assert.Equal(1, totals.Int("failures"));
-        Assert.Equal(0, totals.Int("typical"));
+        Assert.Equal(5, totals.Int("failures"));
+        Assert.Null(totals["typical"]);
+        Assert.Equal(today.AddHours(-6).AddMinutes(1), result.Time("last_logon_utc"));
+        var days = JsonNode.Parse(result.Text("logon_days")!)!.AsArray();
+        Assert.Equal(1, days.Single(day => day.Text("day") == today.ToString("yyyy-MM-dd")).Int("successes"));
+        Assert.Null(days.Single(day => day.Text("day") == today.AddDays(-11).ToString("yyyy-MM-dd"))!["failures"]);
+        Assert.Null(days.Single(day => day.Text("day") == today.AddDays(-10).ToString("yyyy-MM-dd"))!["failures"]);
         var computers = JsonNode.Parse(result.Text("computers")!)!.AsArray();
         Assert.Equal(1, Assert.Single(computers).Int("id"));
         var timeline = JsonNode.Parse(result.Text("timeline")!)!.AsArray();
         Assert.Equal([1L, 2L], timeline.Where(row => row.Int("id") > 0).Select(row => row.Int("id")).Order());
+    }
+
+    [Fact]
+    public void UserCardShowsTheLatestSuccessfulLogonSource()
+    {
+        var account = new JsonObject
+        {
+            ["exactLastLogon"] = "2026-10-01T17:00:00Z",
+            ["lastLogonTimestamp"] = "2026-10-02T17:00:00Z",
+        };
+        var journal = JsonValue.Create("2026-10-03T17:00:00Z");
+        Assert.Equal((journal, "windows_event"), AdUserCard.LatestActivity(account, journal));
+        Assert.Equal((account["lastLogonTimestamp"], "active_directory"), AdUserCard.LatestActivity(account, null));
+        account["exactLastLogon"] = "2026-10-04T17:00:00Z";
+        Assert.Equal((account["exactLastLogon"], "domain_controllers"), AdUserCard.LatestActivity(account, journal));
     }
 
     [Fact]

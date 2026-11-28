@@ -143,6 +143,42 @@ public sealed class AdReviewChecksTests : IClassFixture<AdReviewChecksTests.Data
         await using var command = new NpgsqlCommand("insert into auth_users values(1,@at)", db);
         command.Parameters.AddWithValue("at", DateTimeOffset.UtcNow.AddDays(-2.5)); await command.ExecuteNonQueryAsync(Ct);
     }
+
+    [Fact]
+    public async Task Entity_card_returns_the_same_failed_checks_as_the_computer_list()
+    {
+        await using var db = await Open();
+        var selected = Computer();
+        selected["trustedForDelegation"] = true;
+        var other = Computer();
+        other["objectGuid"] = "synthetic-computer-2";
+        other["lapsPasswordExpiration"] = At(1);
+        await Seed(db, false, [selected, other]);
+        await PostCollectionPostgres.Sql(db, """
+            insert into ad_context_entity_aliases values
+              (1,'object_guid','synthetic-computer-1','synthetic-computer-1',7),
+              (1,'object_guid','synthetic-computer-2','synthetic-computer-2',8);
+            """, Ct);
+        var list = await Read(db, false);
+        var request = new AdV2Request("ad.computers.v6", "view", null, [1], new() { ["entity_id"] = 7 },
+            "checks", null, false, 25, null, "UTC");
+        var sources = await AdV2Store.Snapshots(db, "computers_v6", [1], Ct);
+        var card = await AdReviewChecks.ReadAsync(db, request, sources, Ct, Legacy);
+        var rows = card["items"]!.AsArray().OfType<JsonObject>().ToArray();
+        var expected = list["items"]!.AsArray().OfType<JsonObject>()
+            .Where(row => row["objects"]!.AsArray().Any(item => item.Int("entity_id") == 7)).ToArray();
+        Assert.Contains(rows, row => row.Text("key") == "unconstrained_delegation");
+        Assert.DoesNotContain(rows, row => row.Text("key") == "laps");
+        Assert.Equal(expected.Select(row => row.Text("key")).Order(), rows.Select(row => row.Text("key")).Order());
+        foreach (var row in rows)
+        {
+            var listRow = Row(list, row.Text("key")!);
+            Assert.Equal(listRow.Text("title"), row.Text("title"));
+            Assert.Equal(listRow.Text("severity"), row.Text("severity"));
+            Assert.Equal(7, Assert.Single(row["objects"]!.AsArray()).Int("entity_id"));
+        }
+        Assert.Equal(expected.Length, card.Int("filtered_count"));
+    }
     [Fact]
     public async Task Review_checks_propagate_permission_denial_instead_of_an_empty_event_list()
     {

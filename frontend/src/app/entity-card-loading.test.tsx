@@ -33,7 +33,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function open(search = "", entityType = "ad_user") {
+async function open(search = "", entityType = "account") {
   const detail = vi.spyOn(api, "entityWorkspace").mockResolvedValue({ ...workspace, entity: { ...workspace.entity, type: entityType } });
   vi.spyOn(api, "v4Object").mockResolvedValue({ ...object, object: { ...object.object, object_type: entityType } });
   // Keep the optional request pending: it must not block the initial profile.

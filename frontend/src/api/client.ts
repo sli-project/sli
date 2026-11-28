@@ -1736,12 +1736,15 @@ export type InvestigationCaseSummary = Omit<InvestigationCase, "events" | "evide
 };
 
 export type EntitiesWorkspace = { api_version: "v1"; query: string; state: "empty" | "ok"; items: Array<{ id: number; type: string; natural_key: string; display_name?: string | null; first_seen_utc?: string | null; last_seen_utc?: string | null; latest_state?: { status: string; summary?: string | null; observed_at_utc?: string | null; evidence_event_db_id: number } | null }>; has_more: boolean; filters?: { entity_types?: string[]; exclude_entity_types?: string[] }; type_counts?: Array<{ entity_type: string; count: number }>; type_counts_scope?: string; total_entities?: number; limits: Record<string, unknown> };
-export type EntityWorkspaceItem = EntitiesWorkspace["items"][number];
+export type EntityWorkspaceItem = EntitiesWorkspace["items"][number] & { domain_id?: number | null };
 
 export type EntityWorkspaceEvent = {
   event_db_id: number;
+  summary_key?: string | null;
   event_id?: number | null;
   label?: string | null;
+  severity?: string | null;
+  title_code?: string | null;
   time_utc?: string | null;
   server?: string | null;
   channel?: string | null;
@@ -1808,7 +1811,7 @@ export type EntityWorkspaceDetail = {
   semantic_relations_state: string;
   semantic_relations: SemanticRelationItem[];
   has_more: boolean;
-  next_cursor?: { time_utc?: string | null; event_db_id: number } | null;
+  next_cursor?: { time_utc?: string | null; event_db_id: number; summary_key?: string | null } | null;
   context?: { time_from_utc?: string | null; time_to_utc_exclusive?: string | null; timezone?: string | null };
   limits: Record<string, unknown>;
 };
