@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiResponseError } from "../../api/client";
 import type { ReportDefinitionDto } from "../../api/report-v2-types";
 import { ReportDenied } from "../../app/report-v2/ReportDenied";
-import { DataTable, FactList, FilterBar, ReportLayout, SeverityBadge, StateView, TabList, Tabs, type FilterValues, type ResultState, type TableColumn } from "../../design-system";
+import { Button, DataTable, FactList, FilterBar, ReportLayout, SeverityBadge, StateView, TabList, Tabs, type FilterValues, type PeriodValue, type ResultState, type TableColumn } from "../../design-system";
 import { useDateFormatters } from "../../design-system/useDateFormatters";
 import { t, type MessageKey } from "../../i18n";
 import { formatDateTime } from "../../shared/date-time";
 import { formatNumber } from "../../shared/format";
-import { appliedFilters, EVENT_VIEWS, eventHistory, eventPage, eventRows, evidenceHref, exactWindow, filterValues, fleetReturnHref,
+import { ActivityCounts, ActivityTable } from "./StationActivity";
+import { ACTIVITY_TABS, appliedFilters, EVENT_VIEWS, eventHistory, eventPage, eventRows, evidenceHref, exactWindow, filterValues, fleetReturnHref,
   findingHref, journalHref, localHref, PAGE_SIZES, pageSize, patchedSearch, requestParams, resetEvents,
   stationRows, stationTab, WORKSTATIONS_KEY, type Station, type StationDetailResult, type StationEvent } from "./model";
 
@@ -131,7 +132,6 @@ export function WorkstationWorkspace({ definition, stationId, search, session, t
   definition: ReportDefinitionDto; stationId: string; search: URLSearchParams; session: string; timeZone: string;
   update: (patch: Record<string, string | null>, replace?: boolean) => void; onBack: () => void;
 }) {
-  const [periodTarget, setPeriodTarget] = useState<HTMLDivElement | null>(null);
   const { formatDateTime: format } = useDateFormatters();
   const params = requestParams(search, timeZone, definition, true);
   const query = useQuery({ queryKey: [WORKSTATIONS_KEY, session, "station", stationId, params?.toString()],
@@ -154,7 +154,9 @@ export function WorkstationWorkspace({ definition, stationId, search, session, t
   const state: ResultState = denied ? "denied" : failed || invalid ? "error" : !params ? "empty"
     : query.isPending || query.isFetching ? "loading" : station ? "ok" : "not_collected";
   const tab = stationTab(search);
-  const selected = search.get("event");
+  const activity = detail && ["ok", "empty"].includes(detail.events?.state) ? detail.activity : null;
+  const program = search.get("program");
+  const selected = tab === "events" ? search.get("event") : null;
   const row = selected ? rows.find(event => event.key === selected) : undefined;
   const eventList = useRef<HTMLDivElement>(null), scroll = useRef(0);
   const previousSelection = useRef(selected);
@@ -167,7 +169,8 @@ export function WorkstationWorkspace({ definition, stationId, search, session, t
   }, [selected]);
   const backHref = fleetReturnHref(search);
   const values = useMemo(() => filterValues(search, timeZone), [search.toString(), timeZone]);
-  const eventFilters: FilterValues = { period: values.period, view: values.view };
+  const eventFilters = useMemo<FilterValues>(() => ({ view: values.view }), [values.view]);
+  const apply = (draft: FilterValues) => update({ ...appliedFilters(draft, search, timeZone), ...resetEvents, cursor: null });
   const bounds = exactWindow(search, timeZone);
   const size = pageSize(search.get("event_limit") ?? search.get("limit"), definition.limits.max);
   const page = eventPage(search), trail = eventHistory(search);
@@ -188,7 +191,8 @@ export function WorkstationWorkspace({ definition, stationId, search, session, t
   const back = localHref(search);
   const columns: TableColumn<StationEvent>[] = [
     { key: "interval", label: t("workstations.workspace.interval"), render: event => <EventInterval row={event} timeZone={timeZone}/>, minWidth: "12rem" },
-    { key: "operation", label: t("workstations.workspace.operation"), minWidth: "15rem", render: event => <span className="sli-workstations__cell">
+    { key: "importance", label: t("workstations.activity.importance"), width: "10%", render: event => <SeverityBadge severity={event.importance}/> },
+    { key: "operation", label: t("workstations.workspace.operation"), width: "28%", minWidth: "15rem", render: event => <span className="sli-workstations__cell">
       <a className="sli-ds-table__link" title={event.title ?? undefined} href={localHref(patchedSearch(search, { event: event.key }))} onClick={click => {
         click.stopPropagation(); if (click.ctrlKey || click.metaKey || click.shiftKey || click.altKey) return; click.preventDefault(); select(event);
       }}>{[eventTitle(event), fileName(event.imagePath) ?? event.deviceName].filter(Boolean).join(" · ")}</a>
@@ -205,38 +209,50 @@ export function WorkstationWorkspace({ definition, stationId, search, session, t
     { key: "channel", label: t("workstations.workspace.channel"), value: event => event.channel ?? "—", hiddenByDefault: true },
   ];
   const eventsState = detail?.events.state;
-  const journal = station ? journalHref(detail, back) : null;
+  const journal = station && !program ? journalHref(detail, back) : null;
   const title = station?.display_name ?? station?.host_name ?? t("workstations.overview.station");
   const retry = () => search.get("event_cursor") ? update(resetEvents) : void query.refetch();
+  const changeTab = (value: string) => update({ station_tab: value, program: null, ...resetEvents });
+  const showFilters = !denied && tab !== "collection" && !selected;
+  const showCategory = tab === "events" && !program;
   return <div className="sli-workstations sli-workstations--station"><Tabs items={[
-    { key: "events", label: t("workstations.workspace.events") }, { key: "collection", label: t("workstations.workspace.collection_tab") },
-  ]} active={tab} onChange={value => update({ station_tab: value, event: null })}>
-    <ReportLayout title={title} tabbed state={state} metrics={<></>}
-      periodPicker={!denied && tab === "events" && !selected ? <div ref={setPeriodTarget}/> : undefined}
+    ...ACTIVITY_TABS.map(key => ({ key, label: t(`workstations.activity.${key}`) })),
+    { key: "events", label: t("workstations.workspace.events") },
+  ]} active={tab === "collection" ? "important" : tab} onChange={changeTab}>
+    <ReportLayout title={title} tabbed={tab !== "collection"} state={state}
+      metrics={activity && tab !== "collection" ? <ActivityCounts activity={activity} search={search} update={update}/> : <></>}
+      controls={showFilters ? { period: { value: values.period as PeriodValue, presets: ["24h", "7d", "30d", "custom"], precision: "datetime-local",
+        showPrevious: false, strictRange: true, onChange: period => apply({ period }) } } : {}}
       meta={station ? <><span>{station.domain_name ?? "—"}</span>{station.operating_system ? <span>{station.operating_system}</span> : null}
         <span>{t("workstations.workspace.last_contact")}: {format(station.last_seen)}</span><CollectionStatus station={station}/></> : null}
       actions={<><a className="sli-ds-button" href={backHref} onClick={event => {
         if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return; event.preventDefault(); onBack();
       }}>{t("workstations.workspace.back_fleet")}</a>
         {selected && !denied ? <button type="button" className="sli-ds-button" onClick={() => update({ event: null })}>{t("workstations.workspace.back_events")}</button> : null}
+        {station ? <Button onClick={() => changeTab(tab === "collection" ? "important" : "collection")}>
+          {t(tab === "collection" ? "workstations.activity.important" : "workstations.workspace.collection_tab")}</Button> : null}
         {!denied ? <button type="button" className="sli-ds-button" disabled={query.isFetching} onClick={() => {
           if (search.get("event_cursor")) update(resetEvents); else void query.refetch();
         }}>{t("workstations.workspace.refresh")}</button> : null}</>}
-      tabs={<TabList label={title} variant="underline"/>}
-      filters={!denied && tab === "events" && !selected ? <FilterBar periodTarget={periodTarget} align="start" layout="grid" primaryKeys={["period", "view"]}
-        fields={[{ key: "period", label: t("workstations.workspace.event_period"), kind: "period", presets: ["24h", "7d", "30d", "custom"], precision: "datetime-local", step: "any" },
-          { key: "view", label: t("workstations.workspace.event_view"), kind: "select", options: EVENT_VIEWS.map(value => ({ value, label: t(`workstations.workspace.view_${value}`) })) }]}
-        values={eventFilters} defaults={{ period: { preset: "7d" }, view: "all" }} onApply={draft => update({ ...appliedFilters(draft, search, timeZone), ...resetEvents, cursor: null })}/> : null}
+      tabs={tab !== "collection" ? <TabList label={title} variant="underline"/> : undefined}
+      filters={showFilters && showCategory ? <FilterBar align="start" layout="inline" compact applyInline primaryKeys={["view"]}
+        fields={[{ key: "view", label: t("workstations.workspace.event_view"), kind: "select",
+          options: EVENT_VIEWS.map(value => ({ value, label: t(`workstations.workspace.view_${value}`) })) }]}
+        values={eventFilters} defaults={{ view: "all" }} onApply={apply}/> : null}
       stateView={denied ? <ReportDenied reportKey={WORKSTATIONS_KEY}/>
         : !params ? <p role="status" className="sli-workstations__local-state">{t("workstations.workspace.invalid_period")}</p>
         : <StateView state={state} onRetry={retry}/> }>
       {station && detail ? tab === "collection" ? <CollectionDetails station={station}/>
         : <>
-          <div className="sli-workstations__context"><span>{t("workstations.workspace.event_period")}: {format(bounds?.from)} — {format(bounds?.to)} · {timeZone}</span>
-            {journal && !selected ? <a href={journal}>{t("workstations.workspace.open_journal")}</a> : null}</div>
+          {tab === "events" ? <div className="sli-workstations__context"><span>{t("workstations.workspace.event_period")}: {format(bounds?.from)} — {format(bounds?.to)} · {timeZone}</span>
+            {journal && !selected ? <a href={journal}>{t("workstations.workspace.open_journal")}</a> : null}
+            {program && !selected ? <Button onClick={() => update({ program: null, ...resetEvents })}>
+              {t("workstations.activity.clear_program", { program })}</Button> : null}</div> : null}
           {eventsState === "denied" ? <p role="status" className="sli-workstations__local-state">{t("workstations.workspace.events_denied")}</p>
             : eventsState === "error" ? <StateView state="error" onRetry={retry}/>
             : eventsState === "not_collected" ? <p role="status" className="sli-workstations__local-state">{t("workstations.workspace.events_unavailable")}</p>
+            : tab !== "events" ? activity ? <ActivityTable key={tab} tab={tab} activity={activity} search={search} timeZone={timeZone} update={update}/>
+              : <StateView state="error" onRetry={retry}/>
             : selected ? row ? <EventFacts row={row} station={station} detail={detail} search={search} timeZone={timeZone}/>
               : <p role="status" className="sli-workstations__local-state">{t("workstations.workspace.event_missing")}</p>
             : <div ref={eventList}><DataTable caption={t("workstations.workspace.station_events")} rows={rows} columns={columns} rowKey={event => event.key}

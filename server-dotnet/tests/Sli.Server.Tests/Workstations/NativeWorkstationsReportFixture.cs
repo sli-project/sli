@@ -133,7 +133,8 @@ internal static class NativeWorkstationsReportFixture
                     (@event+6,@repeat_window+interval '5 minutes 1 second',4688,@domain,@sid,null,null,@host,@process,'{}',@process_fields),
                     (@event+7,@repeat_window+interval '4 minutes 20 seconds',4688,@domain,@sid,null,null,@host,@process,'{}',@process_fields-'CommandLine'),
                     (@event+8,@repeat_window+interval '6 minutes',6416,@domain,null,null,null,@host,@security,'{}',
-                        '{"ClassName":"DiskDrive","ClassId":"fixture-class-id","DeviceDescription":"Example USB drive"}'),
+                        jsonb_build_object('ClassName','DiskDrive','ClassId','fixture-class-id','DeviceDescription','Example USB drive',
+                            'DeviceId','USBSTOR'||chr(92)||'ExampleDisk'||chr(92)||'Unit1')),
                     (@event+9,@repeat_window+interval '7 minutes',4688,@domain,@sid,@directory_sid,null,@host,@directory_process,'{}',@process_fields);
             insert into event_cold_daily(day,grouping_key,event_kind,domain_id,actor,target,source,computer,method,outcome,event_count,first_seen_utc,last_seen_utc)
                 values(@first::date,sha256(convert_to('workstation-workspace-daily','UTF8')),4624,@domain,

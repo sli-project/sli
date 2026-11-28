@@ -26,7 +26,8 @@ internal static class FileAuditActivityRules
     {
         var instant=T(action["observed_at"]); var rows=snapshots.OfType<JsonObject>().Where(x=>new[]{"agent_id","source_instance_id","collection_scope_id"}.All(k=>S(x[k])==S(action[k])) && T(x["observed_at_utc"])>=instant.AddDays(-1) && T(x["observed_at_utc"])<=instant)
             .OrderByDescending(x=>S(x["completeness"])=="complete").ThenByDescending(x=>T(x["observed_at_utc"])).ThenByDescending(x=>S(x["snapshot_id"]),StringComparer.Ordinal);
-        foreach(var snapshot in rows) { var kinds=snapshot["objects"]!.AsArray().OfType<JsonObject>().Where(x=>FoldPath(S(x["path"])!)==FoldPath(S(action["path"])!)).Select(x=>S(x["object_type"])!).Distinct().ToList(); if(kinds.Count==1) return (kinds[0],snapshot); }
+        string path=FoldPath(S(action["old_path"]) ?? S(action["path"])!);
+        foreach(var snapshot in rows) { var kinds=snapshot["objects"]!.AsArray().OfType<JsonObject>().Where(x=>FoldPath(S(x["path"])!)==path).Select(x=>S(x["object_type"])!).Distinct().ToList(); if(kinds.Count==1) return (kinds[0],snapshot); }
         return ("unknown",null);
     }
     public static JsonArray Evaluate(JsonArray actions,JsonObject config,string agent,string source,JsonArray snapshots,JsonObject? calendar)
@@ -34,13 +35,18 @@ internal static class FileAuditActivityRules
         var zone=calendar is null ? null : WorkingTime.Validate(calendar);
         var roots=config["roots"]!.AsArray().OfType<JsonObject>().ToDictionary(x=>S(x["collection_scope_id"])!);
         var eligible=new Dictionary<string,(JsonObject Action,JsonObject? Snapshot)>();
-        foreach(var item in actions.OfType<JsonObject>()) {
+        var orderedActions=actions.OfType<JsonObject>().OrderBy(x=>T(x["observed_at"])).ThenBy(x=>S(x["action_id"]),StringComparer.Ordinal);
+        var knownKinds=new Dictionary<(string Scope,string Subject,string Path),string>();
+        foreach(var item in orderedActions) {
             string scope=S(item["collection_scope_id"])!,op=S(item["operation"])!,subject=S(item["subject_sid"]) ?? "",path=S(item["path"]) ?? "",state=S(item["correlation_state"])!;
-            if(S(item["agent_id"])!=agent || S(item["source_instance_id"])!=source || !roots.TryGetValue(scope,out var root) || subject.Length==0 || config["service_account_exclusions"]!.AsArray().Any(x=>S(x)==subject) || S(item["outcome"])!="success" || op is not ("read" or "write" or "rename" or "delete") || item["evidence"] is not JsonArray evidence || evidence.Count==0 || path.Length==0 || state is "ambiguous" or "not_attempted" || op=="delete" && state!="complete" || op=="read" && !root["important"]!.GetValue<bool>()) continue;
+            if(S(item["agent_id"])!=agent || S(item["source_instance_id"])!=source || !roots.TryGetValue(scope,out var root) || subject.Length==0 || config["service_account_exclusions"]!.AsArray().Any(x=>S(x)==subject) || S(item["outcome"])!="success" || op is not ("read" or "write" or "rename" or "delete" or "delete_right") || item["evidence"] is not JsonArray evidence || evidence.Count==0 || path.Length==0 || state is "ambiguous" or "not_attempted" || op=="delete" && state!="complete" || op=="read" && !root["important"]!.GetValue<bool>()) continue;
             if(!InRoot(path,S(root["path"])!)) continue;
             string kind=S(item["object_type"])!; JsonObject? snapshot=null;
+            if(kind=="unknown" && op is "rename" or "delete")
+                kind=knownKinds.GetValueOrDefault((scope,subject,FoldPath(S(item["old_path"]) ?? path)),"unknown");
             if(kind=="unknown") (kind,snapshot)=Inventory(item,snapshots);
-            if(kind!="file") continue;
+            if(kind is "file" or "directory") knownKinds[(scope,subject,FoldPath(path))]=kind;
+            if(kind!="file" || op=="delete_right") continue;
             string id=S(item["action_id"])!;
             if(eligible.TryGetValue(id,out var old) && !PythonMetadataEquality.Equal(old.Action,item)) throw new InvalidDataException("file_audit_action_replay_conflict");
             eligible[id]=(item,snapshot);
@@ -53,14 +59,40 @@ internal static class FileAuditActivityRules
         }
         int seconds=config["mass_operation_seconds"]!.GetValue<int>(),threshold=config["mass_operation_files"]!.GetValue<int>();
         foreach(var group in ordered.GroupBy(x=>(Scope:S(x.Action["collection_scope_id"])!,Subject:S(x.Action["subject_sid"])!,
-            Operation:S(x.Action["operation"]) is "rename" ? "write" : S(x.Action["operation"])!))) {
+            Read:S(x.Action["operation"])=="read"))) {
             var window=new List<(JsonObject Action,JsonObject? Snapshot)>(); (List<(JsonObject Action,JsonObject? Snapshot)> Rows,int Count)? selected=null;
             void Emit() { if(selected is null) return; var (rows,count)=selected.Value; var first=rows[0].Action;var last=rows[^1].Action;
                 var details=new JsonObject { ["distinct_files"]=count,["threshold"]=threshold,["window_seconds"]=seconds,["window_start"]=first["observed_at"]!.DeepClone(),["window_end"]=last["observed_at"]!.DeepClone() };
-                result.Add(Finding("file-audit.mass-"+group.Key.Operation,agent,source,group.Key.Scope,group.Key.Subject,S(last["observed_at"])!,rows.Select(x=>x.Action),rows.Where(x=>x.Snapshot is not null).Select(x=>x.Snapshot!),details)); selected=null; }
-            foreach(var row in group) { var cutoff=T(row.Action["observed_at"]).AddSeconds(-seconds); window.RemoveAll(x=>T(x.Action["observed_at"])<cutoff);window.Add(row); int count=window.Select(x=>FoldPath(S(x.Action["path"])!)).Distinct().Count(); if(count>=threshold) selected=(window.ToList(),count); else Emit(); } Emit();
+                string operation=group.Key.Read ? "read" : rows.All(x=>S(x.Action["operation"])=="delete") ? "delete" : "write";
+                result.Add(Finding("file-audit.mass-"+operation,agent,source,group.Key.Scope,group.Key.Subject,S(last["observed_at"])!,rows.Select(x=>x.Action),rows.Where(x=>x.Snapshot is not null).Select(x=>x.Snapshot!),details)); selected=null; }
+            foreach(var row in group) {
+                var cutoff=T(row.Action["observed_at"]).AddSeconds(-seconds);
+                window.RemoveAll(x=>T(x.Action["observed_at"])<cutoff);
+                window.Add(row);
+                int count=DistinctFiles(window.Select(x=>x.Action));
+                if(count>=threshold) selected=(window.ToList(),count); else Emit();
+            }
+            Emit();
         }
         return new JsonArray(result.OrderBy(x=>S(x["result_id"]),StringComparer.Ordinal).Select(x=>(JsonNode?)x).ToArray());
+    }
+
+    private static int DistinctFiles(IEnumerable<JsonObject> window)
+    {
+        var aliases=new Dictionary<string,string>(StringComparer.Ordinal);
+        var files=new HashSet<string>(StringComparer.Ordinal);
+        foreach(var action in window)
+        {
+            string path=FoldPath(S(action["path"])!);
+            if(S(action["old_path"]) is { } old)
+            {
+                string original=FoldPath(old);
+                aliases[path]=aliases.GetValueOrDefault(original,original);
+                aliases.Remove(original);
+            }
+            files.Add(aliases.GetValueOrDefault(path,path));
+        }
+        return files.Count;
     }
 }
 

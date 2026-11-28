@@ -245,7 +245,6 @@ public static class AdSecurity
                 {
                     item["repeat_count"] = source.Int("repeat_count");
                     item["first_seen_utc"] = source["first_seen_utc"]?.DeepClone();
-                    item["repeat_mixed_operations"] = source["mixed_operations"]?.DeepClone();
                 }
                 item["channel"] = source["event_channel"]?.DeepClone();
                 if (source.Text("directory_object") is {} objectName)

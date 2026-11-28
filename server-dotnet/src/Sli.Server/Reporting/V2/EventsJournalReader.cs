@@ -8,6 +8,7 @@ using Sli.Server.Semantic;
 using Sli.Server.Storage.EventReports;
 using Sli.Server.Entities;
 using Sli.Server.Problems;
+using Sli.Server.Workstations;
 
 namespace Sli.Server.Reporting.V2;
 
@@ -17,6 +18,7 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
     private static readonly HashSet<int> DomainChangeCodes = AdSecurity.ChangeEventIds().ToHashSet();
 
     public string OwnerId => "sli.core";
+    internal DateTimeOffset ShortRetentionBoundary => runner.ShortRetentionBoundary;
     public bool Handles(string key) => key == "events.journal";
     public Task<ReportExport> ExportAsync(ReportQueryContext c, CancellationToken ct) => exports.ExportAsync(c, ct);
     public async Task<JsonObject> QueryAsync(ReportQueryContext c, CancellationToken ct)
@@ -77,6 +79,15 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
                     row["workstation_event"] = PresentWorkstationEvent(row, workstationEvent, workstationCode, false);
                 var members = row["_journal_members"] as JsonArray;
                 row.Remove("_journal_members");
+                if (c.StationActivity is { } activity)
+                {
+                    int priority = activity.Priority(Integer(row["id"], out long sourceId) ? sourceId : null,
+                        row.Text("summary_key") is { Length: > 0 } summary ? summary : null);
+                    foreach (var member in (members ?? []).OfType<JsonArray>())
+                        if (member.Count == 2 && Integer(member[0], out long memberId))
+                            priority = Math.Max(priority, activity.Priority(memberId, null));
+                    if (WorkstationActivity.Severity(priority) is { } severity) row["station_importance"] = severity;
+                }
                 if (row["_journal_origin"] is not JsonObject origin) continue;
                 row.Remove("_journal_origin");
                 foreach (string field in new[] { "id", "event_id", "day", "summary_key", "channel" })
@@ -234,7 +245,7 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
             pivot.Length > 0 || view is "groups" or "audit" or "failures" or "service"
             ? new(c.Action == "view" && c.Params.Text("collapse") != "off", expand, before, view, result, pivot, Id("domain"))
                 {
-                    ServerId = c.WorkstationServerId, SourceInstanceId = source, SourcePlugin = plugin,
+                    ServerId = c.WorkstationServerId, SourceInstanceId = source, SourcePlugin = plugin, StationProgram = c.WorkstationProgram,
                     IncludePeriodMetadata = interactive,
                     HideOpenEvidenceFor = c.Params.Text("hide_open_problem_evidence") == "on" ? c.Access : null,
                     PageOnly = c.Action == "view" && c.WorkstationServerId is null && source is null && before is null

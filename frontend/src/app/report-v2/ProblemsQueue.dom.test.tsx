@@ -66,7 +66,7 @@ it("expands repeat rows in place and opens exact evidence", async () => {
   await user.click(attack);
   const panel = await screen.findByRole("dialog", { name: "Password spray · operator.one, operator.two and 10 more" });
   expect(await within(panel).findByText("4625")).toBeTruthy();
-  expect(within(panel).getByRole("link", { name: "Investigate" }).getAttribute("href"))
+  expect(within(panel).getByRole("link", { name: "Open in event journal" }).getAttribute("href"))
     .toBe("/app/report/events.journal?finding=41&domain=7&hide_open_problem_evidence=off");
   await user.click(within(panel).getByRole("button", { name: "Next problem" }));
   expect(await screen.findByRole("dialog", { name: "Audit policy changed" })).toBeTruthy();

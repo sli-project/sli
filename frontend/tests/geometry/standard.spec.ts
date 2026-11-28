@@ -380,7 +380,7 @@ for (const width of [1920, 2560]) {
     const eventButtons = panel.getByRole('button', { name: '4625', exact: true });
     await expect(eventButtons).toHaveCount(25);
     const journal = panel.getByRole('link', { name: 'Открыть в журнале' });
-    await expect(journal).toHaveAttribute('href', '/app/report/events.journal?finding=1&domain=1');
+    await expect(journal).toHaveAttribute('href', '/app/report/events.journal?finding=1&domain=1&hide_open_problem_evidence=off');
     const measurements = await panel.evaluate(detail => {
       const box = detail.getBoundingClientRect();
       const list = document.querySelector<HTMLElement>('main .sli-ds-report__split .sli-ds-table__scroll')!;
@@ -432,7 +432,7 @@ for (const width of [1920, 2560]) {
     await expect(journal).toBeInViewport({ ratio: 1 });
     expect(await page.evaluate(() => scrollY)).toBe(0);
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(/\/app\/report\/events\.journal\?finding=1&domain=1$/);
+    await expect(page).toHaveURL(/\/app\/report\/events\.journal\?finding=1&domain=1&hide_open_problem_evidence=off$/);
     await expect(page.getByRole('link', { name: '4625', exact: true })).toHaveCount(25);
     await expect(page.getByRole('link', { name: 'Проблема №1' })).toHaveAttribute('href', '/app/report/security.problems?id=1&domain=1');
 

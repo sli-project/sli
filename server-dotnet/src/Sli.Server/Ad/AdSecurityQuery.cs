@@ -219,14 +219,19 @@ internal sealed class AdSecurityQuery
                          when event.event_id=4719 then 'audit:'||server.id
                          when event.event_id=4739 then 'domain:'||event.domain_id
                          when {TargetSid} ~* '^S-1-[0-9]+(-[0-9]+)+$' and {TargetSid}<>'S-1-0-0' then upper({TargetSid})
-                    end as object_key
+                    end as object_key,
+                    case when event.event_id in (4728,4729,4732,4733,4756,4757)
+                            then lower(coalesce(nullif(nullif(btrim(facts.membership_member_sid),'-'),''),
+                                                nullif(nullif(btrim(facts.membership_member_name),'-'),'')))
+                         when event.event_id=5136 then lower(nullif(btrim(event.fields->>'AttributeLDAPDisplayName'),''))
+                         when event.event_id=4719 then lower(nullif(btrim(event.fields->>'SubcategoryGuid'),''))
+                    end as object_field
                 {joins} {where} and event.day is null and event.id>0
             ), grouped as materialized (
                 select candidates.*,tabs.tab,first_value(event_db_id) over batch as group_anchor,
-                    count(*) over batch as repeat_count,min(time_created_utc) over batch as first_seen_utc,
-                    min(event_id) over batch<>max(event_id) over batch as mixed_operations
+                    count(*) over batch as repeat_count,min(time_created_utc) over batch as first_seen_utc
                 from candidates cross join lateral (values ('all'),(change_view)) tabs(tab)
-                window batch as (partition by tab,initiator_key,object_key,{groupId},
+                window batch as (partition by tab,initiator_key,object_key,event_id,object_field,{groupId},
                     date_bin(interval '1 minute',time_created_utc,timestamptz '2000-01-01')
                     order by time_created_utc desc,event_db_id desc rows between unbounded preceding and unbounded following)
             ), selected_rows as materialized (
@@ -258,7 +263,6 @@ internal sealed class AdSecurityQuery
                 from column_values
             ), counts as (
                 select {counts},(select count(*) from selected_rows) as display_count from grouped
-                where event_db_id=group_anchor
             ), page as (
                 select * from selected_rows {seek} order by time_created_utc {order},event_db_id {order} limit {limit}
             )

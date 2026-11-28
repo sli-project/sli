@@ -13311,6 +13311,14 @@
         ]
       },
       {
+        "key": "program",
+        "label": "Программа",
+        "kind": "text",
+        "field_categories": [],
+        "max_length": 256,
+        "hidden": true
+      },
+      {
         "key": "event_cursor",
         "label": "Страница событий",
         "kind": "text",

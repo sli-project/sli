@@ -40,7 +40,7 @@ internal static class AgentFileAuditEvents
         if (serverFileEventsOnly && id is 4656 or 4663 or 4670 or 5145 && scopes.Count==0)
             throw new ProtocolException(Receipt.FileAuditInvalid,Receipt.FileAuditScopeMismatch);
         if (objectKind is not null)
-            Require(id==4663 && scopes.Count==1 && data.GetValueOrDefault("ObjectType")=="File");
+            Require(id is 4656 or 4663 && scopes.Count==1 && data.GetValueOrDefault("ObjectType")=="File");
         bool workstation=policy.Workstation;
         if (workstation && !context)
         {

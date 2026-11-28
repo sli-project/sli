@@ -8,7 +8,7 @@ import * as app from "../../app/App";
 import { localeRuntime, setLocale, t } from "../../i18n";
 import { TimeZoneContext } from "../../shared/time-zone";
 import { WorkstationsPage } from "./route";
-import { WORKSTATIONS_KEY, type StationDetailResult } from "./model";
+import { WORKSTATIONS_KEY, type StationActivity, type StationDetailResult } from "./model";
 
 const definition = { ...definitions.find(item => item.key === WORKSTATIONS_KEY), filter_options: {} } as unknown as ReportDefinitionDto;
 const source = "00000000-0000-4000-8000-000000000001";
@@ -19,6 +19,7 @@ let revision = "initial", denied = false, detailMode: "normal" | "denied" | "eve
 let client: QueryClient;
 let directoryOnly = false;
 let fleetEmpty = false;
+let emptyActivity = false;
 const station = (index = 0) => ({ station_id: index ? `00000000-0000-4000-8000-${String(index + 2).padStart(12, "0")}` : stationId,
   agent_key: index ? `00000000-0000-4000-8000-${String(index + 2).padStart(12, "0")}` : stationId,
   transport_agent_id: "00000000-0000-4000-8000-000000000003", source_instance_id: index ? `10000000-0000-4000-8000-${String(index).padStart(12, "0")}` : source,
@@ -48,10 +49,21 @@ const events = [
   { id: 105, event_id: 4688, channel: "Security", event_count: 1, time_created_utc: "2026-11-25T10:13:00Z",
     workstation_event: { image_path: "C:\\Tools\\calc.exe" } },
 ];
-const detailResult = (): StationDetailResult => ({ ...result({ items: [station()], filtered_count: 1,
+const activity = (): StationActivity => ({
+  notable: emptyActivity ? [] : [
+    { fact: "new_program", severity: "medium", object: "Example newest", first: from, last: to, count: 1 },
+    { fact: "service_outside_system", severity: "high", object: "Example earlier", first: from, last: from, count: 1 },
+    { fact: "writable_program", severity: "high", object: "Example later", first: from, last: to, count: 2 },
+  ],
+  programs: [{ name: "notepad.exe", path: "C:\\Tools\\notepad.exe", writable: false, first: from, last: to, count: 3, users: ["alex"] }],
+  logons: [], devices: [],
+});
+const detailResult = (program: string | null): StationDetailResult => ({ ...result({ items: [station()], filtered_count: 1,
   ...(detailMode === "denied" ? { access: { allowed: false } } : {}) }), detail: {
   station: detailMode === "malformed" ? { station_id: stationId } : station(),
-  events: { state: detailMode === "events_denied" ? "denied" : "ok", items: events, filtered_count: 5, journal_event_count: 45, has_more: true,
+  activity: activity(),
+  events: { state: detailMode === "events_denied" ? "denied" : "ok",
+    items: program ? events.filter(row => row.workstation_event?.image_path === program) : events, filtered_count: program ? 1 : 5, journal_event_count: 45, has_more: !program,
     next_cursor: "bound-next-event-page", window: { from_utc: from, to_utc_exclusive: to } },
   related: { journal: { allowed: detailMode !== "events_denied", params: { domain: 11, server: "WS-WORKSPACE-001", source_instance_id: source,
     source_plugin: "sli.workstations", period: "custom", from, to, tz: "UTC", collapse: "on" } }, problems: { allowed: true } },
@@ -61,6 +73,7 @@ beforeEach(() => {
   denied = false; detailMode = "normal"; revision = "initial"; requests.length = 0; invalidRequests.length = 0;
   directoryOnly = false;
   fleetEmpty = false;
+  emptyActivity = false;
   localStorage.clear();
   vi.spyOn(localeRuntime, "reload").mockImplementation(() => undefined);
   vi.spyOn(app, "useEffectiveAccess").mockImplementation(() => ({ subject: { type: "session", id: 7 }, evaluated_at_utc: revision,
@@ -76,7 +89,7 @@ beforeEach(() => {
     const unknown = [...url.searchParams.keys()].filter(key => !allowed.has(key));
     if (unknown.length) { invalidRequests.push(...unknown); return new Response(JSON.stringify({ error: "report_parameter_unknown" }), { status: 400 }); }
     if (denied) return new Response(JSON.stringify({ error: "workstation_access_denied" }), { status: 403 });
-    if (url.pathname.includes("/detail")) return new Response(JSON.stringify(detailResult()));
+    if (url.pathname.includes("/detail")) return new Response(JSON.stringify(detailResult(url.searchParams.get("program"))));
     if (fleetEmpty) return new Response(JSON.stringify(result({ state: "empty", items: [], filtered_count: 0 })));
     if (directoryOnly) {
       const items = Array.from({ length: 3 }, (_, index) => ({
@@ -102,6 +115,43 @@ function mount() {
   const view = render(page());
   return { ...view, refresh: () => view.rerender(page()) };
 }
+
+async function openAllEvents() {
+  await screen.findByRole("table", { name: t("workstations.activity.important") });
+  fireEvent.click(screen.getByRole("tab", { name: t("workstations.workspace.events") }));
+  return screen.findByRole("table", { name: t("workstations.workspace.station_events") });
+}
+
+it("opens ranked activity by default, with high importance first and latest facts first within a severity", async () => {
+  setLocale("en"); mount();
+  fireEvent.click(await screen.findByRole("link", { name: "WS-WORKSPACE-001" }));
+  const table = await screen.findByRole("table", { name: "Important" });
+  expect(screen.getByRole("tab", { name: "Important" }).getAttribute("aria-selected")).toBe("true");
+  expect(within(table).getAllByRole("row").slice(1).map(row => within(row).getAllByRole("cell")[2].textContent))
+    .toEqual(["Example later", "Example earlier", "Example newest"]);
+});
+
+it("shows the period-specific empty state when there are no notable facts", async () => {
+  setLocale("en"); emptyActivity = true; mount();
+  fireEvent.click(await screen.findByRole("link", { name: "WS-WORKSPACE-001" }));
+  expect(await screen.findByText("No important events in the selected period.")).toBeTruthy();
+});
+
+it("opens Programs from the count and requests all events filtered by the selected program", async () => {
+  setLocale("en"); mount();
+  fireEvent.click(await screen.findByRole("link", { name: "WS-WORKSPACE-001" }));
+  fireEvent.click(await screen.findByRole("link", { name: "Programs: 1" }));
+  const programs = await screen.findByRole("table", { name: "Programs" });
+  fireEvent.click(within(programs).getByRole("link", { name: "notepad.exe" }));
+  const table = await screen.findByRole("table", { name: t("workstations.workspace.station_events") });
+  expect(within(table).getAllByRole("row")).toHaveLength(2);
+  expect(within(table).getByRole("columnheader", { name: "Importance" })).toBeTruthy();
+  const request = requests.filter(url => url.pathname.endsWith("/detail")).at(-1)!;
+  expect(request.searchParams.get("program")).toBe("C:\\Tools\\notepad.exe");
+  expect(request.searchParams.has("event_cursor")).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: /Clear program filter/ }));
+  await waitFor(() => expect(within(screen.getByRole("table", { name: t("workstations.workspace.station_events") })).getAllByRole("row")).toHaveLength(6));
+});
 
 it.each([false, true])("gives the applicable action for an empty fleet with filters=%s", async (filtered) => {
   fleetEmpty = true;
@@ -145,7 +195,7 @@ it.each(["ru", "en"] as const)("uses the real registry for fleet → full statio
   window.history.pushState(null, "", `${window.location.pathname}?${fleet}`); window.dispatchEvent(new PopStateEvent("popstate"));
   await waitFor(() => expect(within(screen.getByRole("table", { name: t("workstations.overview.stations") })).getAllByRole("row")).toHaveLength(2));
   fireEvent.click(screen.getByRole("link", { name: "WS-WORKSPACE-001" }));
-  await screen.findByRole("table", { name: t("workstations.workspace.station_events") });
+  await openAllEvents();
   expect(screen.queryByRole("dialog")).toBeNull();
   fireEvent.click(screen.getByRole("link", { name: t("workstations.workspace.event_4624") }));
   const facts = await screen.findByRole("region", { name: t("workstations.workspace.event_facts") });
@@ -162,7 +212,7 @@ it.each(["ru", "en"] as const)("uses the real registry for fleet → full statio
   expect(evidence.pathname).toBe("/app/events/102");
   expect(evidence.searchParams.get("return_to")).toBe(window.location.pathname + window.location.search);
   expect(screen.getByRole("link", { name: new RegExp(t("workstations.workspace.finding", { id: "7" })) }).getAttribute("href")).toContain("id=7");
-  fireEvent.click(screen.getByRole("tab", { name: t("workstations.workspace.collection_tab") }));
+  fireEvent.click(screen.getByRole("button", { name: t("workstations.workspace.collection_tab") }));
   expect(await screen.findByRole("table", { name: t("workstations.workspace.profile_events") })).toBeTruthy();
   expect(screen.getByText(source)).toBeTruthy();
   fireEvent.click(screen.getByRole("link", { name: t("workstations.workspace.back_fleet") }));
@@ -191,6 +241,7 @@ it.each(["en", "ru"] as const)("shows the program, parent, account, device and c
   const missingLogon = (await screen.findByRole("link", { name: "WS-WORKSPACE-002" })).closest("tr")!;
   expect(within(missingLogon).getAllByRole("cell")[2].textContent).toBe("—");
   fireEvent.click(firstStation);
+  await openAllEvents();
   const process = await screen.findByRole("link", { name: /notepad\.exe/ });
   const row = within(process.closest("tr")!);
   expect(row.getByText(/explorer\.exe/)).toBeTruthy();
@@ -229,7 +280,7 @@ it("opens a direct station URL independently of the fleet page and resets only e
 
 it("restores the original fleet time and cursor after applying a different station event window", async () => {
   mount(); fireEvent.click(await screen.findByRole("link", { name: "WS-WORKSPACE-001" }));
-  await screen.findByRole("table", { name: t("workstations.workspace.station_events") });
+  await openAllEvents();
   fireEvent.click(screen.getByLabelText(new RegExp(t("period.custom")), { selector: "summary" }));
   fireEvent.change(screen.getByLabelText(t("period.from")), { target: { value: "2026-11-25T09:30:00.123" } });
   fireEvent.click(screen.getByRole("button", { name: t("filters.apply") }));
@@ -242,7 +293,7 @@ it("restores the original fleet time and cursor after applying a different stati
 
 it("clears opened station data when the effective session loses access", async () => {
   const view = mount(); fireEvent.click(await screen.findByRole("link", { name: "WS-WORKSPACE-001" }));
-  await screen.findByRole("table", { name: t("workstations.workspace.station_events") });
+  await openAllEvents();
   denied = true; revision = "revoked"; view.refresh();
   await waitFor(() => expect(screen.queryByText("Synthetic audit cleared")).toBeNull());
   expect(screen.queryByText("SYNTHETIC\\alice")).toBeNull();
@@ -261,6 +312,7 @@ it("keeps collection metadata available while independently denying the journal 
   expect(await screen.findByText(t("workstations.workspace.events_denied"))).toBeTruthy();
   expect(screen.queryByText("Synthetic grouped sign-ins")).toBeNull();
   expect(screen.queryByRole("link", { name: t("workstations.workspace.open_journal") })).toBeNull();
-  fireEvent.click(screen.getByRole("tab", { name: t("workstations.workspace.collection_tab") }));
+  expect(screen.queryByRole("link", { name: /Programs: 1|Программ: 1/ })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: t("workstations.workspace.collection_tab") }));
   expect(await screen.findByText(source)).toBeTruthy();
 });
