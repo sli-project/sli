@@ -79,6 +79,8 @@ internal sealed class DetectionDiagnostics
     ];
     internal string Step { get; set; } = "source";
     private readonly Dictionary<string, JsonObject> failures = new(StringComparer.Ordinal);
+    private readonly List<JsonObject> fileRansomEvaluations = [];
+    internal void FileRansom(JsonObject evaluation) => fileRansomEvaluations.Add(evaluation);
     internal void Query(string sql) => Step = Operations.FirstOrDefault(name => sql.Contains(name + "(", StringComparison.Ordinal)) ?? "source_write";
     internal static JsonObject Describe(Exception error, string step)
     {
@@ -178,6 +180,8 @@ internal sealed class DetectionDiagnostics
     }
     internal void Write(string cycle, Action<string>? write = null)
     {
-        foreach (var item in failures.Values) (write ?? Console.Error.WriteLine)(cycle + "_source_failed:" + item.ToJsonString());
+        var emit = write ?? Console.Error.WriteLine;
+        foreach (var item in failures.Values) emit(cycle + "_source_failed:" + item.ToJsonString());
+        foreach (var evaluation in fileRansomEvaluations) emit("file_ransom_evaluation:" + evaluation.ToJsonString());
     }
 }
