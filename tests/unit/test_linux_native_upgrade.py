@@ -342,7 +342,7 @@ def test_preflight_checks_registry_recovery_configuration_and_online_secrets(mon
 def test_fence_stops_ingress_then_every_writer_and_checks_database(monkeypatch):
     events = []
     monkeypatch.setattr(install, 'command', lambda argv, **kwargs: events.append(argv))
-    monkeypatch.setattr(upgrade, 'unit_absent', lambda unit: False, raising=False)
+    monkeypatch.setattr(upgrade, 'unit_state', lambda unit: {'LoadState': 'loaded', 'ActiveState': 'inactive'})
     monkeypatch.setattr(runtime, 'stop_writers', lambda: events.append('writers-stopped'))
     monkeypatch.setattr(runtime, 'stop_services', lambda services, **kw: events.append(
         ['systemctl', 'stop', *map(runtime.active_unit_name, services)]))
@@ -421,10 +421,13 @@ def test_candidate_failure_rolls_back_with_unloaded_units_without_resume(activat
 @pytest.mark.parametrize('pg,ch', [(0, 0), (1, 0), (0, 1)])
 def test_database_fence_uses_postgres_counters_without_clickhouse(monkeypatch, pg, ch):
     calls = []
-    connection = SimpleNamespace(execute=lambda sql: SimpleNamespace(fetchone=lambda: (pg,)))
+    connection = SimpleNamespace(execute=lambda sql, args=(): SimpleNamespace(
+        fetchall=lambda: [('adlog_user', 'fixture-worker')] if pg else []))
     monkeypatch.setattr(backup, 'pg_passfile', lambda: nullcontext(Path('/unused')))
-    def connect(passfile, database='sli'):
+    monkeypatch.setattr(upgrade, 'PG_DRAIN_SECONDS', 0)
+    def connect(passfile, database='sli', *, autocommit=False):
         assert database == 'postgres', 'Quiescence must work while restore has dropped sli'
+        assert autocommit
         return nullcontext(connection)
     monkeypatch.setattr(backup, 'pg_connect', connect)
     def query(sql):
@@ -433,8 +436,9 @@ def test_database_fence_uses_postgres_counters_without_clickhouse(monkeypatch, p
         return [{'n': ch}]
     monkeypatch.setattr(backup, 'clickhouse_targets', lambda: [SimpleNamespace(query=query)] * 2)
     if pg:
-        with pytest.raises(RuntimeError, match='pg_busy'):
+        with pytest.raises(RuntimeError, match='pg_busy') as busy:
             upgrade.database_quiet()
+        assert busy.value.detail['holders'] == [{'role': 'adlog_user', 'application_name': 'fixture-worker'}]
     else:
         upgrade.database_quiet()
         assert calls == []

@@ -44,10 +44,11 @@ cd -- "$staging"
 printf '%s\n' "${checksums[@]}" | sha256sum --check --strict --status - || fail 'SHA-256 verification failed'
 chmod 0755 -- "$staging"
 
-install=()
+install=() releases=()
 target_version=
 host_package=
 host_version=
+release_package=
 upgrade=
 for file in "${packages[@]}"; do
     package=$(dpkg-deb -f "$file" Package)
@@ -63,6 +64,10 @@ for file in "${packages[@]}"; do
             [[ -z $host_package ]] || fail 'Multiple sli-host packages in the kit'
             host_package=$file
             host_version=$version ;;
+        sli-release-*)
+            # Kits can also carry a retained release. Select the candidate
+            # after reading the public package version below.
+            releases+=("$file") ;;
         sli-*) ;;
         *)
             query=$package
@@ -92,8 +97,16 @@ if [[ -n $target_version ]]; then
         mkdir -p -- preflight/deploy
         dpkg-deb --extract "$host_package" preflight/package
         mv -- preflight/package/usr/lib/sli preflight/deploy/linux
+        for file in "${releases[@]}"; do
+            release_version=$(dpkg-deb -f "$file" Version)
+            if [[ $release_version == "$target_version" ]]; then
+                [[ -z $release_package ]] || fail 'Multiple candidate release packages in the kit'
+                release_package=$file
+            fi
+        done
+        [[ -n $release_package ]] || fail 'Missing candidate release package'
         sudo /usr/bin/python3 -I -B "$staging/preflight/deploy/linux/native_upgrade.py" \
-            check-package-space "$target_version"
+            check-package-space "$target_version" "$release_package"
     fi
 fi
 

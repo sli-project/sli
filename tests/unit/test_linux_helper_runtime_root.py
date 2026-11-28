@@ -149,12 +149,13 @@ def test_upgrade_pgpass_creates_missing_runtime_root(runtime_tree, monkeypatch):
     monkeypatch.setattr(backup, "clickhouse_targets", lambda: ())
     observed = []
 
-    def connect(passfile, database):
+    def connect(passfile, database, *, autocommit):
         assert database == "postgres" and passfile.is_relative_to(runtime_tree)
+        assert autocommit
         assert stat.S_IMODE(passfile.lstat().st_mode) == 0o600
         assert passfile.is_file()
         observed.append(passfile)
-        return nullcontext(SimpleNamespace(execute=lambda _: SimpleNamespace(fetchone=lambda: (0,))))
+        return nullcontext(SimpleNamespace(execute=lambda *args: SimpleNamespace(fetchall=list)))
 
     monkeypatch.setattr(backup, "pg_connect", connect)
     native_upgrade.database_quiet()
