@@ -1,4 +1,5 @@
 import { getLocale, t, type MessageKey } from "../../i18n";
+import { formatNumber } from "../../shared/format";
 import { auditMode, auditPath, auditSubcategory } from "./gpo-audit-setting";
 
 export type Setting = { id: string; side: "computer" | "user"; setting_name?: string; category?: string;
@@ -62,7 +63,7 @@ function formatValue(value?: string, format?: DisplayFormat): string | undefined
   const quantity = Number(value);
   if (!Number.isSafeInteger(quantity)) return value;
   const units = (value: number, unit: "day" | "minute" | "second") =>
-    new Intl.NumberFormat(getLocale(), { style: "unit", unit, unitDisplay: "short" }).format(value);
+    formatNumber(value, { style: "unit", unit, unitDisplay: "short" });
   if (format === "seconds") {
     const minutes = Math.floor(quantity / 60);
     const seconds = quantity % 60;

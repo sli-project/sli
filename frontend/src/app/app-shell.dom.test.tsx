@@ -38,6 +38,7 @@ vi.mock("../api/client", async (importOriginal) => {
       agentCollection: vi.fn(),
       plugins: vi.fn().mockResolvedValue({ items: [], can_manage: false }),
       pluginSettings: vi.fn(),
+      radiusPluginSources: vi.fn().mockResolvedValue({ item: { observed: { status: "ok", sources: [] } } }),
       setupStatus: vi.fn().mockResolvedValue({ sources: [], domains: [], domain_controllers: [] }),
       agents: vi.fn().mockResolvedValue({ items: [] }),
       logout: vi.fn().mockResolvedValue({}),
@@ -187,12 +188,13 @@ describe("AppShell", () => {
   });
 
   it.each([
-    ["sli.ad", "Active Directory"],
-    ["sli.gpo", "Групповые политики"],
-    ["sli.file-audit", "Файловый аудит"],
-    ["sli.remote-access", "VPN / NPS"],
-    ["sli.workstations", "Рабочие станции"],
-  ])("routes %s to its plugin screen and retains the administration gate", async (id, title) => {
+    ["sli.ad", "Active Directory", "Обзор"],
+    ["sli.gpo", "Групповые политики", "Обзор"],
+    ["sli.file-audit", "Файловый аудит", "Ресурсы"],
+    ["sli.remote-access", "VPN / NPS", "Обзор"],
+    ["sli.remote-access", "VPN / NPS не подключён", null],
+    ["sli.workstations", "Рабочие станции", "Настройки", "Правила"],
+  ] as const)("routes %s (%s) to its plugin screen and retains the administration gate", async (id, title, firstTab, selectedTab?: string) => {
     registryState.preview = id === "sli.remote-access";
     const path = `/admin/plugins/${id}`;
     await renderShell(path);
@@ -200,31 +202,36 @@ describe("AppShell", () => {
     expect(screen.queryByRole("tab")).toBeNull();
     cleanup();
     state.access = adminAccess;
-    if (id === "sli.workstations") {
-      vi.mocked(api.plugins).mockResolvedValueOnce({ items: [{
-        plugin_id: id, package_version: "1.0.0", installed: true, configured: true, enabled: true,
-        receiving_data: false, component_runtime: "running", queue_state: "idle", revision: 1,
-        last_data_at_utc: null,
-      }], can_manage: false });
+    const enabled = firstTab !== null;
+    vi.mocked(api.plugins).mockResolvedValueOnce({ items: [{
+      plugin_id: id, package_version: "1.0.0", installed: true, configured: true, enabled,
+      receiving_data: false, component_runtime: enabled ? "running" : "stopped", queue_state: "idle",
+      revision: 1, last_data_at_utc: null,
+    }], can_manage: false });
+    if (enabled) {
       vi.mocked(api.pluginSettings).mockResolvedValueOnce({
-        plugin_id: id, schema: workstationSettings.settings as unknown as SettingsSchema,
-        rules: workstationSettings.rules, values: {}, sources: {},
+        plugin_id: id,
+        schema: id === "sli.workstations" ? workstationSettings.settings as unknown as SettingsSchema : { type: "object" },
+        rules: id === "sli.workstations" ? workstationSettings.rules : [],
+        values: {}, sources: {},
       });
     }
     await renderShell(path);
     const main = within(screen.getByRole("main"));
     expect(await main.findByRole("heading", { name: title })).toBeTruthy();
+    if (firstTab === null) {
+      expect(main.queryByRole("tablist")).toBeNull();
+      expect(main.getByText(/Откройте раздел Accounting в NPS/)).toBeTruthy();
+    } else {
+      expect(await main.findByRole("tab", { name: selectedTab ?? firstTab, selected: true })).toBeTruthy();
+      expect(main.getAllByRole("tab")[0]).toBe(main.getByRole("tab", { name: firstTab }));
+    }
     if (id === "sli.workstations") {
-      expect(main.getByRole("tab", { name: "Обзор", selected: true })).toBeTruthy();
-      for (const name of ["Настройки", "Правила", "Отчёты"]) {
-        expect(await main.findByRole("tab", { name })).toBeTruthy();
-      }
+      expect(await main.findByRole("tab", { name: "Отчёты" })).toBeTruthy();
+      expect(main.queryByRole("tab", { name: "Обзор" })).toBeNull();
     }
     if (id === "sli.workstations" || id === "sli.file-audit") {
       expect(main.queryByRole("tab", { name: "Подключение" })).toBeNull();
-    } else {
-      await userEvent.click(main.getByRole("tab", { name: "Подключение" }));
-      expect(main.getByRole("tab", { name: "Подключение", selected: true })).toBeTruthy();
     }
     expect(main.queryByText("В разработке")).toBeNull();
   });
@@ -267,15 +274,20 @@ describe("AppShell", () => {
     expect(within(main).getByRole("link", { name: "Настройки платформы" }).getAttribute("href")).toBe("/platform-settings");
   });
 
-  it.each([
-    ["/access", ["/access-requests", "/admin"]],
-    ["/admin/language-time", ["/settings"]],
-  ] as const)("keeps related old pages reachable from %s", async (path, destinations) => {
+  it("removes duplicate administration links from Users and roles", async () => {
     state.access = adminAccess;
-    await renderShell(path);
+    await renderShell("/access");
+    const main = screen.getByRole("main");
+    expect(within(main).queryByText("Другие экраны")).toBeNull();
+    expect(within(main).queryByRole("link", { name: "Пользователи и доступ" })).toBeNull();
+  });
+
+  it("keeps related session settings reachable from Language and time", async () => {
+    state.access = adminAccess;
+    await renderShell("/admin/language-time");
     const main = screen.getByRole("main");
     fireEvent.click(await within(main).findByText("Другие экраны"));
-    expect(within(main).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual(destinations);
+    expect(within(main).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual(["/settings"]);
   });
 
   it.each(["error", "lagging"] as const)("keeps %s collection diagnostics out of the header", async (agentState) => {

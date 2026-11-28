@@ -9,7 +9,6 @@ import { t, type MessageKey } from "../../i18n";
 import { SmtpSetupPanel, smtpStatusValid } from "./smtp-setup";
 import { TelegramSetupPanel, telegramStatusOptions, telegramStatusView, telegramDestination } from "./telegram-setup";
 import { resultLabel } from "./channel-test";
-import "./notifications.css";
 
 const kindLabel = (kind: NotificationKind) => t(`reports.v2.notifications.channels.columns.kind.labels.${kind}`);
 const known = (value: number | null | undefined) => value == null ? "—" : String(value);
@@ -29,18 +28,21 @@ export function NotificationsPage() {
   const [days, setDays] = useState(7);
   const [channel, setChannel] = useState("");
   const [status, setStatus] = useState<NotificationStatus | "">("");
+  const [collapse, setCollapse] = useState(true);
   const [editing, setEditing] = useState<NotificationKind | null>(null);
   const [binding, setBinding] = useState<NotificationSubscription | "new" | null>(null);
   const [delivery, setDelivery] = useState<NotificationDelivery | null>(null);
   const findingId = initial.get("finding_id");
+  const filters = new URLSearchParams({ days: String(days) });
+  if (channel) filters.set("channel", channel);
+  if (status) filters.set("status", status);
+  if (findingId) filters.set("finding_id", findingId);
   const query = useInfiniteQuery({
-    queryKey: ["notifications", days, channel, status, findingId], initialPageParam: "",
+    queryKey: ["notifications", days, channel, status, findingId, collapse], initialPageParam: "",
     queryFn: ({ pageParam }) => {
-      const params = new URLSearchParams({ days: String(days) });
-      if (channel) params.set("channel", channel);
-      if (status) params.set("status", status);
+      const params = new URLSearchParams(filters);
+      if (collapse) params.set("collapse", "1");
       if (pageParam) params.set("cursor", pageParam);
-      if (findingId) params.set("finding_id", findingId);
       return api.notificationWorkspace(params);
     },
     getNextPageParam: (last) => last.has_more ? last.next_cursor ?? undefined : undefined,
@@ -57,16 +59,17 @@ export function NotificationsPage() {
   const destination = (item: NotificationSubscription) => item.channel === "telegram"
     ? item.recipient_user_id === smtpData?.self_user_id ? telegramDestination(telegramView) : "—"
     : smtpData?.recipients.find((recipient) => recipient.user_id === item.recipient_user_id)?.mailbox || "—";
-  const ruleName = (item: NotificationSubscription) => `${t("notify.publishedProblems")} → ${kindLabel(item.channel)}${destination(item) === "—" ? "" : ` (${destination(item)})`}`;
+  const ruleName = (item: NotificationSubscription) => `${t("notify.publishedProblems")} → ${kindLabel(item.channel)}`;
   const refresh = () => { void query.refetch(); };
   const columns: TableColumn<NotificationChannel>[] = [
-    { key: "channel", label: t("notify.channel"), render: (item) => <Button variant="ghost" onClick={() => setEditing(item.kind)}>{kindLabel(item.kind)}</Button> },
+    { key: "channel", label: t("notify.channel"), render: (item) => <Button variant="ghost"
+      icon={item.kind === "smtp" ? "mail" : "send"} onClick={() => setEditing(item.kind)}>{kindLabel(item.kind)}</Button> },
     { key: "state", label: t("notify.state"), render: (item) => t(item.state === "configured" ? "notify.configured" : "notify.disconnected") },
     { key: "attempt", label: t("notify.lastAttempt"), mobile: false, render: (item) => item.last_attempt_at ? `${stamp(item.last_attempt_at)}, ${resultLabel(item.last_result_code)}` : "—" },
     { key: "last", label: t("notify.lastDelivery"), mobile: false, render: (item) => item.last_accepted_at ? stamp(item.last_accepted_at) : t("notify.noAcceptedDelivery") },
-    { key: "actions", label: t("notify.actions"), mobile: false, render: (item) => <div className="notify-channel-actions">
-      <Button onClick={(event) => { event.stopPropagation(); setEditing(item.kind); }}>{t("notify.edit")}</Button>
-      <Button disabled={!data?.can_configure} onClick={(event) => { event.stopPropagation(); setEditing(item.kind); }}>{t("notify.test")}</Button>
+    { key: "actions", label: t("notify.actions"), mobile: false, render: (item) => <div className="sli-ds-header__actions">
+      <Button disabled={!data?.can_configure} onClick={(event) => { event.stopPropagation(); setEditing(item.kind); }}>{t("notify.edit")}</Button>
+      {item.state === "configured" ? <Button disabled={!data?.can_configure} onClick={(event) => { event.stopPropagation(); setEditing(item.kind); }}>{t("notify.test")}</Button> : null}
     </div> },
   ];
   return <section className="sli-ds-report">
@@ -78,9 +81,13 @@ export function NotificationsPage() {
     </div> : data ? <>
       <Tabs items={["channels", "rules", "journal"].map((key) => ({ key, label: t(`notify.${key}` as MessageKey) }))} active={tab} onChange={setTab}>
         <TabList label={t("notify.title")}/><TabPanel>
-          {tab === "channels" ? <div className="notify-channels"><DataTable columns={columns} rows={data.channels} rowKey={(item) => item.kind} onRowClick={(item) => setEditing(item.kind)} caption={t("notify.channels")}/></div>
+          {tab === "channels" ? <>
+            <DataTable columns={columns} rows={data.channels} rowKey={(item) => item.kind} onRowClick={(item) => setEditing(item.kind)} caption={t("notify.channels")}/>
+            {!data.channels.some((item) => item.state === "configured") ? <p role="status">{t("notify.connectChannel")}</p> : null}
+          </>
             : tab === "rules" ? <NotificationRules data={data} destination={destination} onEdit={setBinding}/>
               : <NotificationJournal data={data} items={items} days={days} channel={channel} status={status} setDays={setDays} setChannel={setChannel} setStatus={setStatus}
+                collapse={collapse} setCollapse={setCollapse}
                 onOpen={setDelivery} hasMore={query.hasNextPage} loadingMore={query.isFetchingNextPage} loadMore={() => void query.fetchNextPage()}/>}
         </TabPanel>
       </Tabs>
@@ -91,17 +98,8 @@ export function NotificationsPage() {
       {binding ? <BindingEditor key={binding === "new" ? "new" : `${binding.id}:${binding.revision}`} item={binding === "new" ? null : binding}
         title={binding === "new" ? t("notify.addRule") : ruleName(binding)} smtp={smtpData} telegramDestination={telegramDestination(telegramView)} canConfigure={data.can_configure}
         onClose={() => setBinding(null)} onSave={() => { setBinding(null); refresh(); }}/> : null}
-      {delivery ? <DetailDrawer open title={problemLabel(delivery)} subtitle={stamp(delivery.created_at)} onClose={() => setDelivery(null)} footer={<>
-        {delivery.finding_id ? <a className="sli-ds-button" href={`/app/report/security.problems?id=${delivery.finding_id}`}>{t("notify.openProblem")}</a> : null}
-        <Button onClick={() => { setEditing(delivery.channel); setDelivery(null); }}>{t("notify.editChannel")}</Button>
-      </>}><FactList facts={[
-        { label: t("notify.channel"), value: kindLabel(delivery.channel) }, { label: t("notify.state"), value: deliveryState(delivery.state) },
-        { label: t("notify.reason"), value: resultLabel(delivery.result_code) },
-        ...(delivery.delivery_reason === "pipeline_delay" && Number.isSafeInteger(delivery.delay_minutes) && (delivery.delay_minutes ?? 0) >= 15
-          ? [{ label: t("reports.v2.notifications.deliveries.columns.delivery_reason.label"), value: t("notifications.delivery.delayed", { minutes: delivery.delay_minutes! }) }] : []),
-        { label: t("notify.repeats"), value: delivery.attempts == null ? "—" : Math.max(0, delivery.attempts - 1) },
-        ...(delivery.state === "retry" ? [{ label: t("notify.when"), value: stamp(delivery.available_at) }] : []),
-      ]}/></DetailDrawer> : null}
+      {delivery ? <DeliveryDrawer key={delivery.id} delivery={delivery} filters={filters.toString()} onClose={() => setDelivery(null)}
+        onEdit={(kind) => { setEditing(kind); setDelivery(null); }}/> : null}
     </> : null}
   </section>;
 }
@@ -109,8 +107,11 @@ export function NotificationsPage() {
 function NotificationRules({ data, destination, onEdit }: { data: NotificationWorkspace; destination: (item: NotificationSubscription) => string; onEdit: (item: NotificationSubscription | "new") => void }) {
   return data.subscriptions.length ? <DataTable columns={[
     { key: "what", label: t("notify.what"), render: () => t("notify.publishedProblems") },
-    { key: "destination", label: t("notify.destination"), render: (item) => `${kindLabel(item.channel)}${destination(item) === "—" ? "" : ` (${destination(item)})`}` },
+    { key: "channel", label: t("notify.channel"), render: (item) => kindLabel(item.channel) },
+    { key: "destination", label: t("notify.destination"), render: destination },
     { key: "enabled", label: t("notify.enabled"), render: (item) => t(item.enabled ? "reports.boolean.yes" : "reports.boolean.no") },
+    { key: "actions", label: t("notify.actions"), render: (item) => <Button disabled={!data.can_configure}
+      onClick={(event) => { event.stopPropagation(); onEdit(item); }}>{t("notify.editRule")}</Button> },
   ]} rows={data.subscriptions} rowKey={(item) => item.id} caption={t("notify.rules")} onRowClick={onEdit}/>
     : <p role="status">{t("notify.emptyRules")}</p>;
 }
@@ -146,28 +147,79 @@ function BindingEditor({ item, title, smtp, telegramDestination, canConfigure, o
   </DetailDrawer>;
 }
 
-function NotificationJournal({ data, items, days, channel, status, setDays, setChannel, setStatus, onOpen, hasMore, loadingMore, loadMore }: {
+function NotificationJournal({ data, items, days, channel, status, setDays, setChannel, setStatus, collapse, setCollapse, onOpen, hasMore, loadingMore, loadMore }: {
   data: NotificationWorkspace; items: NotificationDelivery[]; days: number; channel: string; status: NotificationStatus | "";
   setDays: (days: number) => void; setChannel: (channel: string) => void; setStatus: (status: NotificationStatus | "") => void;
+  collapse: boolean; setCollapse: (value: boolean) => void;
   onOpen: (row: NotificationDelivery) => void; hasMore: boolean; loadingMore: boolean; loadMore: () => void;
 }) {
   const { formatDateTime: stamp } = useDateFormatters();
   const filters = ["", "accepted", "errors", "waiting", "other"] as const;
+  const hasRepeats = collapse && items.some((row) => (row.occurrence_count ?? 0) > 1);
+  const columns: TableColumn<NotificationDelivery>[] = [
+    { key: "time", label: t(hasRepeats ? "journal.last" : "notify.time"), kind: "datetime", render: (row) => stamp(row.created_at) },
+    { key: "problem", label: t("notify.problemColumn"), render: problemLabel },
+    { key: "channel", label: t("notify.channel"), render: (row) => kindLabel(row.channel) },
+    { key: "result", label: t("notify.result"), render: (row) => errorCode(row.result_code) || ["historical_replay", "history_import"].includes(row.result_code ?? "") ? resultLabel(row.result_code) : deliveryState(row.state) },
+  ];
+  if (hasRepeats) columns.push(
+    { key: "count", label: t("journal.count"), kind: "number", render: (row) => row.occurrence_count ?? 1 },
+    { key: "first", label: t("journal.first"), kind: "datetime", render: (row) => stamp(row.first_at ?? row.created_at) },
+  );
   return <div className="sli-ds-report__views">
     <div className="sli-ds-filters__fields">
       <div className="sli-ds-field"><label htmlFor="notify-period">{t("notify.period")}</label><Select label={t("notify.period")} id="notify-period" value={days} onChange={(selectedValue) => setDays(Number(selectedValue))}
         options={[{ value: "1", label: t("notify.day") }, { value: "7", label: t("notify.week") }, { value: "30", label: t("notify.month") }]}/></div>
       <div className="sli-ds-field"><label htmlFor="notify-channel">{t("notify.channel")}</label><Select label={t("notify.channel")} id="notify-channel" value={channel} onChange={(selectedValue) => setChannel(selectedValue)}
         options={[{ value: "", label: t("notify.all") }, { value: "smtp", label: kindLabel("smtp") }, { value: "telegram", label: kindLabel("telegram") }]}/></div>
+      <Checkbox checked={collapse} onChange={(event) => setCollapse(event.target.checked)}>{t("journal.collapse")}</Checkbox>
       {filters.map((key) => <Button key={key} className="sli-ds-chip" aria-pressed={status === key} onClick={() => setStatus(key)}>{t(key ? `notify.${key}` : "notify.all")} {known(data.counts[key || "total"])}</Button>)}
     </div>
-    {items.length ? <DataTable rows={items} rowKey={(row) => row.id} caption={t("notify.journal")} onRowClick={onOpen} columns={[
-      { key: "time", label: t("notify.time"), render: (row) => stamp(row.created_at) },
-      { key: "problem", label: t("notify.problemColumn"), render: (row) => <Button variant="ghost" onClick={() => onOpen(row)}>{problemLabel(row)}</Button> },
-      { key: "channel", label: t("notify.channel"), render: (row) => kindLabel(row.channel) },
-      { key: "result", label: t("notify.result"), render: (row) => errorCode(row.result_code) || ["historical_replay", "history_import"].includes(row.result_code ?? "") ? resultLabel(row.result_code) : deliveryState(row.state) },
-    ]}/> : <p role="status">{t("notify.emptyJournal")}</p>}
+    {items.length ? <DataTable wrapCells="all" rows={items} rowKey={(row) => row.id} caption={t("notify.journal")} onRowClick={onOpen} columns={columns}/>
+      : <p role="status">{t("notify.emptyJournal")}</p>}
     {hasMore ? <Button disabled={loadingMore} onClick={loadMore}>{t(loadingMore ? "table.loadingMore" : "table.loadMore")}</Button> : null}
   </div>;
+}
+
+function DeliveryDrawer({ delivery, filters, onClose, onEdit }: {
+  delivery: NotificationDelivery; filters: string; onClose: () => void; onEdit: (kind: NotificationKind) => void;
+}) {
+  const { formatDateTime: stamp } = useDateFormatters();
+  const [original, setOriginal] = useState<NotificationDelivery | null>(null);
+  const selected = original ?? delivery;
+  const grouped = (delivery.occurrence_count ?? 0) > 1;
+  const occurrences = useInfiniteQuery({
+    queryKey: ["notifications", "occurrences", delivery.id, filters], initialPageParam: "", enabled: grouped, retry: false,
+    queryFn: ({ pageParam }) => {
+      const params = new URLSearchParams(filters);
+      params.set("group_id", delivery.id);
+      if (pageParam) params.set("cursor", pageParam);
+      return api.notificationWorkspace(params);
+    },
+    getNextPageParam: (last) => last.has_more ? last.next_cursor ?? undefined : undefined,
+  });
+  const rows = occurrences.data?.pages.flatMap((page) => page.items) ?? [];
+  return <DetailDrawer open title={problemLabel(delivery)} subtitle={stamp(selected.created_at)} onClose={onClose} footer={<>
+    {selected.finding_id ? <a className="sli-ds-button" href={`/app/report/security.problems?id=${selected.finding_id}`}>{t("notify.openProblem")}</a> : null}
+    <Button onClick={() => onEdit(selected.channel)}>{t("notify.editChannel")}</Button>
+  </>}>
+    <FactList facts={[
+      { label: t("notify.channel"), value: kindLabel(selected.channel) }, { label: t("notify.state"), value: deliveryState(selected.state) },
+      { label: t("notify.reason"), value: resultLabel(selected.result_code) },
+      ...(selected.delivery_reason === "pipeline_delay" && Number.isSafeInteger(selected.delay_minutes) && (selected.delay_minutes ?? 0) >= 15
+        ? [{ label: t("reports.v2.notifications.deliveries.columns.delivery_reason.label"), value: t("notifications.delivery.delayed", { minutes: selected.delay_minutes! }) }] : []),
+      { label: t("notify.repeats"), value: selected.attempts == null ? "—" : Math.max(0, selected.attempts - 1) },
+      ...(selected.state === "retry" ? [{ label: t("notify.when"), value: stamp(selected.available_at) }] : []),
+    ]}/>
+    {grouped ? occurrences.isPending ? <StateView state="loading"/>
+      : occurrences.isError ? <StateView state="unavailable" detail={t("notify.occurrencesFailed")} onRetry={() => void occurrences.refetch()}/>
+        : rows.length ? <DataTable rows={rows} rowKey={(row) => row.id} caption={t("journal.records")} columns={[
+          { key: "time", label: t("notify.time"), render: (row) => <Button variant="ghost" aria-pressed={selected.id === row.id} onClick={() => setOriginal(row)}>{stamp(row.created_at)}</Button> },
+          { key: "problem", label: t("notify.problemColumn"), render: problemLabel },
+        ]}/> : <p role="status">{t("notify.emptyJournal")}</p> : null}
+    {occurrences.hasNextPage ? <Button disabled={occurrences.isFetchingNextPage} onClick={() => void occurrences.fetchNextPage()}>
+      {t(occurrences.isFetchingNextPage ? "table.loadingMore" : "table.loadMore")}
+    </Button> : null}
+  </DetailDrawer>;
 }
 

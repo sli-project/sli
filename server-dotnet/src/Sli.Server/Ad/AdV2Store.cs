@@ -257,6 +257,7 @@ public sealed class AdV2Store(IPostgresConnectionFactory connections, IConfigura
         }
         var rows = new List<JsonObject>();
         var allRows=new List<JsonObject>();
+        long entityFilter = request.Params.Int("entity_id");
         var agents=new AdComputerPosture.AgentIndex(await AdComputerPosture.AgentsAsync(db,request.Domains,ct));
         var semantic=await AdJson.ReadAsync(db,"""
             select distinct finding.id as finding_id,linked.entity_id,computer.display_name,finding.title,finding.status,finding.summary,finding.why_it_matters,finding.recommended_action,finding.last_seen_utc
@@ -265,13 +266,15 @@ public sealed class AdV2Store(IPostgresConnectionFactory connections, IConfigura
               and is_semantic_finding_published_v1(finding.id) order by finding.last_seen_utc desc,finding.id desc limit 201
             """,ct,sources.Where(s=>s["entity_ids"] is JsonObject).SelectMany(s=>s["entity_ids"]!.AsObject()).Select(p=>p.Value!.GetValue<long>()).Take(5000).ToArray());
         var semanticIndex=semantic.GroupBy(s=>s.Int("entity_id")).ToDictionary(g=>g.Key,g=>g.ToArray());
-        bool inputTruncated=sources.Sum(s=>(s["snapshot"]?["objects"] as JsonArray??[]).Count)>5000;
+        bool inputTruncated=entityFilter==0 && sources.Sum(s=>(s["snapshot"]?["objects"] as JsonArray??[]).Count)>5000;
         foreach (var source in sources.Where(s => s["snapshot"] is not null))
         {
             var snapshot = source["snapshot"]!; string observed = snapshot["metadata"]!.Text("completed_at")!;
             foreach (var node in snapshot["objects"]!.AsArray())
             {
                 if(allRows.Count>=5000)break;
+                if (entityFilter > 0 && source["entity_ids"].Int((node.Text("objectGuid") ?? "").ToLowerInvariant()) != entityFilter)
+                    continue;
                 var raw = (JsonObject)node!.DeepClone();
                 var row = AdInventoryRows.Computer(raw, source, observed, request.Params);
                 row["dns_ip"]=AdComputerPosture.Dns(raw);row["sli_agent"]=AdComputerPosture.Agent(row,source.Int("domain_id"),agents);row["semantic_findings"]=Array(semanticIndex.GetValueOrDefault(row.Int("entity_id"),[]));if(request.QualifyNames)row["display_name"]=source.Text("fqdn")+"\\"+row.Text("display_name");

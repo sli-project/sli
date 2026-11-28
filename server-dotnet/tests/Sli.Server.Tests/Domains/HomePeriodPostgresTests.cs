@@ -24,7 +24,7 @@ public sealed partial class HomeSummaryEndpointTests
 {
     [Theory]
     [InlineData("en", "Password guessing against an account · Failed attempts: 18")]
-    [InlineData("ru", "Подбирают пароль к учётной записи · Неудачные попытки: 18")]
+    [InlineData("ru", "Подбор пароля к учётной записи · Неудачные попытки: 18")]
     public void Open_queue_password_fact_contains_only_the_rule_title_and_attempt_count(string language, string expected)
     {
         var window = new HomeWindow(DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch.AddDays(1));

@@ -97,6 +97,8 @@ public sealed partial class EntityReader(IEntityReadStore store, EntityDirectory
         var entity = (await Read($"select {EntityColumns} {EntityTables} where entity.id=@id limit 1", new() { ["id"] = id }, ct)).OfType<JsonObject>().FirstOrDefault();
         if (entity is null) return null;
         var item = EntityItem(entity);
+        if (Text(item, "type") is "ad_user" or "ad_computer" && preflight["domain_id"] is { } domain)
+            item["domain_id"] = domain.DeepClone();
         bool security = Allows(caps, "field.security", preflight), technical = Allows(caps, "field.technical", preflight);
         var current = new JsonArray(); string currentState = "available", contextState = "available";
         try
@@ -137,7 +139,17 @@ public sealed partial class EntityReader(IEntityReadStore store, EntityDirectory
                     var key = (ev["event_db_id"] is null ? 0 : Number(ev,"event_db_id"),Text(ev,"summary_key"));
                     if(!projection.Any(p=>p.Id==key.Item1 && p.Group==key.Item2)) throw new InvalidDataException("entity_evidence_identity_mismatch");
                     ev.Remove("sort_time_utc");
-                    if(projection.Key.Security && ev["event_id"] is not null) ev["label"]=EntityEventLabels.Label(checked((int)Number(ev,"event_id")));
+                    if(projection.Key.Security && ev["event_id"] is not null)
+                    {
+                        ev["label"] = EntityEventLabels.Label(checked((int)Number(ev, "event_id")));
+                        if (!objectFacade && projection.Key.Technical && Text(item, "type") is ("ad_user" or "ad_computer")
+                            && Sli.Server.Investigations.InvestigationTimeline.Entry(ev) is { } entry)
+                        {
+                            ev["label"] = entry["title"]?.DeepClone() ?? ev["label"];
+                            ev["severity"] = entry["severity"]?.DeepClone();
+                            ev["title_code"] = $"{Text(entry, "channel")}:{Text(entry, "provider_name")}:{Text(entry, "event_id")}.title";
+                        }
+                    }
                     if(!objectFacade) foreach(string field in new[] { "server","channel","event_id","label","time_utc","provider_name","link_role","confidence","actor","target" })
                         if(!ev.ContainsKey(field)) ev[field]=null;
                     byId[key] = ev;

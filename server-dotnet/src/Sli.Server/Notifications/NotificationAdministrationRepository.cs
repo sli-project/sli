@@ -109,7 +109,7 @@ public sealed class NotificationAdministrationRepository(IPostgresConnectionFact
     }
     private static JsonObject StampRow(JsonObject row)
     {
-        foreach (string key in new[] { "created_at", "updated_at", "available_at", "last_accepted_at", "last_attempt_at", "previous_login_at" })
+        foreach (string key in new[] { "created_at", "updated_at", "available_at", "last_accepted_at", "last_attempt_at", "previous_login_at", "first_at" })
         {
             if (row[key] is JsonValue value && value.TryGetValue<string>(out var raw) && DateTimeOffset.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var time))
             {
@@ -287,10 +287,50 @@ public sealed class NotificationAdministrationRepository(IPostgresConnectionFact
             from notification_outbox where
             """ + " " + where, ct, parameters.ToArray()))[0]!.DeepClone().AsObject();
         if (query.Status is not null) { where += " and state=any(@states)"; parameters.Add(("states", NotificationWorkspaceQuery.States[query.Status])); }
+        const string pageOrder = " order by created_at desc,id desc limit 101";
+        string before = "";
         if (query.Before is not null)
-        { where += " and (created_at,id)<(@before,@before_id)"; parameters.Add(("before", query.Before.Value.UtcDateTime)); parameters.Add(("before_id", query.BeforeId)); }
+        { before = " and (created_at,id)<(@before,@before_id)"; parameters.Add(("before", query.Before.Value.UtcDateTime)); parameters.Add(("before_id", query.BeforeId)); }
         string finding = problems is not null ? "case when object_kind='semantic_finding' then public.notification_finding_object(object_id) end" : "null::bigint";
-        var items = await Rows(db, null, "select " + JobFields + ",object_kind,object_severity,available_at," + finding + " as finding_id from notification_outbox where " + where + " order by created_at desc,id desc limit 101", ct, parameters.ToArray());
+        string fields = JobFields + ",object_kind,object_severity,available_at";
+        string pageSql = "select " + fields + "," + finding + " as finding_id from notification_outbox where " + where + before;
+        if (query.Collapse || query.GroupId is not null)
+        {
+            parameters.Add(("match_findings", problems?.Fields("identity_basic", "technical") == true));
+            parameters.Add(("domains", problems?.Scope("security.queue").Domains()));
+            string grouped = "with filtered as (select j.*, " + finding + " as finding_id from notification_outbox j where " + where + """
+                ), identities as materialized (
+                  select f.id,f.rule_code,nullif(btrim(f.source),'') as source,
+                    (select facts->>'cohort_key' from public.password_queue_presentation399(f.id,f.rule_code)) as password_cohort
+                  from (select distinct finding_id from filtered where finding_id is not null) j
+                  join public.findings_active f on @match_findings and j.finding_id=f.id
+                  where public.is_semantic_finding_published_v1(f.id)
+                    and (f.rule_code<>'semantic.qw.file-acl-broad-write' or public.semantic_finding_in_domains_v265(f.id,null))
+                    and (@domains::bigint[] is null or public.semantic_finding_in_domains_v265(f.id,@domains))
+                ), grouped as (
+                  select j.*,first_value(j.id) over journal as group_head,
+                    count(*) over journal as occurrence_count,min(j.created_at) over journal as first_at
+                  from filtered j
+                  left join identities f on j.finding_id=f.id
+                  left join public.semantic_security_scenarios s on f.id is not null and s.scenario_id=j.object_id
+                  window journal as (partition by j.channel,j.recipient_user_id,j.object_kind,j.state,j.result_code,
+                    j.object_severity,j.delivery_reason,
+                    case when f.password_cohort is not null then jsonb_build_array(f.rule_code,f.password_cohort)
+                      when f.source is not null
+                        and nullif(btrim(s.strict_keys_json->>'entity'),'') is not null
+                      then jsonb_build_array(f.rule_code,s.partition_key,s.strict_keys_json->>'entity',f.source)
+                      else jsonb_build_array(j.object_id) end
+                    order by j.created_at desc,j.id desc rows between unbounded preceding and unbounded following)
+                )
+                """;
+            if (query.GroupId is { } groupId)
+            {
+                parameters.Add(("group_id", groupId));
+                pageSql = grouped + " select " + fields + ",finding_id from grouped where group_head=(select group_head from grouped where id=@group_id)" + before;
+            }
+            else pageSql = grouped + " select " + fields + ",finding_id,occurrence_count,first_at from grouped where id=group_head" + before;
+        }
+        var items = await Rows(db, null, pageSql + pageOrder, ct, parameters.ToArray());
         bool more = items.Count > 100; if (more) items.RemoveAt(100);
         if (problems is not null) await AttachProblemTitles(db, items, problems, language, ct);
         var channels = await Rows(db, null, ChannelStatus + " order by c.kind", ct);

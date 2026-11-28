@@ -10,7 +10,7 @@ const SEARCH = "time_from=2026-09-10&time_to=2026-09-11&timezone=UTC";
 
 const workspace = (patch: Partial<EntityWorkspaceDetail> = {}): EntityWorkspaceDetail => ({
   api_version: "v1",
-  entity: { id: 7, type: "ad_user", natural_key: "S-1-5-21-7", display_name: "Demo User", first_seen_utc: "2026-09-01T08:00:00Z", last_seen_utc: "2026-09-10T12:00:00Z" },
+  entity: { id: 7, type: "account", natural_key: "S-1-5-21-100000001-200000002-300000003-7", display_name: "Demo User", first_seen_utc: "2026-09-01T08:00:00Z", last_seen_utc: "2026-09-10T12:00:00Z" },
   current_states: [], current_states_state: "available", ad_context_state: "available",
   ad_context: { resolution: "not_found", items: [], returned_count: 0, bounded: true },
   events: [], events_state: "available", events_scope_filtered: false,
@@ -24,7 +24,7 @@ const relation = (section: string, id: number, name: string) => ({
   context_evidence_id: id, context_kind: "relation", source_section: section, related_entity_id: id, related_display_name: name,
   current: true, observed_at_utc: "2026-09-10T12:00:00Z", attributes: { source_section: section, membership_type: "direct" },
 });
-const v4 = (items: Array<Record<string, unknown>>, patch: Partial<V4ObjectDetail> = {}, objectType = "ad_user"): V4ObjectDetail => ({
+const v4 = (items: Array<Record<string, unknown>>, patch: Partial<V4ObjectDetail> = {}, objectType = "account"): V4ObjectDetail => ({
   api_version: "v4", state: "available",
   object: { object_type: objectType, object_id: "7", display_name: "Demo User", latest_state: null },
   identity_links: [], identity_contract: "employee_and_account_are_distinct_objects",
@@ -45,6 +45,15 @@ async function render(tab: string, data: EntityWorkspaceDetail, object: V4Object
 }
 
 const tabLabels = (html: string) => [...html.matchAll(/role="tab"[^>]*>([^<]+)</g)].map((match) => match[1]);
+
+it("opens AD computers on Important and hides collection internals", async () => {
+  const html = await render("", workspace({ entity: { ...workspace().entity, type: "ad_computer" } }),
+    v4([], { limitations: ["synthetic limitation"] }, "ad_computer"));
+  expect(tabLabels(html)[0]).toBe("Важное");
+  expect(html).not.toContain("synthetic limitation");
+  expect(html).not.toContain("технические");
+  expect(tabLabels(html).at(-1)).toBe("События");
+});
 
 it("a reader that found nothing is an empty section, not an outage", async () => {
   expect(sectionResultState("empty").state).toBe("ok");

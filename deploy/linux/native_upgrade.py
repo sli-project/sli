@@ -1,7 +1,8 @@
 """Durable native upgrade preparation, APT activation and checkpoint recovery.
 
-Preparation ends fenced at checkpoint_verified, never at committed. Recovery
-executes the accepted saved code with its retained, pinned private interpreter.
+Preparation ends fenced at checkpoint_verified. Recovery uses the retained,
+pinned private interpreter. A newer kit can supply the coordinator to finish
+recovery after the previous release's checkpoint has been restored.
 """
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 sys.dont_write_bytecode = True
@@ -40,6 +42,11 @@ OVERRIDES = Path('/etc/systemd/system')
 RUNTIME_HELPER = Path('/usr/lib/sli/native_runtime.py')
 VOLATILE_UNITS = Path('/run/systemd/system')
 POSTGRES_CONFIG = Path('/etc/postgresql/18/sli')
+# The stand API listened 5 seconds after the target began starting. Allow 10 more seconds.
+UPGRADE_API_READY_SECONDS = 5 + 10
+# The stand still reported a busy transaction 45 seconds after worker query
+# cancellation. Give PostgreSQL that observed shutdown interval plus 15 seconds.
+PG_DRAIN_SECONDS = 45 + 15
 TERMINAL = {'committed', 'rolled_back', 'failed', 'aborted_before_checkpoint'}
 NEXT = {'preflight': {'fenced', 'recovering'}, 'fenced': {'checkpoint_verified', 'recovering'},
         'checkpoint_verified': {'migrating', 'recovering'},
@@ -117,6 +124,14 @@ class ServiceFailure(RuntimeError):
     def __init__(self, code, returncode):
         super().__init__(code)
         self.returncode = returncode
+
+
+class DatabaseBusy(RuntimeError):
+    def __init__(self, holders, elapsed):
+        super().__init__('native_upgrade_pg_busy')
+        self.detail = {'error': failure_message(str(self)), 'elapsed_seconds': round(elapsed, 1),
+                       'holders': [{'role': role, 'application_name': re.sub(r'[^a-zA-Z0-9_. -]', '?', name or '')}
+                                   for role, name in holders]}
 
 
 def systemd_available():
@@ -211,7 +226,8 @@ def recover_service_failure(unit, transaction):
                 journal.write()
             try:
                 recover_compatible(journal)
-            except Exception:
+            except Exception as recovery_error:
+                record_failure(journal, recovery_error, recovery=True)
                 publish(journal, 'failed', terminal=False, reason_code='native_upgrade_recovery_pending')
                 return 'native_upgrade_recovery_pending'
         return code
@@ -232,7 +248,7 @@ def record_failure(journal, error, *, recovery=False):
     from deploy.linux.native_install import UnitCommandFailure
 
     code = failure_code(error)
-    detail = (error.detail if isinstance(error, UnitCommandFailure) else
+    detail = (error.detail if isinstance(error, (UnitCommandFailure, DatabaseBusy)) else
               {'error': failure_message(code) if code != 'native_upgrade_failed' else type(error).__name__})
     prefix = 'recovery_failure' if recovery else 'failure'
     if not recovery and 'activation_stage' in journal.value:
@@ -412,21 +428,41 @@ class Journal:
 
 
 def database_quiet():
-    """Read counters only; never log SQL rows or cancel another connection."""
+    """Wait for application transactions to clear without cancelling sessions."""
     from deploy.linux import backup, native_backup as native
+    from deploy.linux.native_worker_accounts import WORKER_LOGINS
 
+    roles = ['adlog_user', *(login for login, _, _ in WORKER_LOGINS),
+             *(f'sli_job_{purpose}_{profile}' for profile in ('light', 'heavy', 'long')
+               for purpose in ('dispatcher', 'executor', 'publisher'))]
     with native.environment(native.settings()):
-        with backup.pg_passfile() as passfile, backup.pg_connect(passfile, 'postgres') as connection:
+        with backup.pg_passfile() as passfile, backup.pg_connect(passfile, 'postgres', autocommit=True) as connection:
             # The application database can be absent between DROP and CREATE
-            # during an interrupted restore. Count writers across the cluster.
-            row = connection.execute("SELECT count(*) FROM pg_stat_activity WHERE "
-                                     "backend_type='client backend' AND pid<>pg_backend_pid() "
-                                     "AND xact_start IS NOT NULL").fetchone()
-            require(row == (0,), 'native_upgrade_pg_busy')
+            # during a restore. Each autocommit poll gets fresh activity stats.
+            connection.execute("SET statement_timeout = '5s'")
+            started = time.monotonic()
+            delay = 1
+            while True:
+                holders = connection.execute(
+                    "SELECT DISTINCT usename, left(application_name, 63) FROM pg_stat_activity "
+                    "WHERE backend_type='client backend' AND xact_start IS NOT NULL AND usename::text = ANY(%s) "
+                    "ORDER BY 1, 2 LIMIT 16", (roles,)).fetchall()
+                elapsed = time.monotonic() - started
+                if not holders:
+                    if delay > 1:
+                        print(f'native_upgrade_pg_drain complete elapsed_seconds={elapsed:.1f}', flush=True)
+                    return
+                if elapsed >= PG_DRAIN_SECONDS:
+                    print(f'native_upgrade_pg_drain expired elapsed_seconds={elapsed:.1f}', flush=True)
+                    raise DatabaseBusy(holders, elapsed)
+                if delay == 1:
+                    print(f'native_upgrade_pg_drain waiting timeout_seconds={PG_DRAIN_SECONDS}', flush=True)
+                time.sleep(min(delay, PG_DRAIN_SECONDS - elapsed))
+                delay = min(delay * 2, 5)
 
 
-def unit_absent(unit):
-    """An unloaded unit has no active job; unreadable state is not absence."""
+def unit_state(unit):
+    """Read back the state of a loaded or confirmed absent unit."""
     result = subprocess.run(['systemctl', 'show', unit, '--no-pager',
                              '--property=LoadState,ActiveState,MainPID,ControlGroup'],
                             capture_output=True, text=True, timeout=5, check=False,
@@ -438,15 +474,15 @@ def unit_absent(unit):
         # service, neither may indicate remaining work.
         require(row.get('ActiveState') == 'inactive' and row.get('MainPID', '0') == '0'
                 and not row.get('ControlGroup'), 'native_upgrade_unit_state_unconfirmed')
-        return True
-    require(result.returncode == 0, 'native_upgrade_unit_state_unconfirmed')
-    return False
+    else:
+        require(result.returncode == 0, 'native_upgrade_unit_state_unconfirmed')
+    return row
 
 
 def stop_units(units, *, timeout=120):
     from deploy.linux import native_install as install
 
-    present = [unit for unit in units if not unit_absent(unit)]
+    present = [unit for unit in units if unit_state(unit)['LoadState'] != 'not-found']
     if not present:
         return
     try:
@@ -454,21 +490,30 @@ def stop_units(units, *, timeout=120):
     except RuntimeError:
         # apt removal may unload a unit between show and stop. Only confirmed
         # absence excuses the failed command; real stop/permission errors stay.
-        if not all(unit_absent(unit) for unit in present):
+        if not all(unit_state(unit)['LoadState'] == 'not-found' for unit in present):
             raise
+        return
+    for unit in present:
+        state = unit_state(unit)
+        require(state.get('ActiveState') in {'inactive', 'failed'} and state.get('MainPID', '0') == '0'
+                and not state.get('ControlGroup'), 'native_writers_still_running')
 
 
-def fence():
-    from deploy.linux import native_install as install, native_runtime as runtime
+def stop_application():
+    from deploy.linux import native_runtime as runtime
 
     # Stop scheduling before draining; stopping API gives clients a retryable
     # transport failure and never acknowledges an uncommitted import.
     stop_units(('sli-backup.timer', 'sli-health.timer'))
-    stop_units(('sli-health.service',))
+    stop_units(('sli-health.service', 'sli-backup-settings.service'))
     stop_units(('sli-backup.service', 'sli-backup-drill.service'), timeout=600)
     runtime.stop_services(('api',), timeout=180)
     runtime.stop_writers()  # Cooperative SIGTERM plus every MainPID/cgroup readback.
-    stop_units(('sli-ready.service',))
+    stop_units(('sli-ready.service', 'sli-dotnet.target', 'sli-runtime.target'))
+
+
+def fence():
+    stop_application()
     # Type=simple only proves process creation. After power loss PostgreSQL may
     # still be replaying WAL/checkpointing when systemd reports it active.
     wait_restore_databases()
@@ -960,12 +1005,78 @@ def purge_old_release_packages(version):
               file=sys.stderr)
 
 
-def check_package_space(version):
+def pending_package_recovery(version):
+    from deploy.linux import native_runtime as runtime
+
+    pending = []
+    if not TRANSACTIONS.exists():
+        return None
+    for path in TRANSACTIONS.iterdir():
+        try:
+            result = runtime.document(path / 'result.json')
+        except FileNotFoundError:
+            result = {}
+        if result.get('terminal') is True and (result.get('status') in {'committed', 'aborted_before_checkpoint'}
+                or (result.get('status') == 'rolled_back' and result.get('services_restored') is True)):
+            continue
+        pending.append((path, result))
+    if len(pending) != 1:
+        return None  # The readiness gate can admit only one unfinished transaction.
+    path, result = pending[0]
+    recovery_pending = result.get('terminal') is False and result.get('reason_code') == 'native_upgrade_recovery_pending'
+    reopening_interrupted = result.get('terminal') is True and result.get('status') == 'rolled_back'
+    if not (recovery_pending or reopening_interrupted):
+        return None
+    journal = Journal(path)
+    value = journal.value
+    target = value.get('target_version', '')
+    if (result.get('transaction') != path.name or value.get('kind') == 'rollback'
+            or value['status'] not in {'candidate_testing', 'recovering', 'rolled_back'}
+            or value.get('recovery_in_progress') is not True or value.get('checkpoint_restored') is not True
+            or any(event['phase'] == 'committed' for event in value.get('events', []))
+            or not re.fullmatch(r'[0-9][a-zA-Z0-9.+~]*-[0-9]+~deb13', target)):
+        return None
+    newer = subprocess.run(['/usr/bin/dpkg', '--compare-versions', version, 'gt', target], check=False, timeout=10)
+    return journal if newer.returncode == 0 else None
+
+
+def run_package_recovery(package, version, journal):
+    from deploy.linux import native_install as install
+
+    old, manifest, manifest_digest = install.inventory(journal.value['previous'])
+    seal = install.trusted(RECOVERY / old.name / 'recovery.json')
+    saved = json.loads(seal)
+    require(hashlib.sha256(seal).hexdigest() == journal.value['recovery_sha256']
+            and saved.get('python') == manifest['python'] and saved.get('manifest_sha256') == manifest_digest,
+            'native_upgrade_recovery_mismatch')
+    metadata = subprocess.run(['/usr/bin/dpkg-deb', '--showformat=${Package}\n${Version}\n', '--show', str(package)],
+                              check=True, capture_output=True, text=True, timeout=10).stdout.splitlines()
+    require(len(metadata) == 2 and metadata[1] == version
+            and re.fullmatch(r'sli-release-[a-z0-9][a-z0-9.+-]{0,63}', metadata[0]), 'native_upgrade_package_mismatch')
+    release = metadata[0].removeprefix('sli-release-')
+    # The kit has verified this archive. Extract privately before APT calls the
+    # old prerm. Use the retained, verified interpreter with the new modules.
+    with tempfile.TemporaryDirectory(prefix='.kit-recovery-', dir=RECOVERY) as staging:
+        subprocess.run(['/usr/bin/dpkg-deb', '--extract', str(package), staging], check=True)
+        root = Path(staging) / 'opt/sli/releases' / release
+        require(package_metadata(root)['version'] == version, 'native_upgrade_package_mismatch')
+        script = install.trusted_path(root / 'deploy/linux/native_upgrade.py')
+        result = subprocess.run([manifest['python'], '-I', '-B', str(script),
+                                 'finish-package-recovery', version, journal.path.name],
+                                env=install.environment(), check=False)
+        require(result.returncode == 0, 'native_upgrade_recovery_pending')
+
+
+def check_package_space(version, package=None):
     from deploy.linux import native_preinstall, native_runtime as runtime
 
     require(re.fullmatch(r'[0-9][a-zA-Z0-9.+~]*-[0-9]+~deb13', version), 'native_upgrade_package_invalid')
     if not native_preinstall.recovery_required():
         return  # Fresh installation or recovery of an interrupted first start.
+    if package is not None:
+        pending = pending_package_recovery(version)
+        if pending is not None:
+            run_package_recovery(Path(package), version, pending)
     if version == package_metadata(runtime.release()[0])['version']:
         return  # Same-version reinstall or explicit package reconciliation.
     journal = latest_package_transaction(version)
@@ -1316,21 +1427,24 @@ def start_checked(checked_runtime=None):
     target = 'sli-dotnet.target' if unit_name('api').startswith('sli-dotnet-') else 'sli-runtime.target'
     install.command(['systemctl', 'start', target])
     try:
-        install.wait_api(config)
+        install.wait_api(config, startup_timeout=UPGRADE_API_READY_SECONDS)
     except RuntimeError as error:
         code = failure_code(error)
         if code not in {'native_install_api_unready', 'native_api_tls_untrusted'}:
             raise
         unit = unit_name('api')
         raise install.UnitCommandFailure(unit, None, failure_message(code), code=code) from None
-    install.wait_health()
-    for service in runtime.selected(config):
-        row = runtime.systemd(service)
-        if row.get('ActiveState') != 'active' or int(row.get('MainPID', '0')) <= 1:
-            unit = unit_name(service)
-            exit_code = int(row['ExecMainStatus']) if row.get('ExecMainStatus', '').isdigit() else None
-            raise install.UnitCommandFailure(unit, exit_code, f'{unit} has no active main process.',
-                                             code='native_upgrade_service_unready')
+
+    def check_services():
+        for service in runtime.selected(config):
+            row = runtime.systemd(service)
+            if row.get('ActiveState') != 'active' or int(row.get('MainPID', '0')) <= 1:
+                unit = unit_name(service)
+                exit_code = int(row['ExecMainStatus']) if row.get('ExecMainStatus', '').isdigit() else None
+                raise install.UnitCommandFailure(unit, exit_code, f'{unit} has no active main process.',
+                                                 code='native_upgrade_service_unready')
+
+    install.wait_health(check_services=check_services)
 
 
 def publish(journal, status, *, terminal=True, reason_code=None, **values):
@@ -1524,8 +1638,11 @@ def recover_compatible(journal):
             and not any(event['phase'] == 'committed' for event in journal.value.get('events', [])),
             'native_upgrade_committed_no_rollback')
     remember_backup_schedule(journal)
-    journal.value['recovery_in_progress'] = True
-    journal.write()
+    if not journal.value.get('recovery_in_progress'):
+        reason = failure_code(RuntimeError(journal.value.get('failure_reason_code', '')))
+        print(f'native_upgrade_rollback reason_code={reason}', file=sys.stderr, flush=True)
+        journal.value['recovery_in_progress'] = True
+        journal.write()
     fence()
     if journal.value['status'] != 'recovering':
         if journal.value['step'] == 'before':
@@ -1557,7 +1674,9 @@ def recover_compatible(journal):
         start_checked(retained_runtime(recovery))
     else:
         start_checked()
-    fence()
+    # Restart to clear the testing environment. The data restore is already
+    # complete, so a draining backend cannot block reopening the old release.
+    stop_application()
     testing_units()
     journal.complete()
     journal.transition('recovering')
@@ -1586,6 +1705,52 @@ def finish_rollback(journal):
     publish(journal, 'rolled_back', accepted_release=journal.value['previous'], package_reconciliation_required=True,
             services_restored=True)
     cleanup_checkpoints()
+
+
+def publish_recovery_failure(journal, error):
+    record_failure(journal, error, recovery=True)
+    fenced = False
+    if not isinstance(error, DatabaseBusy):
+        try:
+            fence()
+            fenced = True
+        except Exception:
+            pass
+    try:
+        testing_units()
+    except Exception:
+        pass
+    publish(journal, 'failed', terminal=False, writers_fenced=fenced,
+            reason='native_upgrade_recovery_failed', reason_code='native_upgrade_recovery_pending')
+
+
+def finish_package_recovery(version, transaction):
+    from deploy.linux import native_backup as native, native_install as install
+
+    require(re.fullmatch(r'[0-9][a-zA-Z0-9.+~]*-[0-9]+~deb13', version)
+            and re.fullmatch(r'[0-9a-f]{32}', transaction), 'native_upgrade_identity_invalid')
+    with operation_lock(native.ROOT):
+        journal = pending_package_recovery(version)
+        require(journal is not None and journal.path.name == transaction, 'native_transaction_pending')
+        value = journal.value
+        old, _, _ = install.inventory(value['previous'])
+        require(package_metadata(old)['version'] == value['previous_version'], 'native_upgrade_package_mismatch')
+        require(digest(RECOVERY / old.name / 'recovery.json') == value['recovery_sha256'],
+                'native_upgrade_recovery_mismatch')
+        checkpoint_receipt(journal)
+        print('Finishing the previous SLI upgrade rollback. / Завершается откат предыдущего обновления SLI.', flush=True)
+        try:
+            if value['status'] == 'rolled_back':
+                fence()
+                testing_units()
+                finish_rollback(journal)
+            else:
+                recover_compatible(journal)
+        except Exception as error:
+            publish_recovery_failure(journal, error)
+            raise
+        print('Previous SLI release restored. Continuing with the new package. / '
+              'Предыдущая версия SLI восстановлена. Установка нового пакета продолжается.', flush=True)
 
 
 def configure_package(release, version):
@@ -1625,20 +1790,7 @@ def configure_package(release, version):
                     # retain their own progress watches and cancellation cleanup.
                     recover_compatible(journal)
                 except Exception as recovery_error:
-                    record_failure(journal, recovery_error, recovery=True)
-                    fenced = False
-                    try:
-                        fence()
-                        fenced = True
-                    except Exception:
-                        pass
-                    try:
-                        testing_units()
-                    except Exception:
-                        pass
-                    journal.write()
-                    publish(journal, 'failed', terminal=False, writers_fenced=fenced,
-                            reason='native_upgrade_recovery_failed', reason_code='native_upgrade_recovery_pending')
+                    publish_recovery_failure(journal, recovery_error)
             raise  # dpkg/APT must report failure even when the old runtime is healthy.
 
 
@@ -1790,6 +1942,7 @@ def launch(candidate, transaction, *, action='prepare', arguments=None):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=('launch', 'prepare', 'dispatch', 'check-package-space',
+                                         'finish-package-recovery',
                                          'prepare-package', 'check-package',
                                          'configure-package', 'reconcile', 'resume-package', 'reuse-existing',
                                          'check-reuse', 'rollback', 'purge-old-release-packages'))
@@ -1817,6 +1970,9 @@ def main(argv=None):
             sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
             if args.action == 'check-package-space':
                 check_package_space(*args.arguments)
+                return 0
+            if args.action == 'finish-package-recovery':
+                finish_package_recovery(*args.arguments)
                 return 0
             if purge:
                 purge_old_release_packages(*args.arguments)

@@ -14,6 +14,7 @@ from deploy.linux import native_pg_migrate
 
 TX = 'a' * 32
 REAL_FENCE = upgrade.fence
+REAL_STOP_APPLICATION = upgrade.stop_application
 
 pytestmark = pytest.mark.skipif(os.name == 'nt', reason='POSIX durable transactions, fcntl and package recovery; Linux CI')
 
@@ -59,6 +60,7 @@ def operation(tmp_path, monkeypatch):
     monkeypatch.setattr(backup, 'size_bytes', lambda path: 1)
     monkeypatch.setattr(upgrade.shutil, 'disk_usage', lambda path: SimpleNamespace(free=100 * 1024**3))
     monkeypatch.setattr(upgrade, 'fence', lambda: events.append('fence'))
+    monkeypatch.setattr(upgrade, 'stop_application', lambda: events.append('stop-application'))
     monkeypatch.setattr(upgrade, 'file_metadata', lambda: {})
     monkeypatch.setattr(upgrade, 'start_checked', lambda: events.append('restart-old'))
     monkeypatch.setattr(install, 'command', lambda *a, **kw: None)
@@ -340,7 +342,7 @@ def test_preflight_checks_registry_recovery_configuration_and_online_secrets(mon
 def test_fence_stops_ingress_then_every_writer_and_checks_database(monkeypatch):
     events = []
     monkeypatch.setattr(install, 'command', lambda argv, **kwargs: events.append(argv))
-    monkeypatch.setattr(upgrade, 'unit_absent', lambda unit: False, raising=False)
+    monkeypatch.setattr(upgrade, 'unit_state', lambda unit: {'LoadState': 'loaded', 'ActiveState': 'inactive'})
     monkeypatch.setattr(runtime, 'stop_writers', lambda: events.append('writers-stopped'))
     monkeypatch.setattr(runtime, 'stop_services', lambda services, **kw: events.append(
         ['systemctl', 'stop', *map(runtime.active_unit_name, services)]))
@@ -400,6 +402,7 @@ def test_candidate_failure_rolls_back_with_unloaded_units_without_resume(activat
     monkeypatch.setattr(subprocess, 'run', lambda *args, **kwargs: SimpleNamespace(returncode=1,
         stdout='LoadState=not-found\nActiveState=inactive\nMainPID=0\nControlGroup=\n'))
     monkeypatch.setattr(upgrade, 'fence', REAL_FENCE)
+    monkeypatch.setattr(upgrade, 'stop_application', REAL_STOP_APPLICATION)
     monkeypatch.setattr(install, 'command', command)
     monkeypatch.setattr(upgrade, 'start_checked', start)
     monkeypatch.setattr(runtime, 'stop_services', lambda *args, **kwargs: None)
@@ -418,10 +421,13 @@ def test_candidate_failure_rolls_back_with_unloaded_units_without_resume(activat
 @pytest.mark.parametrize('pg,ch', [(0, 0), (1, 0), (0, 1)])
 def test_database_fence_uses_postgres_counters_without_clickhouse(monkeypatch, pg, ch):
     calls = []
-    connection = SimpleNamespace(execute=lambda sql: SimpleNamespace(fetchone=lambda: (pg,)))
+    connection = SimpleNamespace(execute=lambda sql, args=(): SimpleNamespace(
+        fetchall=lambda: [('adlog_user', 'fixture-worker')] if pg else []))
     monkeypatch.setattr(backup, 'pg_passfile', lambda: nullcontext(Path('/unused')))
-    def connect(passfile, database='sli'):
+    monkeypatch.setattr(upgrade, 'PG_DRAIN_SECONDS', 0)
+    def connect(passfile, database='sli', *, autocommit=False):
         assert database == 'postgres', 'Quiescence must work while restore has dropped sli'
+        assert autocommit
         return nullcontext(connection)
     monkeypatch.setattr(backup, 'pg_connect', connect)
     def query(sql):
@@ -430,8 +436,9 @@ def test_database_fence_uses_postgres_counters_without_clickhouse(monkeypatch, p
         return [{'n': ch}]
     monkeypatch.setattr(backup, 'clickhouse_targets', lambda: [SimpleNamespace(query=query)] * 2)
     if pg:
-        with pytest.raises(RuntimeError, match='pg_busy'):
+        with pytest.raises(RuntimeError, match='pg_busy') as busy:
             upgrade.database_quiet()
+        assert busy.value.detail['holders'] == [{'role': 'adlog_user', 'application_name': 'fixture-worker'}]
     else:
         upgrade.database_quiet()
         assert calls == []
@@ -1128,8 +1135,8 @@ def test_start_checked_uses_accepted_service_catalog_for_legacy_rollback(monkeyp
                                systemd=lambda service: {'ActiveState': 'active', 'MainPID': '42'})
     monkeypatch.setattr(runtime, 'selected', lambda cfg: (_ for _ in ()).throw(AssertionError('candidate services used')))
     monkeypatch.setattr(install, 'command', lambda argv, **kwargs: calls.append(argv))
-    monkeypatch.setattr(install, 'wait_api', lambda config: None)
-    monkeypatch.setattr(install, 'wait_health', lambda: None)
+    monkeypatch.setattr(install, 'wait_api', lambda config, **kwargs: None)
+    monkeypatch.setattr(install, 'wait_health', lambda *, check_services: check_services())
     monkeypatch.setattr(upgrade.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=1))
     upgrade.start_checked(accepted)
     assert calls == [['systemctl', 'start', 'sli-ready.service'], ['systemctl', 'start', 'sli-runtime.target']]
@@ -1141,8 +1148,8 @@ def test_start_checked_resets_only_selected_service_instances(monkeypatch):
     monkeypatch.setattr(runtime, 'configuration', lambda: config)
     monkeypatch.setattr(runtime, 'systemd', lambda service: {'ActiveState': 'active', 'MainPID': '42'})
     monkeypatch.setattr(install, 'command', lambda argv, **kwargs: calls.append(argv))
-    monkeypatch.setattr(install, 'wait_api', lambda config: None)
-    monkeypatch.setattr(install, 'wait_health', lambda: None)
+    monkeypatch.setattr(install, 'wait_api', lambda config, **kwargs: None)
+    monkeypatch.setattr(install, 'wait_health', lambda *, check_services: check_services())
     failed = {'value': True}
     monkeypatch.setattr(upgrade.subprocess, 'run',
                         lambda argv, **kwargs: SimpleNamespace(returncode=0 if failed['value'] else 1))

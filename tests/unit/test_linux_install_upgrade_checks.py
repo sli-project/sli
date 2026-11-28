@@ -404,8 +404,8 @@ def test_apt_candidate_migrates_and_reconfigures_without_manual_steps(runtime_ho
     monkeypatch.setattr(install, "preserve_recovery", lambda *a: None)
     monkeypatch.setattr(install, "site_configuration", dict)
     health_checks = []
-    monkeypatch.setattr(install, "wait_api", lambda config: health_checks.append(current[0]))
-    monkeypatch.setattr(install, "wait_health", lambda: None)
+    monkeypatch.setattr(install, "wait_api", lambda config, **kwargs: health_checks.append(current[0]))
+    monkeypatch.setattr(install, "wait_health", lambda *, check_services: check_services())
     monkeypatch.setattr(install, "backup_schedule", lambda: "disabled")
     monkeypatch.setattr(runtime, "systemd", lambda service, **kw: {"LoadState": "not-found"} if kw.get("dotnet") is False
                         else {"ActiveState": "active" if system.states.get(runtime.dotnet_unit_name(service), {}).get("active")

@@ -4,6 +4,27 @@ using Xunit;
 namespace Sli.Server.Tests.Workstations;
 public sealed class WorkstationProjectionTests
 {
+    [Fact]
+    public void DisabledLogonRuleKeepsItsScheduleAndStopsEvaluatingIt()
+    {
+        var reference = Reference()["logons"]!.AsArray().OfType<JsonObject>()
+            .First(item => item["expected"]?["outside"]?.GetValue<bool>() == true);
+        var config = reference["config"]!.DeepClone().AsObject();
+        var row = reference["row"]!.AsObject();
+        var station = reference["station"]!.AsObject();
+        var enabled = WorkstationEvaluators.EvaluateLogon(row, station, config);
+        Assert.True(enabled!["outside"]!.GetValue<bool>());
+
+        config["enabled"] = false;
+        var normalized = Sli.Server.InstallationSetup.InstallationSettings.LogonPolicy(config.ToJsonString());
+        var disabled = WorkstationEvaluators.ValidatePolicy(normalized);
+        Assert.Null(WorkstationEvaluators.EvaluateLogon(row, station, disabled)!["outside"]);
+        Assert.True(JsonNode.DeepEquals(config["policies"], disabled["policies"]));
+
+        disabled["enabled"] = true;
+        Assert.True(WorkstationEvaluators.EvaluateLogon(row, station, disabled)!["outside"]!.GetValue<bool>());
+    }
+
     static JsonObject Reference()=>JsonNode.Parse(new StreamReader(typeof(WorkstationProjectionTests).Assembly.GetManifestResourceStream("Sli.Server.Tests.Workstations.reference.json")!).ReadToEnd())!.AsObject();
     static void Equal(JsonNode? expected,JsonNode? actual)=>Assert.True(JsonNode.DeepEquals(expected,actual),"Expected: "+expected+"\nActual: "+actual);
     [Fact]public void Request_parameters_and_errors_match_the_reference_parser()

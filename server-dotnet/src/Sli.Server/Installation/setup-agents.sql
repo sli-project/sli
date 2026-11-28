@@ -20,14 +20,15 @@ with latest_audit as materialized (
     order by issued.target,issued.id desc
 )
 select a.id::text, a.host_id::text, a.instance_name, a.status, a.last_seen,
-       a.created_at, a.assigned_modules, a.collection_policy, a.registration_host_name,
+       a.created_at, a.assigned_modules, a.collection_policy, a.registration_host_name, a.machine_role,
        a.policy_revision, a.applied_policy_revision, a.applied_collection_state,
        a.windows_audit, a.rights_probe->'eventlog_diagnostics' as eventlog_diagnostics,
        dc.id as server_id,dc.hostname as canonical_host_name,a.rights_probe ? 'identity_conflict' as identity_conflict,
        coalesce(a.rights_probe->>'agent_version',version.version,issued_version.details->>'agent_version') as agent_version,
+       removal.agent_id is not null as removal_requested,
        exists(select 1 from sli_agent_certificates c where c.agent_id=a.id and c.revoked_at is null
            and c.not_before<=clock_timestamp() and c.not_after>clock_timestamp())
-           and not exists(select 1 from sli_agent_removals r where r.agent_id=a.id) as can_restore,
+           and removal.agent_id is null as can_restore,
        retired.details->>'replaced_by' as replaced_by,
        coalesce((a.rights_probe->>'certificate_reissue_required')::boolean,false) as certificate_reissue_required,
        (select coalesce(jsonb_agg(jsonb_build_object('module_id',b.module_id,'source_name',b.source_name)), '[]'::jsonb)
@@ -41,6 +42,7 @@ select a.id::text, a.host_id::text, a.instance_name, a.status, a.last_seen,
        (select max(t) from (select max(received_at) t from sli_agent_receipts where agent_id=a.id
            union all select max(received_at) from sli_agent_stream_receipts where agent_id=a.id) packets) as last_packet_at
 from sli_agents a
+left join sli_agent_removals removal on removal.agent_id=a.id
 left join latest_audit issued_version on issued_version.target=a.id::text and issued_version.action='issue'
 left join latest_audit retired on retired.target=a.id::text and retired.action='disable'
 left join latest_audit gap on gap.target=a.id::text and gap.action='sequence_gap_accepted'

@@ -934,7 +934,12 @@ def main(argv=None):
     parser.add_argument('source', nargs='?')
     args = parser.parse_args(argv)
 
+    class SettingsStopped(Exception):
+        pass
+
     def interrupted(signum, frame):
+        if signum == signal.SIGTERM and (args.action, args.operation) in {('settings', None), ('launch', 'settings')}:
+            raise SettingsStopped
         raise InterruptedError('native_backup_interrupted')
 
     try:
@@ -965,6 +970,8 @@ def main(argv=None):
             serve()
         else:
             drill()
+    except SettingsStopped:
+        return 0
     except Exception as error:  # noqa: BLE001 - only fixed diagnostics may cross the CLI boundary
         code = str(error) if (isinstance(error, RuntimeError)
                               or isinstance(error, ValueError) and str(error) in FAILURE_MESSAGES) else ''

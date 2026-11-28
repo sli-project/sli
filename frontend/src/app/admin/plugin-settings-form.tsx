@@ -7,7 +7,7 @@ import type { PluginSettings, SettingsSchema } from "../../api/plugin-settings-t
 import { Button } from "../../design-system";
 import { SearchMultiSelect } from "../../design-system/SearchMultiSelect";
 import { t, type MessageKey } from "../../i18n";
-import { initialSetting, schemaTypes, validSetting } from "./plugin-settings-model";
+import { initialSetting, schemaTypes, validSetting, workstationLogonPolicy, workstationLogonPolicyKey } from "./plugin-settings-model";
 
 const text = (key: string | undefined, fallback: string) => key ? t(key as MessageKey) : fallback;
 const serialized = (value: unknown) => JSON.stringify(value);
@@ -109,8 +109,11 @@ export function PluginSettingsForm({ data, canEdit }: { data: PluginSettings; ca
     const id = `${prefix}-${advanced}-${index}`;
     if (key === "file_audit.excluded_accounts") return <FileAuditAccounts key={key} values={Array.isArray(values[key]) ? values[key] as string[] : []}
       disabled={!canEdit || busy} onChange={value => edit(key, value)}/>;
+    const editor = key === workstationLogonPolicyKey ? {
+      ...node, required: ["policies"], properties: { policies: node.properties!.policies },
+    } : node;
     return <div className="sli-ds-field" key={key}>
-      <ValueEditor node={node} id={id} label={label} describedBy={`${id}-help`} value={values[key]} onChange={(value) => edit(key, value)}/>
+      <ValueEditor node={editor} id={id} label={label} describedBy={`${id}-help`} value={values[key]} onChange={(value) => edit(key, value)}/>
       <p id={`${id}-help`} className="sli-ds-muted">{text(node["x-help"], "")}</p>
       {node["x-secret"] ? <p>{t("pluginPage.secretReplacement")}</p> : <>
         <p>{t("pluginPage.default", { value: node.default == null ? t("pluginPage.notSet") : typeof node.default === "object" ? Array.isArray(node.default) && !node.default.length ? t("pluginPage.emptyList") : t("pluginPage.structuredDefault") : String(node.default) })}</p>
@@ -121,7 +124,20 @@ export function PluginSettingsForm({ data, canEdit }: { data: PluginSettings; ca
   return <form noValidate onSubmit={async (event) => {
     event.preventDefault();
     if (!canEdit || busy || !changed.length) return;
-    const invalid = changed.find(([key, node]) => !validSetting(values[key], node));
+    const pending = { ...values };
+    const policyKey = workstationLogonPolicyKey;
+    if (changed.some(([key]) => key === policyKey)) {
+      const original = workstationLogonPolicy(baseline[policyKey]);
+      const latest = workstationLogonPolicy(data.values[policyKey]);
+      // A switch can update the revision while a settings draft is open. Reuse
+      // its revision only when the saved hours still match the draft's baseline.
+      const current = serialized(original?.policies) === serialized(latest?.policies) ? latest : original;
+      pending[policyKey] = {
+        ...current, version: (current?.version ?? 0) + 1,
+        policies: (values[policyKey] as { policies?: unknown[] } | null)?.policies ?? [],
+      };
+    }
+    const invalid = changed.find(([key, node]) => !validSetting(pending[key], node));
     if (invalid) { setError(t("pluginPage.invalid", { label: text(invalid[1]["x-label"], invalid[0]) })); return; }
     setBusy(true); setError(""); setMessage("");
     let saved = 0;
@@ -130,7 +146,7 @@ export function PluginSettingsForm({ data, canEdit }: { data: PluginSettings; ca
       // The API writes one key at a time. Retain confirmed writes if a later key fails.
       for (const [key, node] of changed) {
         currentKey = text(node["x-label"], key);
-        const result = await api.savePluginSetting(data.plugin_id, key, values[key]);
+        const result = await api.savePluginSetting(data.plugin_id, key, pending[key]);
         const confirmed = node["x-secret"] ? "" : result.value;
         setValues((current) => ({ ...current, [key]: confirmed }));
         setBaseline((current) => ({ ...current, [key]: confirmed }));

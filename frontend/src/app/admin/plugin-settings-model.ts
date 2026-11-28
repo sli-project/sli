@@ -1,5 +1,13 @@
 import type { SettingsSchema } from "../../api/plugin-settings-types";
 
+export const workstationLogonPolicyKey = "workstations.logon_policy";
+
+export function workstationLogonPolicy(value: unknown) {
+  if (!value || typeof value !== "object") return null;
+  const policy = value as { version: number; enabled?: boolean; policies: unknown[] };
+  return Number.isInteger(policy.version) && Array.isArray(policy.policies) ? policy : null;
+}
+
 export const schemaTypes = (node: SettingsSchema) => Array.isArray(node.type) ? node.type : [node.type];
 
 /** Validate recursively before any PUT; the server remains authoritative. */

@@ -27,7 +27,9 @@ export function scopeKindLabel(value: string) {
   return ({ all: t("access.labels.all_permitted_rows"), server: t("access.labels.servers"), domain: t("access.labels.domains"), channel: t("access.labels.event_channels") } as Record<string, string>)[value] ?? value;
 }
 
-export function auditActionLabel(value: string): string {
+export function auditActionLabel(value: string, target?: string | null): string {
+  if (value === "notification_channel_update" && (target === "telegram" || target === "smtp"))
+    return t(`access.audit.actions.notification_${target}_settings_update`);
   const keys = {
     initial_owner_claimed: "access.audit.actions.initial_owner_claimed",
     "auth.initial_owner.claimed": "access.audit.actions.initial_owner_claimed",

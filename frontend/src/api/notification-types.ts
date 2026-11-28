@@ -23,6 +23,8 @@ export type NotificationDelivery = {
   result_code: string | null; created_at: string; updated_at: string; available_at: string | null;
   finding_id: number | null;
   problem_title?: string | null;
+  occurrence_count?: number;
+  first_at?: string;
   delivery_reason?: "live" | "pipeline_delay" | "historical_replay" | "history_import" | null;
   delay_minutes?: number | null;
 };

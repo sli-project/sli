@@ -180,12 +180,13 @@ function AgentsContent() {
       setSelectedId(id);
     }
   }, [agentId, inventory.data]);
-  const [adding, setAdding] = useState(false);
   const [enrollment, setEnrollment] = useState<"group" | "manual">(() => access?.platform_owner ? "group" : "manual");
   const sessionKey = JSON.stringify([access?.subject.type, access?.subject.id, access?.subject.username, access?.evaluated_at_utc]);
   const [consoleSession, setConsoleSession] = useState(() =>
     new URLSearchParams(window.location.search).get("register") === "1" ? sessionKey : undefined);
-  const [keysSession, setKeysSession] = useState<string>();
+  const [registrationView, setRegistrationView] = useState<"installer" | "keys" | "settings">("installer");
+  const registrationOpen = consoleSession === sessionKey;
+  const showInstaller = () => setRegistrationView("installer");
   const [auditSaved, setAuditSaved] = useState<{ id: string; at: string }>();
   const [filter, setFilter] = useState<AgentFilter>(() => {
     const value = new URLSearchParams(window.location.search).get("filter");
@@ -254,7 +255,7 @@ function AgentsContent() {
     } },
   ];
   const quickFilters = ["all", "silent", "auditOff", "disabled"] as const;
-  const addButton = <button className="sli-ds-button" type="button" onClick={() => setConsoleSession(sessionKey)}>{t("agents.addComputer")}</button>;
+  const addButton = <Button onClick={() => { showInstaller(); setConsoleSession(sessionKey); }}>{t("agents.addComputer")}</Button>;
   const modules = selected?.assigned_modules.filter((module) => ["sli.windows.ad-dc", "sli.windows.ad-dc-history", "sli.ad-snapshot", "sli.gpo-snapshot", "sli.workstations"].includes(moduleId(module))) ?? [];
   const selectedState = selected && collectionState(selected);
   const more = inventory.hasNextPage ? <Button disabled={inventory.isFetchingNextPage}
@@ -272,15 +273,12 @@ function AgentsContent() {
       : <div><p>{t("agents.emptyComputers")}</p>{addButton}</div>)}
     {inventory.isFetchNextPageError && <p role="alert">{t("agents.loadError")}</p>}
     <OldAgentsTable agents={oldAgents} canRemove={Boolean(access?.platform_owner)}/>
-    <div className="sli-ds-filters__actions">
-      <button className="sli-ds-button" type="button" onClick={() => setKeysSession(sessionKey)}>{t("agents.console.keys")}</button>
-      <button className="sli-ds-button" type="button" onClick={() => {
+    {registrationOpen && registrationView === "installer" && <AgentConsoleEnrollment onClose={() => setConsoleSession(undefined)}
+      onKeys={() => setRegistrationView("keys")} onSettings={() => {
         setEnrollment(access?.platform_owner ? "group" : "manual");
-        setAdding(true);
-      }}>{t("agents.registrationSettings")}</button>
-    </div>
-    {consoleSession === sessionKey && <AgentConsoleEnrollment onClose={() => setConsoleSession(undefined)}/>}
-    {keysSession === sessionKey && <AgentConsoleKeys sessionKey={sessionKey} timeZone={timeZone} onClose={() => setKeysSession(undefined)}/>}
+        setRegistrationView("settings");
+      }}/>}
+    {registrationOpen && registrationView === "keys" && <AgentConsoleKeys sessionKey={sessionKey} timeZone={timeZone} onClose={showInstaller}/>}
     {selected ? <DetailDrawer open title={agentHostName(selected)} onClose={() => setSelectedId(null)}>
       {selectedState ? <p>{selectedState.state}{selectedState.action === EMPTY_VALUE ? null : <>. {collectionAction(selectedState)}</>}</p> : null}
       {selected.windows_product_type ? <FactList facts={[{ label: t("agents.computerRole"), value: roleLabel(selected) }]}/> : <div className="sli-ds-field">
@@ -324,8 +322,8 @@ function AgentsContent() {
       </section>
       <FactList facts={[{ label: t("agents.host"), value: selected.host_id }, { label: t("agents.agentId"), value: selected.id }]}/>
     </DetailDrawer> : null}
-    {adding ? <DetailDrawer open title={t("agents.addComputer")} onClose={() => setAdding(false)}>
-      <div role="tablist" aria-label={t("agents.addComputer")}>
+    {registrationOpen && registrationView === "settings" ? <DetailDrawer open title={t("agents.registrationSettings")} onClose={showInstaller}>
+      <div role="tablist" aria-label={t("agents.registrationSettings")}>
         {([...(access?.platform_owner ? ["group" as const] : []), "manual" as const]).map((key) => <button key={key} type="button" className="sli-ds-button" role="tab" id={`enrollment-${key}`} aria-controls={`enrollment-panel-${key}`} aria-selected={enrollment === key} onClick={() => setEnrollment(key)}>{t(key === "group" ? "agents.deployment.title" : "agents.manualEnrollment")}</button>)}
       </div>
       <div role="tabpanel" id={`enrollment-panel-${enrollment}`} aria-labelledby={`enrollment-${enrollment}`}>

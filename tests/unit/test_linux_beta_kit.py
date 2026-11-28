@@ -422,6 +422,12 @@ def test_install_helper_uses_the_verified_package_set(tmp_path, scenario):
         host = extracted / 'sli-host_1.0-1~deb13_all.deb'
         host.write_bytes(b'synthetic host package')
         lines.append(f'{kit.sha256(host)}  {host.name}\n')
+        releases = []
+        for name in ('candidate_1.0-1~deb13', 'previous_0.9-1~deb13'):
+            release = extracted / f'sli-release-{name}_amd64.deb'
+            release.write_bytes(b'synthetic release package')
+            lines.append(f'{kit.sha256(release)}  {release.name}\n')
+            releases.append(release)
     if scenario == 'newer_vendor':
         vendor = extracted / 'tzdata_2026c_all.deb'
         vendor.write_bytes(b'verified vendor package')
@@ -471,6 +477,10 @@ if [[ $1 == --extract ]]; then mkdir -p -- "$3/usr/lib/sli"; exit; fi
 case "$2:$3" in
     ./tzdata*:Package) echo tzdata;; ./tzdata*:Version) echo 2026c;; ./tzdata*:Architecture) echo all;;
     ./sli-host*:Package) echo sli-host;; ./sli_*.deb:Package) echo sli;;
+    ./sli-release-candidate*:Package) echo sli-release-candidate;;
+    ./sli-release-previous*:Package) echo sli-release-previous;;
+    ./sli-release-candidate*:Version) echo '1.0-1~deb13';;
+    ./sli-release-previous*:Version) echo '0.9-1~deb13';;
     ./sli-host*:Version|./sli_*.deb:Version) echo '1.0-1~deb13';;
     *:Package) echo sli-example;; *:Version) echo 1.0;; *:Architecture) echo amd64;; *) exit 1;;
 esac
@@ -497,7 +507,7 @@ fi
         assert running.is_file(), 'the accepted service must stay up'
         calls = apt_calls.read_text(encoding='utf-8').splitlines()
         assert len(calls) == 1
-        assert calls[0].endswith(' check-package-space 1.0-1~deb13')
+        assert calls[0].endswith(f' check-package-space 1.0-1~deb13 ./{releases[0].name}')
     elif scenario in {'valid', 'newer_vendor', 'fresh_native', 'upgrade_space_ok',
                       'upgrade_setup_failure', 'upgrade_purge_failure'}:
         assert run.returncode == (1 if scenario == 'upgrade_setup_failure' else 0), run.stderr
@@ -507,10 +517,12 @@ fi
             assert len(run.stderr.splitlines()) == 1 and 'native_upgrade_release_purge_warning' in run.stderr
         calls = apt_calls.read_text(encoding='utf-8').splitlines()
         if scenario.startswith('upgrade_'):
-            assert calls.pop(0).endswith(' check-package-space 1.0-1~deb13')
+            assert calls.pop(0).endswith(f' check-package-space 1.0-1~deb13 ./{releases[0].name}')
         if scenario in {'upgrade_space_ok', 'upgrade_purge_failure'}:
             assert calls.pop() == '/usr/sbin/sli-native-upgrade purge-old-release-packages 1.0-1~deb13'
-        expected_packages = './' + deb.name + (' ./' + host.name if native else '')
+        expected_packages = './' + deb.name
+        if native:
+            expected_packages += ''.join(f' ./{package.name}' for package in (host, *releases))
         assert calls == [
             'apt-get update', 'env DEBIAN_FRONTEND=noninteractive apt-get --assume-yes '
             '-o APT::Get::allow-Downgrades=false -o Dpkg::Options::=--force-confdef '

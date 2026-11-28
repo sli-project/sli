@@ -47,8 +47,8 @@ it("keeps all channel journal keys identical and nonempty in both languages", ()
 });
 
 it.each([
-  ["ru", "Настройка канала уведомлений", "Изменены метаданные канала уведомлений"],
-  ["en", "Configure notification channel", "Notification channel metadata updated"],
+  ["ru", "Настройка канала уведомлений", "Изменены настройки оповещений"],
+  ["en", "Configure notification channel", "Notification settings changed"],
 ] as const)("labels the channel permission and safe audit in %s", (locale, action, audit) => {
   setLocale(locale);
   expect(accessActionLabel("configure_channel")).toBe(action);

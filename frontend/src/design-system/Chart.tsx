@@ -19,7 +19,7 @@ const markerSymbols = { critical: "rect", high: "diamond", medium: "triangle", l
 export type HeatmapData = { xLabels: string[]; yLabels: string[]; cells: Array<{ x: number; y: number; value: number }> };
 
 export type ChartSpec =
-  | { kind: "timeseries"; series: ChartSeries[]; stacked?: boolean; bars?: boolean; markers?: ChartMarker[]; range?: [string, string] }
+  | { kind: "timeseries"; series: ChartSeries[]; stacked?: boolean; bars?: boolean; markers?: ChartMarker[]; range?: [string, string]; unit?: string }
   | { kind: "bar"; series: ChartSeries[]; horizontal?: boolean }
   | { kind: "heatmap"; data: HeatmapData };
 
@@ -87,12 +87,15 @@ export function buildChartOption(spec: ChartSpec, colors: { text: string; muted:
   const days = spec.series[0]?.points.map((point) => point.x) ?? [];
   if (days.length && days.every((x) => /^\d{4}-\d{2}-\d{2}$/.test(x))) {
     const dual = spec.series.length === 2 && !spec.stacked && !spec.series.some((series) => series.style);
+    const valueAxis = { type: "value", ...axisStyle, ...(spec.unit ? { name: spec.unit, minInterval: 1, nameTextStyle: { color: colors.muted } } : {}) };
     return {
       ...base,
-      legend,
-      grid: legendGrid,
+      legend: legend && spec.unit ? { ...legend, data: spec.series.map(({ name, style }) => ({
+        name, icon: style === "bar" ? "roundRect" : "path://M0 5h24v2H0z",
+      })) } : legend,
+      grid: spec.unit ? { ...legendGrid, top: legendGrid.top + 16 } : legendGrid,
       xAxis: { type: "category", data: days.map((day) => sharedDateTime(day, "UTC", { withTime: false, withYear: false })), ...axisStyle },
-      yAxis: dual ? [{ type: "value", ...axisStyle }, { type: "value", ...axisStyle, splitLine: { show: false } }] : { type: "value", ...axisStyle },
+      yAxis: dual ? [valueAxis, { type: "value", ...axisStyle, splitLine: { show: false } }] : valueAxis,
       series: spec.series.map((series, index) => ({
         type: series.style ? series.style === "bar" ? "bar" : "line" : dual && index === 1 ? "line" : "bar",
         lineStyle: series.style === "dashed" ? { type: "dashed" } : undefined, name: series.name, yAxisIndex: dual ? index : 0,

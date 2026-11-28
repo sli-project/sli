@@ -115,6 +115,7 @@ public static class SetupCollectionHealth
     {
         var items = new JsonArray();
         var connectedControllers = new HashSet<(string Kind, string Id)>();
+        bool hasDomainControllerAgent = false;
         foreach (var agent in agents.OfType<JsonObject>())
         {
             var policy = agent["collection_policy"] as JsonObject ?? new();
@@ -124,8 +125,13 @@ public static class SetupCollectionHealth
             long? connectionAge = Age(agent["last_seen"], now);
             string connection = connectionAge is null ? "never_seen" : connectionAge <= ContactBudgetSeconds(interval) ? "online" : "offline";
             var assignments = Array(agent["assigned_modules"]);
-            if (T(agent["status"]) == "active" && connection == "online" && assignments.Any(a =>
-                T(a is JsonObject assignment ? assignment["module_id"] : a) is "sli.windows.ad-dc" or "sli.windows.ad-dc-history"))
+            bool dcAssignment = assignments.Any(a => T(a is JsonObject assignment ? assignment["module_id"] : a)
+                is "sli.windows.ad-dc" or "sli.windows.ad-dc-history");
+            string machineRole = T(agent["machine_role"]);
+            string status = T(agent["status"]);
+            hasDomainControllerAgent |= status is "active" or "disabled" && !B(agent["removal_requested"])
+                && (machineRole == "domain_controller" || machineRole == "" && dcAssignment);
+            if (status == "active" && connection == "online" && dcAssignment)
             {
                 connectedControllers.Add(T(agent["server_id"]) is { Length: > 0 } server ? ("server", server)
                     : T(agent["host_id"]) is { Length: > 0 } host ? ("host", host) : ("agent", T(agent["id"])));
@@ -217,6 +223,7 @@ public static class SetupCollectionHealth
         return new() { ["state"] = overallState, ["items"] = new JsonArray(sorted.Select(a => a.DeepClone()).ToArray()),["replaced_agents"]=replaced, ["checked_at_utc"] = Iso(now),
             ["completeness"] = new JsonObject { ["state"] = sorted.Any(a => T(a["completeness"]?["state"]) == "known_gaps") ? "known_gaps" : "not_assessed" },
             ["connected_domain_controllers"] = connectedControllers.Count,
+            ["has_domain_controller_agent"] = hasDomainControllerAgent,
             ["active_agents"] = active.Length, ["current_agents"] = active.Count(a => T(a["state"]) == "current") };
     }
     internal static JsonArray ConsolidateDcSources(JsonArray items)
