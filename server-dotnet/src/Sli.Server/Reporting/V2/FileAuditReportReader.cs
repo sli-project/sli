@@ -58,7 +58,8 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
                     select 1 from pg_attribute where attrelid=to_regclass('public.sli_file_audit_smb_catalog')
                     and attname='cached_at' and not attisdropped) as catalog_available,
                     to_regprocedure('public.file_audit_scan_prefix458(uuid,text,uuid,integer,timestamptz)') is not null as file_activity,
-                    to_regprocedure('public.file_action_problems462(jsonb)') is not null as action_episodes
+                    to_regprocedure('public.file_action_problems462(jsonb)') is not null as action_episodes,
+                    to_regprocedure('public.file_action_group_page465(jsonb,text,timestamptz,timestamptz,text,boolean,text,text,jsonb,integer)') is not null as action_groups
                 """, ct))[0]!.AsObject();
             fileActivity = discovery.Flag("file_activity");
             var discovered = Array(discovery["roots"]);
@@ -82,7 +83,7 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
             else
             {
                 var options = after?.Copy() ?? new JsonObject(); options["show_service"] = context.Params.Text("show_service", "false") == "true";
-                if (tab is "overview" or "actions" or "permission-changes")
+                if (tab is "overview" or "actions" or "permission-changes" or "out-of-hours")
                 {
                     var excluded = await ExcludedAccountsAsync(session, ct);
                     if (excluded.Count > 0) options["excluded_accounts"] = excluded;
@@ -90,23 +91,32 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
                 if (context.Params["record_unit"] is { } unit) options["record_unit"] = unit.DeepClone();
                 string? operation = context.Params["operation"]?.GetValue<string>();
                 bool objectView = tab == "permissions" && context.Params.Text("view") == "objects";
-                bool actionRows = tab is "actions" or "permission-changes" or "access-denials" or "out-of-hours";
+                bool screenRows = tab is "actions" or "permission-changes" or "access-denials" or "out-of-hours" or "mass-operations";
+                bool actionGroups = discovery.Flag("action_groups") && (tab is "actions" or "access-denials")
+                    && !readRoots.Any(r => Text(r, "source_kind") == "workstation");
                 bool actionEpisodes = tab == "actions" && discovery.Flag("action_episodes");
-                var sql = tab == "overview" ? PermissionOverviewSql : actionEpisodes ? FileActionsSql
-                    : actionRows && tab != "out-of-hours" ? PermissionChangesSql
+                var calendar = tab == "out-of-hours" && discovery.Flag("action_groups") ? await ReadCalendarAsync(session, ct) : null;
+                bool scheduled = calendar is not null;
+                var sql = tab == "overview" ? PermissionOverviewSql : actionGroups ? FileActionGroupsSql
+                    : actionEpisodes || scheduled ? FileActionsSql
+                    : tab is "actions" or "permission-changes" or "access-denials" ? PermissionChangesSql
                     : "select sli_plugin_file_audit.report_rows($1::jsonb,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10) as data";
                 var from = DateTimeOffset.Parse(context.Params["period"]!["from_utc"]!.GetValue<string>(), CultureInfo.InvariantCulture).UtcDateTime;
                 var to = WindowEnd(context);
                 if (context.Params["activity"] is { } activity) options["activity"] = activity.DeepClone();
-                Task<JsonArray> Read(JsonObject paging, int size) => session.QueryAsync(sql, ct, readRoots, tab, from, to,
+                if (scheduled) options["record_unit"] = "normalized_action";
+                Task<JsonArray> Read(JsonObject paging, int size) => session.QueryAsync(sql, ct, readRoots, scheduled ? "actions" : tab, from, to,
                     Text(context.Params, "path"), context.Params.Text("include_nested", "true") == "true",
                     Text(context.Params, "employee"), operation, paging, size);
                 data = objectView ? await ObjectRows(session, context, readRoots, after, ct)
-                    : actionRows ? await ReadScreenActions(session, context, tab, options, Read, ct)
+                    : screenRows ? await ReadScreenActions(session, context, tab, options, Read, calendar, ct)
                     : (await Read(options, context.Paging.Limit))[0]!["data"]!.AsObject();
                 if (data["service_filter_version"]?.GetValue<int>() != 1) return Unreadable(context);
                 if (tab == "overview") await ResourceAuditAsync(session, context, Array(data["items"]), ct);
-                if (actionRows) await LinkActionProblemsAsync(session, context, Array(data["items"]), tab, actionEpisodes, ct);
+                if (tab == "out-of-hours" && discovery.Flag("action_groups") && !scheduled)
+                    data["schedule_not_configured"] = true;
+                if (screenRows) await LinkActionProblemsAsync(session, context, Array(data["items"]), tab,
+                    actionEpisodes || scheduled, tab == "mass-operations" && discovery.Flag("action_groups"), ct);
             }
             if (catalog)
             {
@@ -180,7 +190,13 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
         catch (ReportRequestException e) when (e.Status == 403) { queue = ReportScope.None; }
         var allowed = new JsonArray(roots.Where(r => Admitted(context, r!, queue)).Select(r => r!.DeepClone()).ToArray());
         var decisions = new JsonObject();
-        if (allowed.Count > 0 && items.Count > 0) decisions = (await session.QueryAsync("select public.read_file_ransom_details($1::jsonb,$2::jsonb) as decisions", ct, allowed, new JsonArray(items.Select(r => r!["id"]!.DeepClone()).ToArray())))[0]!["decisions"]!.AsObject();
+        if (allowed.Count > 0)
+            foreach (var page in items.Chunk(100))
+            {
+                var batch = (await session.QueryAsync("select public.read_file_ransom_details($1::jsonb,$2::jsonb) as decisions",
+                    ct, allowed, new JsonArray(page.Select(r => r!["id"]!.DeepClone()).ToArray())))[0]!["decisions"]!.AsObject();
+                foreach (var (id, decision) in batch) decisions[id] = decision?.DeepClone();
+            }
         foreach (var row in items.OfType<JsonObject>()) row["ransom"] = Text(row, "rule_code") is not ("file-audit.mass-write" or "file-audit.mass-delete") ? new JsonObject { ["state"] = "not_applicable" }
             : !allowed.Any(r => ShareKey(r!) == ShareKey(row)) ? new JsonObject { ["state"] = "denied" } : decisions[Text(row, "id")!]?.DeepClone() ?? new JsonObject { ["state"] = "not_evaluated" };
     }
@@ -190,16 +206,27 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
         bool rootObservationFilter = tab == "overview" && (context.Params["employee"] is not null || context.Params["operation"] is not null);
         foreach (var row in items.OfType<JsonObject>())
         {
+            row.Remove("member_actions");
             var root = roots.FirstOrDefault(r => ShareKey(r!) == ShareKey(row)); row["share_label"] = Label(root);
             foreach (string field in new[] { "source_name", "share_name", "source_kind" })
                 if (root?[field] is { } value) row[field] = field == "source_name" ? JsonValue.Create(SourceName(root)) : value.DeepClone();
             row["operation"] = (row["operation"] ?? row["details"]?["operation"])?.DeepClone();
-            if (tab == "mass-operations") { row["operation"] = row.Text("rule_code")["file-audit.mass-".Length..]; row["files_per_minute"] = Math.Round(double.Parse(row["details"]!["distinct_files"]!.ToJsonString(), CultureInfo.InvariantCulture) * 60 / double.Parse(row["details"]!["window_seconds"]!.ToJsonString(), CultureInfo.InvariantCulture), 1, MidpointRounding.ToEven); }
+            if (tab == "mass-operations")
+            {
+                row["operation"] = row.Text("rule_code")["file-audit.mass-".Length..];
+                row["files_per_minute"] = Math.Round(double.Parse(row["details"]!["distinct_files"]!.ToJsonString(), CultureInfo.InvariantCulture) * 60 / double.Parse(row["details"]!["window_seconds"]!.ToJsonString(), CultureInfo.InvariantCulture), 1, MidpointRounding.ToEven);
+                row["observation_count"] = Array(row["evidence"]).OfType<JsonObject>()
+                    .Select(e => Text(e, "action_id")).Where(id => id is not null).Distinct(StringComparer.Ordinal).Count();
+            }
             if (tab is "overview" or "audit-state" && row["snapshot_id"] is null) row["folders_with_read_audit"] = null;
             if (tab == "audit-state") row["delivery_state"] = !row.ContainsKey("delivery_received_at") ? "unknown" : row["delivery_received_at"] is null ? "not_received" : row["delivery_imported_at"] is not null ? "imported" : "pending_import";
             if (rootObservationFilter) row["actions"] = null;
             row["employee"] = (row["subject_name"] ?? row["subject_sid"])?.DeepClone();
-            if (tab == "out-of-hours" && row["path"] is null) row["path"] = Array(row["evidence"]).FirstOrDefault(e => !string.IsNullOrEmpty(Text(e, "path")))?["path"]?.DeepClone();
+            if (tab == "out-of-hours")
+            {
+                row["path"] ??= Array(row["evidence"]).FirstOrDefault(e => !string.IsNullOrEmpty(Text(e, "path")))?["path"]?.DeepClone();
+                row["schedule_timezone"] = (row["details"]?["timezone"] ?? row["details"]?["calendar"]?["timezone"])?.DeepClone();
+            }
         }
         var coverage = new JsonObject { ["state"] = "unknown", ["reason"] = "coverage_incomplete", ["completeness"] = "not_proven" };
         bool serverSource = context.Params.Text("source_kind") == "server"
@@ -211,7 +238,8 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
             coverage["supported_collection_mode"] = fileActivity ? "server_file_activity" : "server_permissions_only";
             coverage["activity_scope"] = "retained_observations";
             if (items.Count == 0)
-                coverage["reason"] = tab == "out-of-hours" || !fileActivity && (tab is "mass-operations" or "access-denials"
+                coverage["reason"] = data.Flag("schedule_not_configured") ? "schedule_not_configured"
+                    : !fileActivity && (tab is "mass-operations" or "access-denials" or "out-of-hours"
                     || tab == "actions" && context.Params["operation"] is not null && context.Params.Text("operation") != "permissions")
                     ? "full_activity_not_collected" : "no_saved_observations";
         }
@@ -235,6 +263,9 @@ public sealed partial class FileAuditReportReader : IReportV2Reader
             ["source_instance_id"] = new JsonArray(roots.OfType<JsonObject>().GroupBy(r => Text(r, "source_instance_id")).Select(g => (JsonNode)new JsonObject { ["value"] = g.Key, ["label"] = SourceName(g.First()) ?? "—" }).ToArray()),
             ["device_id"] = new JsonArray(roots.OfType<JsonObject>().GroupBy(r => Text(r, "agent_id")).Select(g => (JsonNode)new JsonObject { ["value"] = g.Key, ["label"] = SourceName(g.First()) ?? "—" }).ToArray())
         };
+        if (context.Params["source_instance_id"] is { } source)
+            result["filter_options"]!["share"] = new JsonArray(roots.Where(r => Text(r, "source_instance_id") == source.GetValue<string>())
+                .Select(r => (JsonNode)new JsonObject { ["value"] = ShareKey(r!), ["label"] = Text(r, "share_name") ?? Text(r, "path") }).ToArray());
         result["window"] = context.Params["period"]!.DeepClone(); result["window"]!["timezone"] = context.Paging.Timezone;
         result["window"]!["export_row_limit"] = 10000;
         if (tab == "overview" && roots.Count > 0 && !rootObservationFilter) result["metrics"] = new JsonArray(new[] { ("read", "Чтения"), ("write", "Записи"), ("delete", "Удаления"), ("denials", "Отказы") }.Select(p => (JsonNode)new JsonObject { ["key"] = p.Item1, ["label"] = p.Item2, ["value"] = data["summary"]?[p.Item1]?.DeepClone(), ["quality"] = data["summary"]?[p.Item1] is null ? "unknown" : "observed", ["filter"] = p.Item1 == "denials" ? new JsonObject() : new JsonObject { ["operation"] = p.Item1 } }).ToArray());

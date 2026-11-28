@@ -17,6 +17,95 @@ public sealed class FileServersReportPostgresTests
     }
 
     [Fact]
+    public async Task File_burst_folds_companion_operations_before_paging_search_and_export()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new SqlPostgresFixture();
+        await fixture.StartAsync(ct, throughVersion: 464);
+        var migration = MigrationDirectory.Read(465).Single(item => item.Version == 465);
+        await fixture.Pg.ApplyFileAsync(migration.Path, null, ct);
+        await using var owner = await fixture.Pg.OpenAsync(ct);
+        var sample = await FileServersReportFixture.SeedAsync(owner, ct);
+        var first = DateTimeOffset.Parse(sample["first_seen_utc"]!.ToString(), System.Globalization.CultureInfo.InvariantCulture);
+        await using (var insert = new NpgsqlCommand("""
+            with burst as (
+                select n,case when n<=110 then @root||chr(92)||'file-'||n||'.txt' else @root end as path,
+                    case when n<=110 then 'file' else 'directory' end as kind,
+                    @at+case when n=221 then interval '1 minute' else interval '0' end as stamp,
+                    case when n<=110 then 65538 else 2 end as mask
+                from generate_series(1,221) n
+                union all
+                select 222,@root||chr(92)||'FILE-1.txt','file',@at+interval '10 seconds',2
+            ), evidence as (
+                insert into sli_plugin_file_audit.observations
+                    (evidence_key,agent_id,source_instance_id,collection_scope_id,channel,provider,generation,record_id,event_id,
+                     event_version,observed_at,policy_revision,core_evidence_ref,payload_sha256,normalized)
+                select encode(sha256(convert_to('fixture-observation:'||n,'UTF8')),'hex'),@agent,@source,@scope,'Security','Microsoft-Windows-Security-Auditing',
+                    'fixture-generation',n,4663,0,stamp,2,'fixture:'||n,repeat('a',64),jsonb_build_object('path',path)
+                from burst returning record_id,evidence_key,core_evidence_ref
+            ), actions as (
+                insert into sli_plugin_file_audit.actions
+                    (action_id,contract_version,agent_id,source_instance_id,collection_scope_id,observed_at,subject_sid,
+                     logon_id,path,share_name,object_type,access_mask,operation,outcome,server_process_id,projection_version)
+                select encode(sha256(convert_to('fixture-action:'||operation||':'||b.n,'UTF8')),'hex'),1,@agent,@source,@scope,
+                    stamp,@subject,'fixture-logon',path,'Finance',kind,mask,operation,'success',42,1
+                from burst b cross join lateral unnest(case when b.n<=110 then array['write','delete_right'] else array['write'] end) operation
+                returning action_id
+            )
+            insert into sli_plugin_file_audit.action_evidence(action_id,core_evidence_ref,evidence_key,role)
+            select a.action_id,e.core_evidence_ref,e.evidence_key,'primary'
+            from evidence e join actions a on a.action_id in (
+                encode(sha256(convert_to('fixture-action:write:'||e.record_id,'UTF8')),'hex'),
+                encode(sha256(convert_to('fixture-action:delete_right:'||e.record_id,'UTF8')),'hex'))
+            """, owner))
+        {
+            insert.Parameters.AddWithValue("agent", FileServersReportFixture.Agent);
+            insert.Parameters.AddWithValue("source", FileServersReportFixture.Source.ToString("D"));
+            insert.Parameters.AddWithValue("scope", FileServersReportFixture.Scope);
+            insert.Parameters.AddWithValue("root", FileServersReportFixture.RootPath);
+            insert.Parameters.AddWithValue("subject", FileServersReportFixture.Subject);
+            insert.Parameters.AddWithValue("at", first.UtcDateTime);
+            await insert.ExecuteNonQueryAsync(ct);
+        }
+        var reader = new FileAuditReportReader(new SemanticDatabase(new Connections(fixture)));
+        const string key = "file-audit.actions";
+        await using var host = await ReportFixture.Start(FileAuditReportTests.Facts("actions"),
+            new ReportDefinitionRegistry().Get(key), nativeReader: reader);
+        string filter = $"source_kind=server&period=custom&from={Uri.EscapeDataString(sample["from_utc"]!.ToString())}"
+            + $"&to={Uri.EscapeDataString(sample["to_utc"]!.ToString())}&record_unit=normalized_action";
+        async Task<JsonObject> Read(string args)
+        {
+            using var response = await host.Client.GetAsync("/api/v2/reports/" + key + "/data?" + filter + args, ct);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            return await ReportFixture.Body(response);
+        }
+
+        var page = await Read("&limit=50");
+        var all = new JsonArray();
+        do
+        {
+            Assert.Equal(111, page["filtered_count"]!.GetValue<int>());
+            foreach (var row in page["items"]!.AsArray()) all.Add(row!.DeepClone());
+            if (page["next_cursor"] is not { } cursor) break;
+            page = await Read("&limit=50&cursor=" + Uri.EscapeDataString(cursor.ToString()));
+        } while (true);
+        Assert.Equal(111, all.Select(row => row!["id"]!.ToString()).Distinct().Count());
+        Assert.All(all, row => Assert.Equal("write", row!["operation"]!.ToString()));
+        Assert.All(all, row => Assert.Equal(4663, row!["event_code"]!.GetValue<int>()));
+        var standalone = Assert.Single(all, row => row!["path"]!.ToString() == FileServersReportFixture.RootPath);
+        Assert.Equal(1, standalone!["count"]!.GetValue<int>());
+        var repeated = Assert.Single(all, row => row!["path"]!.ToString().EndsWith(@"\file-1.txt", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(2, repeated!["count"]!.GetValue<int>());
+        Assert.Equal(first, DateTimeOffset.Parse(repeated["first_seen_utc"]!.ToString(), System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal(first.AddSeconds(10), DateTimeOffset.Parse(repeated["last_seen_utc"]!.ToString(), System.Globalization.CultureInfo.InvariantCulture));
+        var exact = await Read("&path_search=" + Uri.EscapeDataString(FileServersReportFixture.RootPath) + "&include_nested=false");
+        Assert.Equal(1, exact["filtered_count"]!.GetValue<int>());
+        using var csv = await host.Client.GetAsync("/api/v2/reports/" + key + "/export.csv?" + filter, ct);
+        Assert.Equal(HttpStatusCode.OK, csv.StatusCode);
+        Assert.Equal("111", csv.Headers.GetValues("X-Sli-Export-Rows").Single());
+    }
+
+    [Fact]
     public async Task Retained_groups_acl_and_two_hundred_rows_share_scope_window_and_export_contract()
     {
         var ct = TestContext.Current.CancellationToken;

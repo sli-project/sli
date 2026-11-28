@@ -70,7 +70,8 @@ public sealed partial class FileAuditReportReader
                 and f.source_sha256 is not null and f.event_record_id>0
                 and (f.fields->>'operation'<>'permissions'
                     or not exists(select 1 from excluded where sid=lower(f.actor)))
-                and (coalesce($8,'')='' or $8=f.fields->>'operation')
+                and (coalesce($8,'')='' or $8=f.fields->>'operation'
+                    or $8='access_denied' and f.outcome->>'outcome'='failure')
                 and ($9->>'activity' is distinct from 'changes' or f.fields->>'operation' in ('write','rename'))
                 and coalesce($9->>'record_unit','')<>'normalized_action'
                 and (coalesce($7,'')='' or f.actor=$7)
@@ -98,13 +99,14 @@ public sealed partial class FileAuditReportReader
             order by observed_at desc,id desc limit ($10+1)
         ), merged as materialized (
             select row->>'id' as id,(row->>'observed_at')::timestamptz as observed_at,
-                row||jsonb_build_object('record_unit','normalized_action') as row
+                jsonb_build_object('record_unit','normalized_action')||row as row
             from legacy cross join lateral jsonb_array_elements(data->'items') l(row)
             union all
             select p.id,p.observed_at,jsonb_build_object('id',p.id,'action_id',p.id,'observed_at',p.observed_at,
                 'agent_id',p.agent_id,'source_instance_id',p.source_instance_id,'collection_scope_id',p.collection_scope_id,
                 'subject_sid',p.actor,'path',p.path,'old_path',p.old_path,'operation',p.operation,'outcome',p.outcome,
                 'client_ip',p.client_ip,'domain_id',p.domain_id,'correlation_state','not_attempted',
+                'journal','Security','event_code',p.event_kind,
                 'record_unit','saved_event_group','count',p.weight,'first_seen_utc',p.first_seen,'last_seen_utc',p.last_seen,
                 'aggregate',jsonb_build_object('unit','saved_event_group','count',p.weight,
                     'first_seen_utc',p.first_seen,'last_seen_utc',p.last_seen,
@@ -142,6 +144,14 @@ public sealed partial class FileAuditReportReader
             select case when $9->>'record_unit'='saved_event_group' then
                 jsonb_build_object('service_filter_version',1,'items','[]'::jsonb,'filtered_count',0,'has_more',false,'after',null)
                 else public.file_action_page462($1::jsonb,$3,$4,$5,$6,$7,$8,$9::jsonb,$10) end as data
+        )
+        """ + ActionMerge;
+
+    private const string FileActionGroupsSql = NativePermissionCandidates + """
+        , legacy as materialized (
+            select case when $9->>'record_unit'='saved_event_group' then
+                jsonb_build_object('service_filter_version',1,'items','[]'::jsonb,'filtered_count',0,'has_more',false,'after',null)
+                else public.file_action_group_page465($1::jsonb,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10) end as data
         )
         """ + ActionMerge;
 

@@ -175,14 +175,18 @@ public sealed partial class FileAuditReportReader
         }
     }
 
+    private static async Task<JsonObject?> ReadCalendarAsync(ISemanticSession session, CancellationToken ct) =>
+        (await session.QueryAsync("select value::jsonb as calendar from public.platform_settings where key='security.working_time'", ct))
+            .FirstOrDefault()?["calendar"] as JsonObject;
+
     private static async Task<JsonObject> ReadScreenActions(ISemanticSession session, ReportQueryContext context, string tab,
-        JsonObject options, Func<JsonObject, int, Task<JsonArray>> read, CancellationToken ct)
+        JsonObject options, Func<JsonObject, int, Task<JsonArray>> read, JsonObject? calendar, CancellationToken ct)
     {
         async Task<JsonObject> Read(JsonObject paging, int size)
         {
             var response = (await read(paging, size))[0]!["data"]!.AsObject();
             var rows = Array(response["items"]);
-            if (tab == "out-of-hours")
+            if (tab == "out-of-hours" && calendar is null)
                 foreach (var row in rows.OfType<JsonObject>())
                 {
                     // Each outside-hours result refers to one stored action.
@@ -190,13 +194,25 @@ public sealed partial class FileAuditReportReader
                     foreach (string key in new[] { "path", "operation", "client_ip", "outcome", "access_mask", "denial_layer" })
                         if (action?[key] is { } value) row[key] = value.DeepClone();
                 }
+            foreach (var row in rows.OfType<JsonObject>())
+            {
+                var evidence = Array(row["evidence"]).OfType<JsonObject>();
+                var source = evidence.FirstOrDefault(e => Text(e, "role") == "primary") ?? evidence.FirstOrDefault();
+                if (row["event_code"] is null && source?["event_id"] is { } code)
+                {
+                    row["event_code"] = code.DeepClone();
+                    row["journal"] = "Security";
+                }
+            }
             await ResolveSubjectsAsync(session, context, rows, ct);
             return response;
         }
 
         string? path = Text(context.Params, "path_search"), account = Text(context.Params, "account_search");
         bool changes = Text(context.Params, "activity") == "changes";
-        if (path is null && account is null && !changes) return await Read(options, context.Paging.Limit);
+        if (path is null && account is null && !changes && calendar is null) return await Read(options, context.Paging.Limit);
+        var zone = calendar is null ? null : WorkingTime.Validate(calendar);
+        bool nested = context.Params.Text("include_nested", "true") == "true";
 
         // Screen searches filter retained rows across the window before applying the
         // visible cursor. The existing indexed reader pages the underlying rows.
@@ -213,8 +229,17 @@ public sealed partial class FileAuditReportReader
             foreach (var row in Array(page["items"]).OfType<JsonObject>())
             {
                 if (changes && Text(row, "operation") is not ("write" or "rename")) continue;
-                if (path is not null && !Contains(row, "path", path) && !Contains(row, "old_path", path)) continue;
+                if (path is not null && !MatchesPath(Text(row, "path"), path, nested) && !MatchesPath(Text(row, "old_path"), path, nested)) continue;
                 if (account is not null && !Contains(row, "subject_name", account) && !Contains(row, "subject_sid", account)) continue;
+                if (calendar is not null)
+                {
+                    if (Text(row, "object_type") != "file" || Text(row, "outcome") != "success"
+                        || Text(row, "operation") is not ("read" or "write" or "delete" or "rename")
+                        || Text(row, "subject_sid") is not { Length: > 0 } sid
+                        || Array(options["excluded_accounts"]).Any(value => string.Equals(value?.GetValue<string>(), sid, StringComparison.OrdinalIgnoreCase))
+                        || !WorkingTime.Outside(Text(row, "observed_at")!, sid, calendar, zone!, out var local)) continue;
+                    row["details"] = new JsonObject { ["local_time"] = local, ["timezone"] = calendar["timezone"]?.DeepClone() };
+                }
                 total++;
                 var at = DateTimeOffset.Parse(Text(row, "observed_at")!, CultureInfo.InvariantCulture);
                 if (start.HasValue && (at > start || at == start && string.CompareOrdinal(Text(row, "id"), Text(options, "id")) >= 0)) continue;
@@ -236,6 +261,18 @@ public sealed partial class FileAuditReportReader
 
     private static bool Contains(JsonObject row, string field, string needle) =>
         Text(row, field)?.Contains(needle, StringComparison.OrdinalIgnoreCase) == true;
+
+    private static bool MatchesPath(string? value, string query, bool nested)
+    {
+        if (value is null) return false;
+        value = value.Replace('/', '\\');
+        query = query.Replace('/', '\\');
+        if (!query.StartsWith(@"\\", StringComparison.Ordinal) && !(query.Length >= 3 && query[1] == ':' && query[2] == '\\'))
+            return (nested ? value : value[(value.LastIndexOf('\\') + 1)..]).Contains(query, StringComparison.OrdinalIgnoreCase);
+        query = query.TrimEnd('\\');
+        return value.TrimEnd('\\').Equals(query, StringComparison.OrdinalIgnoreCase)
+            || nested && value.StartsWith(query + "\\", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static async Task ResolveSubjectsAsync(ISemanticSession session, ReportQueryContext context, JsonArray rows, CancellationToken ct)
     {
@@ -267,13 +304,15 @@ public sealed partial class FileAuditReportReader
     }
 
     private static async Task LinkActionProblemsAsync(ISemanticSession session, ReportQueryContext context, JsonArray rows,
-        string tab, bool actionEpisodes, CancellationToken ct)
+        string tab, bool actionEpisodes, bool massEpisodes, CancellationToken ct)
     {
         if (context.Action != "view" || rows.Count == 0) return;
         long[]? domains;
         try { domains = new ProblemAccess(context.Access).Scope("security.queue").Domains(); }
         catch (ProblemException) { return; }
         var keys = new JsonArray();
+        var memberRows = new List<JsonObject>();
+        var groupByMember = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var row in rows.OfType<JsonObject>())
         {
             var id = Text(row, "id");
@@ -285,17 +324,37 @@ public sealed partial class FileAuditReportReader
                 .Where(value => value > 0).Distinct();
             foreach (long reference in references)
                 keys.Add(new JsonObject { ["row_id"] = id, ["event_id"] = reference });
-            if (tab == "out-of-hours") keys.Add(new JsonObject { ["row_id"] = id, ["fingerprint"] = "file-audit:" + id });
+            if (tab == "out-of-hours" && !actionEpisodes) keys.Add(new JsonObject { ["row_id"] = id, ["fingerprint"] = "file-audit:" + id });
+            var members = Array(row["member_actions"]);
+            row.Remove("member_actions");
+            if (actionEpisodes && Text(row, "record_unit") != "saved_event_group")
+                foreach (var member in members.Count == 0 ? new JsonArray(id) : members)
+                {
+                    var action = member!.GetValue<string>();
+                    groupByMember[action] = id;
+                    memberRows.Add(new JsonObject { ["id"] = action, ["agent_id"] = row["agent_id"]?.DeepClone(),
+                        ["source_instance_id"] = row["source_instance_id"]?.DeepClone(),
+                        ["collection_scope_id"] = row["collection_scope_id"]?.DeepClone() });
+                }
         }
-        if (keys.Count == 0 && !actionEpisodes) return;
-        string episodeLinks = actionEpisodes ? "union all select row_id,finding_id from public.file_action_problems462($3::jsonb)" : "";
-        object?[] arguments = actionEpisodes ? [keys, domains, rows] : [keys, domains];
+        foreach (var batch in memberRows.Chunk(200))
+        {
+            var found = await session.QueryAsync("select row_id,finding_id from public.file_action_problems462($1::jsonb)", ct,
+                new JsonArray(batch));
+            foreach (var match in found)
+                keys.Add(new JsonObject { ["row_id"] = groupByMember[Text(match, "row_id")!], ["finding_id"] = match!["finding_id"]!.DeepClone() });
+        }
+        if (keys.Count == 0 && !massEpisodes) return;
+        string episodeLinks = massEpisodes ? "union all select row_id,finding_id from public.file_mass_problem_links465($3::jsonb)" : "";
+        object?[] arguments = massEpisodes ? [keys, domains, rows] : [keys, domains];
         var problems = await session.QueryAsync($"""
-            with keys as (select * from jsonb_to_recordset($1::jsonb) k(row_id text,event_id bigint,fingerprint text)),
+            with keys as (select * from jsonb_to_recordset($1::jsonb) k(row_id text,event_id bigint,fingerprint text,finding_id bigint)),
             links as (
                 select k.row_id,e.finding_id from keys k join public.finding_event_details337 e on e.event_db_id=k.event_id
                 union all
                 select k.row_id,f.id from keys k join public.findings_active f using(fingerprint)
+                union all
+                select row_id,finding_id from keys where finding_id is not null
                 {episodeLinks}
             )
             select distinct on (row_id) row_id,findings.id as problem_id

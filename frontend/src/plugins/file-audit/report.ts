@@ -18,17 +18,33 @@ export function fileAuditPageSize(value: unknown, maximum = 200): number {
   return sizes.includes(requested) ? requested : sizes.filter(size => size <= requested).at(-1) ?? sizes[0] ?? 50;
 }
 
-export const FILE_SERVER_VIEWS = ["actions", "overview", "permissions"] as const;
-export type FileServerView = typeof FILE_SERVER_VIEWS[number];
-export const ACTION_FILTERS = ["all", "delete", "changes", "permission-changes", "access-denials", "out-of-hours"] as const;
-export type ActionFilter = typeof ACTION_FILTERS[number];
+export const FILE_SERVER_VIEWS = ["overview", "actions", "mass-operations", "access-denials", "out-of-hours", "permissions"] as const;
+export const FILE_ACTIVITY_VIEWS = ["actions", "mass-operations", "permission-changes", "access-denials", "out-of-hours"] as const;
+export type FileActivityView = typeof FILE_ACTIVITY_VIEWS[number];
+export type FileServerView = typeof FILE_SERVER_VIEWS[number] | "permission-changes";
+export const isFileActivityView = (view: FileServerView): view is FileActivityView =>
+  FILE_ACTIVITY_VIEWS.some(activity => activity === view);
 
-export function fileAuditFields(view: FileServerView): FilterField[] {
-  if (view === "actions") return [
-    { key: "path_search", label: t("file-audit.screen.path_search"), placeholder: t("file-audit.screen.path_search"), kind: "text", immediate: true },
+type SelectOptions = Extract<FilterField, { kind: "select" }>["options"];
+export function fileAuditFields(view: FileServerView, servers: SelectOptions = [], shares: SelectOptions = []): FilterField[] {
+  if (!isFileActivityView(view)) return [];
+  return [
+    { key: "source_instance_id", label: t("file-audit.workspace.server"), kind: "select", options: servers },
+    { key: "share", label: t("file-audit.workspace.resource_path"), kind: "select", options: shares },
+    ...(view === "actions" ? [{ key: "operation", label: t("file-audit.activity.operation"), kind: "select" as const, options: [
+      { value: "", label: t("filters.any") },
+      ...(["read", "write", "delete", "rename"] as const).map(value => ({
+        value, label: t(`reports.v2.file-audit.actions.columns.operation.labels.${value}`),
+      })),
+      { value: "permissions", label: t("file-audit.screen.permission_change") },
+      { value: "access_denied", label: t("file-audit.screen.access_denied") },
+    ] }] : []),
     { key: "account_search", label: t("file-audit.screen.account_search"), placeholder: t("file-audit.screen.account_search"), kind: "text", immediate: true },
+    ...(view !== "mass-operations" ? [
+      { key: "path_search", label: t("file-audit.screen.path_search"), placeholder: t("file-audit.screen.path_search"), kind: "text" as const, immediate: true },
+      { key: "include_nested", label: t("file-audit.activity.nested"), kind: "checkbox" as const, onValue: "true", offValue: "false" },
+    ] : []),
   ];
-  return [];
 }
 
 export function fileAuditParams(definition: ReportDefinitionDto, values: FilterValues, timeZone: string, cursor?: string | null, anchor = new Date(), limit = 50) {

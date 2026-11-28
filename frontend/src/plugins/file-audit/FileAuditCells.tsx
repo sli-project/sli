@@ -22,20 +22,18 @@ export function FileAuditInterval({ row }: { row: FileAuditRow }) {
   const { formatCell } = useDateFormatters();
   const { timeZone } = useTimeZone();
   const aggregate = row.aggregate as { first_seen_utc?: string; last_seen_utc?: string; count?: number } | undefined;
-  if (!aggregate?.first_seen_utc) return <>{formatCell(row.observed_at, "datetime")}</>;
-  const first = aggregate.first_seen_utc;
-  const last = aggregate.last_seen_utc;
+  const first = aggregate?.first_seen_utc ?? row.first_seen_utc;
+  if (typeof first !== "string") return <>{formatCell(row.observed_at, "datetime")}</>;
+  const last = aggregate?.last_seen_utc ?? row.last_seen_utc;
   const start = formatDateTime(first, timeZone, { seconds: true, withYear: false });
-  const end = last && last !== first ? formatDateTime(last, timeZone, { seconds: true, withYear: false,
+  const end = typeof last === "string" && last !== first ? formatDateTime(last, timeZone, { seconds: true, withYear: false,
     timeOnly: formatDateTime(first, timeZone, { withTime: false }) === formatDateTime(last, timeZone, { withTime: false }) }) : null;
-  return <span className="sli-file-audit__interval">
-    <span>{start}{end ? "\u2013" + end : null}</span>{aggregate.count != null ? <small>×{aggregate.count}</small> : null}
-  </span>;
+  return <span className="sli-file-audit__interval">{start}{end ? "\u2013" + end : null}</span>;
 }
 
-const hostText = (value: unknown, limit = 4096) => typeof value === "string" ? value.slice(0, limit) : undefined;
+export const hostText = (value: unknown, limit = 4096) => typeof value === "string" ? value.slice(0, limit) : undefined;
 const when = (key: string) => ({ key, kind: "datetime" as const });
-const problemNumber = (row: FileAuditRow) => {
+export const problemNumber = (row: FileAuditRow) => {
   const value = row.problem_id;
   return (typeof value === "number" && Number.isSafeInteger(value) || typeof value === "string") && /^[1-9]\d*$/.test(String(value))
     ? String(value) : null;
@@ -62,33 +60,10 @@ export function fileAuditOperation(row: FileAuditRow, column?: ReportColumnDto) 
     : column ? columnValue(column, row) : undefined;
 }
 
-export function fileServerColumns(view: FileServerView, declared: ReportColumnDto[], rows: FileAuditRow[],
+export function fileServerColumns(view: Extract<FileServerView, "overview" | "permissions">, declared: ReportColumnDto[],
   params: URLSearchParams | null, canPermissions: boolean, open: (row: FileAuditRow) => void,
   hrefFor: (tab: FileAuditTab, row: FileAuditRow, extra?: Record<string, string | null>) => string,
   refresh: () => void): TableColumn<FileAuditRow>[] {
-  const operation = declared.find(column => column.key === "operation");
-  if (view === "actions") {
-    const columns: TableColumn<FileAuditRow>[] = [
-      { ...when("observed_at"), label: t("file-audit.screen.time"), render: row => <FileAuditInterval row={row}/> },
-      { key: "operation", label: t("file-audit.operation"), value: row => fileAuditOperation(row, operation) },
-      { key: "path", label: t("file-audit.screen.path"), wrap: true, width: "35%", render: row => {
-        const path = hostText(row.path);
-        const previous = row.operation === "rename" ? hostText(row.old_path) : undefined;
-        return <button type="button" className="sli-ds-table__link" onClick={event => { event.stopPropagation(); open(row); }}>
-          {path && previous ? previous + " → " + path : path ?? "—"}
-        </button>;
-      } },
-      { key: "account", label: t("file-audit.screen.who"), width: "20%", value: row => hostText(row.subject_name, 256) || hostText(row.subject_sid, 256) },
-      { key: "client_ip", label: t("file-audit.screen.from"), value: row => hostText(row.client_ip, 64) },
-      { key: "source_name", label: t("file-audit.workspace.server"), value: row => hostText(row.source_name, 256) },
-      { key: "problem", label: t("file-audit.screen.problem"), render: row => {
-        const id = problemNumber(row);
-        return id ? <a href={withDomain('/app/report/security.problems?id=' + id, window.location.search)}
-          onClick={event => event.stopPropagation()}>{t("file-audit.screen.problem_number", { id })}</a> : null;
-      } },
-    ];
-    return columns.filter(column => column.key !== "client_ip" || rows.some(row => hostText(row.client_ip, 64)));
-  }
   if (view === "permissions") return [
     { key: "source_name", label: t("file-audit.workspace.server"), value: row => hostText(row.source_name, 256) },
     { key: "path", label: t("file-audit.screen.path"), wrap: true, width: "32%", render: row =>

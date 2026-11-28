@@ -565,10 +565,11 @@ it.each(["ru", "en"] as const)("links a file action to Problems and opens its re
   renderReport(raw.key);
   const table = within(await screen.findByRole("table", { name: t("file-audit.screen.actions") }));
   expect(table.getByText(actor)).toBeTruthy();
+  expect(table.getByText(path)).toBeTruthy();
+  await userEvent.click(table.getByRole("button", { name: t("file-audit.activity.expand") }));
   expect(table.getByRole("link", { name: t("file-audit.screen.problem_number", { id: "7" }) }).getAttribute("href"))
     .toBe("/app/report/security.problems?id=7");
-  await userEvent.click(table.getByRole("button", { name: path }));
-  expect(table.getByText(t("file-audit.workspace.interval")).closest("td")?.colSpan).toBeGreaterThan(1);
+  expect(table.getByText(t("file-audit.workspace.interval"), { selector: "dt" }).closest("td")?.colSpan).toBeGreaterThan(1);
   expect(table.getByText(/4663.*40123/)).toBeTruthy();
 });
 
@@ -735,9 +736,8 @@ it.each(["ru", "en"] as const)("routes File Servers views to their declared data
   renderReport("file-audit.actions");
   await screen.findByRole("table", { name: t("file-audit.screen.actions") });
   expect(screen.getByRole("tab", { name: t("file-audit.screen.actions") }).getAttribute("aria-selected")).toBe("true");
-  expect(screen.queryByRole("tab", { name: t("file-audit.tabs.mass-operations") })).toBeNull();
-  for (const view of ["overview", "permissions"] as const) {
-    const name = t(`file-audit.screen.${view}`);
+  for (const view of ["overview", "mass-operations", "access-denials", "out-of-hours", "permissions"] as const) {
+    const name = view === "overview" || view === "permissions" ? t(`file-audit.screen.${view}`) : t(`file-audit.tabs.${view}`);
     await userEvent.click(screen.getByRole("tab", { name }));
     await screen.findByRole("table", { name });
     expect(requested.some(url => url.includes("/file-audit." + view + "/data?"))).toBe(true);
