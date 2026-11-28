@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using Npgsql;
 using NpgsqlTypes;
 using Sli.Server.Agents.Control;
+using Sli.Server.Tests.Ad;
 
 namespace Sli.Server.Tests.Workstations;
 
@@ -52,7 +53,9 @@ internal static class NativeWorkstationsReportFixture
                     jsonb_build_array(jsonb_build_object('module_id','sli.workstations','enabled',true,'config',@policy::jsonb))
                 from generate_series(1,@count) n;
             select public.set_workstation_journal_grant412(id,true) from sli_agents where id::text like '41700000-0000-4000-8000-%';
-            """, ("domain", domain), ("count", Count), ("now", now.UtcDateTime), ("policy", policy));
+            update sli_agents set rights_probe='{"windows_product_type":"WinNT","windows_product":{"name":"Windows 11 Pro","version":"10.0.26100"}}'
+                where id=@agent;
+            """, ("domain", domain), ("count", Count), ("now", now.UtcDateTime), ("policy", policy), ("agent", Agent));
         await using (var bindings = new NpgsqlCommand("""
             select count(*) from sli_agents a
             cross join lateral public.workstation_journal_scope412(a.id,null,null) binding
@@ -78,6 +81,41 @@ internal static class NativeWorkstationsReportFixture
         };
         var service = Method("System", "Service Control Manager", Source.ToString("D"));
         var other = Method("System", "Service Control Manager", "41800000-0000-4000-8000-000000999999");
+        const string sid = "S-1-5-21-100000001-200000002-300000003-1001";
+        const string directorySid = "S-1-5-21-100000001-200000002-300000003-1002";
+        var process = (JsonObject)security.DeepClone();
+        process["$principals"] = new JsonObject
+        {
+            ["TargetUserSid"] = "S-1-0-0", ["TargetUserName"] = "-", ["TargetDomainName"] = "-",
+            ["SubjectUserSid"] = sid, ["SubjectUserName"] = "user", ["SubjectDomainName"] = "WS-WORKSPACE-001"
+        };
+        var processFields = new JsonObject
+        {
+            ["NewProcessName"] = @"C:\Tools\editor.exe", ["ParentProcessName"] = @"C:\Windows\explorer.exe",
+            ["CommandLine"] = "editor.exe draft.txt"
+        };
+        var directoryProcess = (JsonObject)security.DeepClone();
+        directoryProcess["$principals"] = new JsonObject
+        {
+            ["TargetUserSid"] = directorySid, ["SubjectUserSid"] = sid,
+            ["SubjectUserName"] = "user", ["SubjectDomainName"] = "WS-WORKSPACE-001"
+        };
+        var run = await NewLogonPairsNativeFixture.StoreRunAsync(owner, domain, now, ct);
+        await Execute("""
+            insert into ad_context_sections(run_id,section_name,status,record_count) values(@run,'directory_accounts','complete',1);
+            insert into storage_v2_entity_type(value) values('ad_user') on conflict do nothing;
+            insert into entities_v2(entity_type_id,natural_key,display_name,domain_id,source_core_sha256)
+                select id,'workstation-fixture-directory-user','Fixture directory user',@domain,sha256('fixture'::bytea)
+                from storage_v2_entity_type where value='ad_user';
+            insert into ad_context_entity_aliases(entity_id,domain_id,alias_type,alias_value,normalized_value,first_seen_utc,last_seen_utc,source_run_id)
+                select id,domain_id,'object_sid',@sid,lower(@sid),@now,@now,@run
+                from entities_v2 where natural_key='workstation-fixture-directory-user';
+            insert into ad_context_entity_versions(entity_id,source_section,valid_from_utc,last_observed_at_utc,content_sha256,attributes_json,source_run_id)
+                select id,'directory_accounts',@now,@now,sha256('fixture-account'::bytea),
+                    '{"identity":{"kind":"ad_user"},"attributes":{"sam_account_name":"directory-user"}}',@run
+                from entities_v2 where natural_key='workstation-fixture-directory-user';
+            """, ("run", run), ("domain", domain), ("sid", directorySid), ("now", now.UtcDateTime));
+        var otherSecurity = Method("Security", "Microsoft-Windows-Security-Auditing", "41800000-0000-4000-8000-000000999999");
         // Seed retained individual facts. Direct event_hot inserts deliberately
         // lose caller-supplied origins in the admission trigger; the existing
         // signed-packet integration test covers the actual hot ingestion path.
@@ -89,13 +127,26 @@ internal static class NativeWorkstationsReportFixture
                     '{"ServiceName":"Workspace service","ImagePath":"C:\\Program Files\\Workspace\\service.exe"}'),
                     (@event+1,@repeat_window+interval '1 minute',4625,@domain,'EXAMPLE\\operator','EXAMPLE\\user','192.0.2.41',@host,@failed_logon,'{"Status":"0xc000006d"}','{"LogonType":"3"}'),
                     (@event+2,@repeat_window+interval '2 minutes',4625,@domain,'EXAMPLE\\operator','EXAMPLE\\user','192.0.2.41',@host,@failed_logon,'{"Status":"0xc000006d"}','{"LogonType":"3"}'),
-                    (@event+3,@now-interval '2 minutes',7045,@domain,'OTHER-SOURCE',null,null,@host,@other,'{}','{}');
+                    (@event+3,@now-interval '2 minutes',7045,@domain,'OTHER-SOURCE',null,null,@host,@other,'{}','{}'),
+                    (@event+4,@repeat_window+interval '4 minutes 1 second',4688,@domain,@sid,null,null,@host,@process,'{}',@process_fields),
+                    (@event+5,@repeat_window+interval '4 minutes 12 seconds',4688,@domain,@sid,null,null,@host,@process,'{}',@process_fields),
+                    (@event+6,@repeat_window+interval '5 minutes 1 second',4688,@domain,@sid,null,null,@host,@process,'{}',@process_fields),
+                    (@event+7,@repeat_window+interval '4 minutes 20 seconds',4688,@domain,@sid,null,null,@host,@process,'{}',@process_fields-'CommandLine'),
+                    (@event+8,@repeat_window+interval '6 minutes',6416,@domain,null,null,null,@host,@security,'{}',
+                        '{"ClassName":"DiskDrive","ClassId":"fixture-class-id","DeviceDescription":"Example USB drive"}'),
+                    (@event+9,@repeat_window+interval '7 minutes',4688,@domain,@sid,@directory_sid,null,@host,@directory_process,'{}',@process_fields);
             insert into event_cold_daily(day,grouping_key,event_kind,domain_id,actor,target,source,computer,method,outcome,event_count,first_seen_utc,last_seen_utc)
                 values(@first::date,sha256(convert_to('workstation-workspace-daily','UTF8')),4624,@domain,
-                    'EXAMPLE\\operator','EXAMPLE\\user','192.0.2.41',@host,@security,'{}',37,@first,@last);
+                    'EXAMPLE\\operator','EXAMPLE\\user','192.0.2.41',@host,@security,'{"LogonType":"10"}',37,@first,@last),
+                    (@first::date,sha256(convert_to('workstation-workspace-service-logon','UTF8')),4624,@domain,
+                    'EXAMPLE\\operator','EXAMPLE\\user',null,@host,@security,'{"LogonType":"5"}',1,@first,@last+interval '5 minutes'),
+                    (@first::date,sha256(convert_to('workstation-workspace-other-logon','UTF8')),4624,@domain,
+                    'OTHER-SOURCE',null,null,@host,@other_security,'{"LogonType":"11"}',1,@first,@last+interval '10 minutes');
             """, ("event", ExactEvent), ("now", now.UtcDateTime), ("first", first.UtcDateTime), ("last", last.UtcDateTime),
             ("domain", domain), ("host", Host), ("service", service), ("security", security), ("other", other),
-            ("repeat_window", repeatWindow.UtcDateTime), ("failed_logon", failedLogon));
+            ("repeat_window", repeatWindow.UtcDateTime), ("failed_logon", failedLogon), ("process", process),
+            ("sid", sid), ("process_fields", processFields), ("other_security", otherSecurity),
+            ("directory_sid", directorySid), ("directory_process", directoryProcess));
         return new JsonObject
         {
             ["station_id"] = Agent.ToString("D"), ["agent_id"] = Agent.ToString("D"),
@@ -108,7 +159,7 @@ internal static class NativeWorkstationsReportFixture
             ["group_summary_key"] = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(
                 first.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ":" +
                 Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes("workstation-workspace-daily")))))),
-            ["group_count"] = 37, ["event_count"] = 40, ["group_first_seen_utc"] = first.ToString("O", CultureInfo.InvariantCulture),
+            ["group_count"] = 37, ["event_count"] = 46, ["group_first_seen_utc"] = first.ToString("O", CultureInfo.InvariantCulture),
             ["group_last_seen_utc"] = last.ToString("O", CultureInfo.InvariantCulture)
         };
     }

@@ -32,7 +32,6 @@
 .sli-workstations__event, .sli-workstations__collection { display: grid; gap: var(--sli-space-4); min-width: 0; }
 .sli-workstations__event h2, .sli-workstations__collection h2 { font-size: var(--sli-text-lg); margin: 0 0 var(--sli-space-3); }
 .sli-workstations__event-heading { display: flex; align-items: start; justify-content: space-between; gap: var(--sli-space-4); }
-.sli-workstations__eyebrow { margin: 0 0 var(--sli-space-2); color: var(--sli-text-muted); font-size: var(--sli-text-sm); }
 .sli-workstations__event > .sli-ds-facts, .sli-workstations__collection .sli-ds-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sli-space-2) var(--sli-space-5); }
 .sli-workstations__event .sli-ds-facts > div, .sli-workstations__collection .sli-ds-facts > div { padding-block: var(--sli-space-2); border-bottom: 1px solid var(--sli-border); }
 .sli-workstations__collection section { min-width: 0; display: grid; gap: var(--sli-space-3); }

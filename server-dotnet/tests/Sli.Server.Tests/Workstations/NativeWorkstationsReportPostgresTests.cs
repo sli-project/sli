@@ -93,7 +93,7 @@ public sealed class NativeWorkstationsReportPostgresTests
         Assert.All(rows, row =>
         {
             Assert.Equal("Windows 11 Pro", row.Text("operating_system"));
-            Assert.Equal(observed, DateTimeOffset.Parse(row.Text("last_logon_utc")!));
+            Assert.Null(row!["last_logon_utc"]);
             Assert.Null(row!["agent_key"]);
             Assert.Null(row["agent_version"]);
         });
@@ -164,6 +164,12 @@ public sealed class NativeWorkstationsReportPostgresTests
             Assert.Equal(NativeWorkstationsReportFixture.Count, page["filtered_count"]!.GetValue<int>());
             Assert.True(page["has_more"]!.GetValue<bool>());
             Assert.Equal(1, page["collections"]!["paging"]![0]!["start"]!.GetValue<int>());
+            var fleet = page["items"]!.AsArray();
+            var reporting = Assert.Single(fleet, row => row.Text("station_id") == sample.Text("station_id"));
+            Assert.Equal("Windows 11 Pro", reporting.Text("operating_system"));
+            Assert.Equal("10.0.26100", reporting.Text("operating_system_version"));
+            Assert.Equal(DateTimeOffset.Parse(sample.Text("group_last_seen_utc")!), DateTimeOffset.Parse(reporting.Text("last_logon_utc")!));
+            Assert.All(fleet.Where(row => row.Text("station_id") != sample.Text("station_id")), row => Assert.Null(row!["last_logon_utc"]));
             if (limit == 200) twoHundred = page;
         }
         var last = await Get("/api/v2/reports/workstations.overview/data?" + filter + "&limit=200&cursor="
@@ -180,7 +186,7 @@ public sealed class NativeWorkstationsReportPostgresTests
         var station = body["detail"]!["station"]!;
         Assert.Equal(sample["station_id"]!.ToString(), station["station_id"]!.ToString());
         Assert.Equal(sample["source_instance_id"]!.ToString(), station["source_instance_id"]!.ToString());
-        Assert.Equal("Windows 11", station["operating_system"]!.ToString());
+        Assert.Equal("Windows 11 Pro", station["operating_system"]!.ToString());
         Assert.Equal(2, station["policy_revision"]!.GetValue<int>());
         Assert.Equal(1, station["applied_policy_revision"]!.GetValue<int>());
         Assert.Equal("enabled", station["collection_state"]!.ToString());
@@ -190,10 +196,10 @@ public sealed class NativeWorkstationsReportPostgresTests
             Assert.Null(station[unavailable]);
         var events = body["detail"]!["events"]!;
         Assert.Equal("ok", events["state"]!.ToString());
-        Assert.Equal(40L, events["journal_event_count"]!.GetValue<long>());
+        Assert.Equal(46L, events["journal_event_count"]!.GetValue<long>());
         var rows = events["items"]!.AsArray();
-        Assert.Equal(3, rows.Count);
-        Assert.Equal(40L, rows.Sum(row => row!["event_count"]!.GetValue<long>()));
+        Assert.Equal(8, rows.Count);
+        Assert.Equal(46L, rows.Sum(row => row!["event_count"]!.GetValue<long>()));
         Assert.DoesNotContain("OTHER-SOURCE", events.ToJsonString());
         var exact = Assert.Single(rows, row => row!["id"]?.ToString() == sample["exact_event_id"]!.ToString())!;
         Assert.True(exact["journal_evidence_available"]!.GetValue<bool>());
@@ -203,9 +209,26 @@ public sealed class NativeWorkstationsReportPostgresTests
         Assert.Equal(DateTimeOffset.Parse(sample["group_first_seen_utc"]!.ToString()), DateTimeOffset.Parse(daily["first_seen_utc"]!.ToString()));
         Assert.Equal(DateTimeOffset.Parse(sample["group_last_seen_utc"]!.ToString()), DateTimeOffset.Parse(daily["last_seen_utc"]!.ToString()));
         Assert.False(daily["journal_evidence_available"]!.GetValue<bool>());
-        var repeated = Assert.Single(rows, row => row!["journal_expandable"]?.GetValue<bool>() == true)!;
+        var repeated = Assert.Single(rows, row => row!["event_id"]!.GetValue<int>() == 4625 && row["journal_expandable"]?.GetValue<bool>() == true)!;
         Assert.Equal(2L, repeated["event_count"]!.GetValue<long>());
         Assert.False(repeated["journal_evidence_available"]!.GetValue<bool>());
+        var processes = rows.Where(row => row!["event_id"]!.GetValue<int>() == 4688).ToArray();
+        Assert.Equal(4, processes.Length);
+        var starts = Assert.Single(processes, row => row!["journal_expandable"]!.GetValue<bool>())!;
+        Assert.Equal(2L, starts["event_count"]!.GetValue<long>());
+        Assert.Equal(11, (DateTimeOffset.Parse(starts.Text("last_seen_utc")!) - DateTimeOffset.Parse(starts.Text("first_seen_utc")!)).TotalSeconds);
+        var process = starts["workstation_event"]!;
+        Assert.Equal(@"C:\Tools\editor.exe", process.Text("image_path"));
+        Assert.Equal(@"C:\Windows\explorer.exe", process.Text("parent_image_path"));
+        Assert.Equal(@"WS-WORKSPACE-001\user", process.Text("account"));
+        Assert.Equal("editor.exe draft.txt", process.Text("command_line"));
+        Assert.Single(processes, row => row!["workstation_event"]!["command_line"] is null);
+        var resolved = Assert.Single(processes, row => row!["id"]!.GetValue<long>() == NativeWorkstationsReportFixture.ExactEvent + 9);
+        Assert.EndsWith(@"\directory-user", resolved!["workstation_event"].Text("account"), StringComparison.Ordinal);
+        Assert.Equal(@"WS-WORKSPACE-001\user", resolved["workstation_event"].Text("initiator"));
+        var device = Assert.Single(rows, row => row!["event_id"]!.GetValue<int>() == 6416)!["workstation_event"]!;
+        Assert.Equal("DiskDrive", device.Text("device_class"));
+        Assert.Equal("Example USB drive", device.Text("device_name"));
         Assert.All(rows, row => Assert.Null(row!["journal_finding_id"])); // No security.queue grant is borrowed.
 
         // The public journal link uses the same source/window selection. The
@@ -219,7 +242,7 @@ public sealed class NativeWorkstationsReportPostgresTests
             using var response = await journalHost.Client.GetAsync("/api/v2/reports/events.journal/data?" + linkQuery, ct);
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             var linked = await ReportFixture.Body(response);
-            Assert.Equal(40L, linked["journal_event_count"]!.GetValue<long>());
+            Assert.Equal(46L, linked["journal_event_count"]!.GetValue<long>());
             Assert.DoesNotContain("OTHER-SOURCE", linked.ToJsonString());
         }
         var authentication = await Get(detailPath + "&view=authentication");
@@ -229,8 +252,14 @@ public sealed class NativeWorkstationsReportPostgresTests
 
         Authorize(WorkstationWorkspaceTests.AuthorizedFacts(exact: false));
         var noEvidence = await Get(detailPath);
-        Assert.Equal(40L, noEvidence["detail"]!["events"]!["journal_event_count"]!.GetValue<long>());
+        Assert.Equal(46L, noEvidence["detail"]!["events"]!["journal_event_count"]!.GetValue<long>());
         Assert.All(noEvidence["detail"]!["events"]!["items"]!.AsArray(), row => Assert.False(row!["journal_evidence_available"]!.GetValue<bool>()));
+        Assert.All(noEvidence["detail"]!["events"]!["items"]!.AsArray().Where(row => row!["event_id"]!.GetValue<int>() == 4688),
+            row =>
+            {
+                Assert.Equal(@"C:\Tools\editor.exe", row!["workstation_event"].Text("image_path"));
+                Assert.Null(row["workstation_event"]!["command_line"]);
+            });
         Authorize(WorkstationWorkspaceTests.AuthorizedFacts(journal: false));
         var stationOnly = await Get(detailPath);
         Assert.Equal("denied", stationOnly["detail"]!["events"]!["state"]!.ToString());

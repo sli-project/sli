@@ -103,6 +103,25 @@ public sealed class ShortEventRowTests
     }
 
     [Fact]
+    public void Workstation_process_parent_and_device_class_survive_short_storage()
+    {
+        var process = Native(4688, new() { ["NewProcessName"] = @"C:\Tools\editor.exe",
+            ["ParentProcessName"] = @"C:\Windows\explorer.exe", ["CommandLine"] = "-" });
+        var row = Assert.IsType<ShortEventRow>(ShortEventRow.Create(91, 7, process, Direct4624Projection.Create(process), workstation: true));
+        Assert.Equal(@"C:\Tools\editor.exe", row.Fields["NewProcessName"]);
+        Assert.Equal(@"C:\Windows\explorer.exe", row.Fields["ParentProcessName"]);
+        Assert.Null(row.Fields["CommandLine"]);
+        Assert.False(Project(process)!.Fields.ContainsKey("ParentProcessName"));
+
+        var device = Native(6416, new() { ["ClassName"] = "DiskDrive", ["ClassId"] = "fixture-class-id",
+            ["DeviceDescription"] = new string('x', 600) });
+        var recognized = Assert.IsType<ShortEventRow>(ShortEventRow.Create(92, 7, device, Direct4624Projection.Create(device), workstation: true));
+        Assert.Equal("DiskDrive", recognized.Fields["ClassName"]);
+        Assert.Equal("fixture-class-id", recognized.Fields["ClassId"]);
+        Assert.Equal(WorkstationsModule.DeviceFieldMaxBytes, recognized.Fields["DeviceDescription"]!.Length);
+    }
+
+    [Fact]
     public void Explicit_credentials_keep_both_accounts_and_the_destination_server()
     {
         var result = Assert.IsType<ShortEventRow>(Project(Native(4648, new() {

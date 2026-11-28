@@ -72,6 +72,10 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
         {
             foreach (var row in rows)
             {
+                var workstationEvent = row["_workstation_event"] as JsonObject;
+                row.Remove("_workstation_event");
+                if (workstationEvent is not null && Integer(row["event_id"], out long workstationCode))
+                    row["workstation_event"] = PresentWorkstationEvent(row, workstationEvent, workstationCode, false);
                 var members = row["_journal_members"] as JsonArray;
                 row.Remove("_journal_members");
                 if (row["_journal_origin"] is not JsonObject origin) continue;
@@ -82,7 +86,10 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
                 if (Identity(origin) is not {} identity || !Integer(row["id"], out long id)
                     || !Integer(origin["domain_id"], out long domain) || !Integer(origin["server_id"], out long server)) continue;
                 var ids = new HashSet<long>();
-                if (CanReadExact(domain, server, identity.Channel))
+                bool exact = CanReadExact(domain, server, identity.Channel);
+                if (exact && workstationEvent is not null)
+                    row["workstation_event"] = PresentWorkstationEvent(row, workstationEvent, identity.EventId, true);
+                if (exact)
                 {
                     ids.Add(id);
                     if (DomainChangeDomain(c.Access, origin) is { } changeDomain) row["journal_change_domain"] = changeDomain;
@@ -95,6 +102,8 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
                             ids.Add(memberId);
                 if (ids.Count > 0) evidence.Add(row, ids);
             }
+            if (journal.SourcePlugin == "sli.workstations" && journal.Domain is { } workstationDomain)
+                await ResolveWorkstationAccountsAsync(rows, workstationDomain, c.Access.Capabilities, ct);
         }
         else if (identities.Count > 0)
         {
@@ -127,6 +136,54 @@ public sealed class EventsJournalReader(ReportRunner runner, IAccessFactsReposit
         if (evidence.Count > 0) await LinkProblemsAsync(c, evidence, ct);
         return Render(c, raw, rows);
     }
+    internal static JsonObject PresentWorkstationEvent(JsonObject row, JsonObject fields, long code, bool exact)
+    {
+        var result = new JsonObject();
+        if (code == 4688)
+        {
+            foreach (string field in new[] { "image_path", "parent_image_path" })
+                if (fields.Text(field) is { Length: > 0 } path) result[field] = path;
+            if (exact && fields.Text("command_line") is { Length: > 0 } line) result["command_line"] = line;
+            if (row.Text("journal_account") is { Length: > 0 } account) result["account"] = account;
+            if (row.Text("journal_initiator") is { Length: > 0 } initiator) result["initiator"] = initiator;
+        }
+        if (code == 6416)
+            foreach (string field in new[] { "device_name", "device_class" })
+                if (fields.Text(field) is { Length: > 0 } value) result[field] = value;
+        return result;
+    }
+
+    private async Task ResolveWorkstationAccountsAsync(JsonObject[] rows, long domain, CapabilityDecisionSet access, CancellationToken ct)
+    {
+        var accounts = rows.Select(row => row["workstation_event"] as JsonObject)
+            .OfType<JsonObject>().Where(row => row.Text("account") is { Length: > 5 } sid &&
+                sid.StartsWith("S-1-", StringComparison.OrdinalIgnoreCase) && sid.AsSpan(4).IndexOfAnyExcept("0123456789-") < 0)
+            .GroupBy(row => row.Text("account").ToLowerInvariant(), StringComparer.Ordinal).ToDictionary(group => group.Key);
+        if (accounts.Count == 0) return;
+
+        await using var db = await database.OpenAsync(false, ct);
+        var matches = await db.QueryAsync("""
+            select distinct alias.normalized_value as sid,alias.entity_id,
+                   left(coalesce(nullif(d.netbios_name,''),d.fqdn)||chr(92)||
+                        nullif(btrim(v.attributes_json#>>'{attributes,sam_account_name}'),''),256) as name
+            from ad_context_entity_aliases alias
+            join domains d on d.id=alias.domain_id and not d.is_archived
+            join ad_context_entity_versions v on v.entity_id=alias.entity_id and v.valid_to_utc is null
+            join ad_context_runs run on run.run_id=v.source_run_id and run.status='completed'
+            where alias.domain_id=$1 and alias.alias_type='object_sid' and alias.normalized_value=any($2)
+              and v.source_section='directory_accounts' and v.attributes_json#>>'{identity,kind}'='ad_user'
+            """, ct, domain, accounts.Keys.ToArray());
+        foreach (var match in matches.OfType<JsonObject>().GroupBy(row => row.Text("sid")))
+        {
+            if (match.Count() != 1 || !accounts.TryGetValue(match.Key, out var events)) continue;
+            var account = match.Single();
+            if (account.Text("name") is not { Length: > 0 } name || !Integer(account["entity_id"], out long entity)) continue;
+            IReadOnlyList<IReadOnlyList<AccessResource>> resources = [[new("entity", entity) { DomainId = domain }]];
+            if (!ResourceAccessDecisions.Capability(access, "field.identity_basic", resources).Allowed) continue;
+            foreach (var row in events) row["account"] = name;
+        }
+    }
+
     internal static JournalOptions? Options(ReportQueryContext c)
     {
         long? Id(string key) => c.Params[key] is null ? null : long.TryParse(c.Params[key]!.ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out long id) && id > 0

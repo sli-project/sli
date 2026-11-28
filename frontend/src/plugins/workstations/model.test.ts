@@ -68,6 +68,18 @@ it("accepts nullable native metadata but rejects a retained inventory projection
   expect(() => stationRows([{ station_id: "ws:ad:123", metadata: { display_name: "retained" } }])).toThrow("workstation_response_invalid");
 });
 
+it("keeps same-time workstation facts selectable when exact event IDs are withheld", () => {
+  const time = "2026-11-25T10:00:00Z";
+  const [process, device] = eventRows([
+    { event_id: 4688, time_created_utc: time, event_count: 2, journal_expandable: true,
+      workstation_event: { image_path: "C:\\Tools\\editor.exe" } },
+    { event_id: 6416, time_created_utc: time, event_count: 1, workstation_event: { device_name: "Example USB drive" } },
+  ]);
+  expect(process).toMatchObject({ id: null, imagePath: "C:\\Tools\\editor.exe", group: true, evidenceAvailable: false });
+  expect(device).toMatchObject({ id: null, deviceName: "Example USB drive", group: false, evidenceAvailable: false });
+  expect(process.key).not.toBe(device.key);
+});
+
 it("restores a workstation-local fleet URL and carries the exact server-provided source into journal links", () => {
   const original = `/app/report/workstations.overview?${windowQuery}&search=WS-&cursor=station-page&source_instance_id=${source}`;
   const search = new URLSearchParams({ station: source, station_return: original });
