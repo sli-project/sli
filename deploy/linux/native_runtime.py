@@ -522,7 +522,8 @@ def units(config):
         creds = admin_credentials | ({"runtime_password", "tls_ca"} if command == "health" else set())
         result[f"sli-{command}.service"] = (
             f"[Unit]\nDescription=SLI native {command}\nPartOf=sli-dotnet.target\nWants={db}\nAfter={db}\n" +
-            ("Before=sli-dotnet.target\n" if command == "ready" else "After=sli-ready.service\n") +
+            ("Before=sli-dotnet.target\n" if command == "ready" else
+             "Wants=sli-dotnet-api.service\nAfter=sli-ready.service sli-dotnet-api.service\n") +
             "[Service]\nType=oneshot\n" + ("RemainAfterExit=yes\n" if command == "ready" else "") +
             f"ExecStart=/usr/bin/python3 -I -B {HELPER} control {command}\n"
             "WorkingDirectory=/opt/sli/current\nTimeoutStartSec=12h\nUMask=0077\n"
