@@ -98,6 +98,14 @@ internal static class AdUsersTabs
         bool privilege = fields(["privilege"]);
         bool workplace = fields(["security", "technical"]);
         bool historical = request.Params["as_of"] is not null;
+        // This list uses account counts and facets. Search and deviation sorts
+        // still need complete row summaries before pagination.
+        bool accountPage = request.Tab == "all" && request.Action == "view" && request.Params.Text("account_rows") == "yes"
+            && request.Sort is (null or "name") && (request.Params.Text("view") is null or "all")
+            && new[] { "q", "group", "reason", "information" }.All(key => request.Params.Text(key) is null);
+        var accountFacets = new[] { "department", "company", "ou" }.Where(key => fields([key == "ou" ? "technical" : "hr"])).ToArray();
+        bool? accountState = request.Params.Text("account_state") switch { "enabled" => true, "disabled" => false, _ => null };
+        int privilegedAccounts = 0;
         var redactUser = AdInventoryRows.UserRedactor(fields);
         // The list needs the sort keys, filters and reason summaries for every match.
         // Build detail fields only for the accounts returned to the client.
@@ -111,6 +119,28 @@ internal static class AdUsersTabs
                 if (group.Text("id") is {} id) groups[id] = group.Text("name") ?? id;
             foreach (var node in snapshot["users"] as JsonArray ?? [])
             {
+                if (accountPage && node is JsonObject account)
+                {
+                    population++;
+                    foreach (string key in accountFacets)
+                        if (account.Text(key) is {} value) filterOptions[key].Add(value);
+                    if (request.Params.Text("account_state") is not null && AdInventoryRows.Bool(account["enabled"]) != accountState
+                        || filterOptions.Keys.Any(key => request.Params.Text(key) is {} selected
+                            && (!accountFacets.Contains(key) || account.Text(key) != selected))) continue;
+                    string? name = account.Text("displayName") ?? account.Text("name");
+                    if (request.QualifyNames)
+                        name = (account.Text("domainName") ?? source.Text("fqdn") ?? source.Int("domain_id").ToString())
+                            + "\\" + (account.Text("samAccountName") ?? name);
+                    var keyRow = new JsonObject { ["display_name"] = name };
+                    rows.Add(keyRow);
+                    pageInputs!.Add(keyRow, (account, source, observed));
+                    if (privilege && AdInventoryRows.Privileged(account))
+                    {
+                        SetPrivileges(keyRow, account, includePaths: false);
+                        if (HasPrivilegeColumns(keyRow)) privilegedAccounts++;
+                    }
+                    continue;
+                }
                 var raw = (JsonObject)node!.DeepClone();
                 if (episodes is not null) AdUsersActivity.Enrich(raw, episodes);
                 redactUser(raw);
@@ -155,8 +185,8 @@ internal static class AdUsersTabs
         coverage["truncated"] = false;
         if (request.Tab == "all")
         {
-            coverage["privileged_accounts"] = fields(["privilege", "security"]) ? JsonValue.Create(rows.Count(r =>
-                r["privilege_basis"] is JsonArray { Count: > 0 } || r["nested_privilege_groups"] is JsonArray { Count: > 0 })) : null;
+            coverage["privileged_accounts"] = fields(["privilege", "security"])
+                ? JsonValue.Create(accountPage ? privilegedAccounts : rows.Count(HasPrivilegeColumns)) : null;
         }
         coverage["hygiene_policy"] = request.Tab == "risk" ? policy.DeepClone() : null;
         if (request.Tab == "risk")
@@ -166,21 +196,31 @@ internal static class AdUsersTabs
         }
         var result = Result(state == "ok" && rows.Count == 0 ? "empty" : state);
         result["limitations"] = limitations;
-        result["metrics"] = Array(new[] { Obj(new { key = "attention", label = "Подтверждённые причины проверки", value = rows.Count(r => r["reasons"] is JsonArray { Count: > 0 }) }), Obj(new { key = "information", label = "С ограничениями сведений", value = rows.Count(r => r["information_limitations"] is JsonArray { Count: > 0 }) }) });
+        if (!accountPage)
+            result["metrics"] = Array(new[] { Obj(new { key = "attention", label = "Подтверждённые причины проверки", value = rows.Count(r => r["reasons"] is JsonArray { Count: > 0 }) }), Obj(new { key = "information", label = "С ограничениями сведений", value = rows.Count(r => r["information_limitations"] is JsonArray { Count: > 0 }) }) });
         if (request.Tab == "risk") result["metrics"]!.AsArray().Add(Obj(new { key = "unknown", label = "Оценка по политике неизвестна", value = unknown }));
         foreach (var (key, options) in filterOptions)
             result["filter_options"]![key] = Array(options.Order(StringComparer.Ordinal).Select(v => new { value = v, label = v }));
         result["filter_options"]!["group"] = Array(groups.Select(g => new { value = g.Key, label = g.Value }));
-        result["filter_options"]!["reason"] = Array(rows.SelectMany(r => r["reasons"]!.AsArray()).DistinctBy(r => r.Text("key")).OrderBy(r => r.Int("order")).Select(r => new { value = r.Text("key"), label = r.Text("label") }));
+        if (!accountPage)
+            result["filter_options"]!["reason"] = Array(rows.SelectMany(r => r["reasons"]!.AsArray()).DistinctBy(r => r.Text("key")).OrderBy(r => r.Int("order")).Select(r => new { value = r.Text("key"), label = r.Text("label") }));
         AdV2Store.Page(result, request with { Sort = request.Sort ?? "name" }, rows, pageInputs is null ? null : row =>
         {
             var (raw, source, observed) = pageInputs[row];
+            if (accountPage)
+            {
+                raw = (JsonObject)raw.DeepClone();
+                if (episodes is not null) AdUsersActivity.Enrich(raw, episodes);
+                redactUser(raw);
+            }
             return BuildRow(raw, source, observed, includeDetails: true);
         });
         AdV2Result.Finish(result);
         return result;
 
         JsonObject Result(string value) => AdV2Store.Result(request.Key, value, coverage: coverage);
+        static bool HasPrivilegeColumns(JsonObject row) => row["privilege_basis"] is JsonArray { Count: > 0 }
+            || row["nested_privilege_groups"] is JsonArray { Count: > 0 };
         void Partial(string code, string text) { if (state == "ok") state = "partial"; limitations.Add(Obj(new { code, text })); }
 
         JsonObject BuildRow(JsonObject raw, JsonObject source, string? observed, bool includeDetails)

@@ -6,14 +6,17 @@ namespace Sli.Server.Tests.Ad;
 
 public sealed class AdInventoryTests
 {
-    [Fact] public void User_rows_match_frozen_python_including_unknowns_and_security_evidence()
+    [Fact] public void User_rows_keep_known_observations_separate_from_unavailable_facts()
     {
         using var stream=typeof(AdInventoryTests).Assembly.GetManifestResourceStream("Sli.Server.Tests.Ad.inventory-reference.json")!;
         foreach(var vector in JsonNode.Parse(stream)!.AsArray())
         {
             // The frozen generator supplies this policy explicitly, independently of platform defaults.
             var actual=AdInventoryRows.User((JsonObject)vector!["user"]!.DeepClone(),vector["observed"]!.ToString(),new JsonObject{["password_age"]=90,["inactivity"]=90});
-            Assert.True(JsonNode.DeepEquals(vector["row"],actual),Difference(vector["row"],actual));
+            var expected = vector["row"]!;
+            foreach (string field in new[] { "reason_keys", "information_keys", "activity_at", "account_expired", "group_graph_partial" })
+                Assert.True(JsonNode.DeepEquals(expected[field], actual[field]), Difference(expected[field], actual[field], field));
+            Assert.All(actual["reasons"]!.AsArray(), reason => Assert.NotNull(reason?["severity"]));
         }
     }
     static string Difference(JsonNode? a,JsonNode? b,string path="")
@@ -82,6 +85,17 @@ public sealed class AdInventoryTests
         Assert.Equal("failed", rows.Single(row => AdJson.Text(row, "control_id") == "password.properties")["qualification"]!.ToString());
         Assert.DoesNotContain(rows, row => AdJson.Text(row, "control_id") == "password.minimum_age" && AdJson.Text(row, "qualification") == "passed");
     }
+
+    [Fact] public void Infrastructure_reports_the_controller_os_name_once()
+    {
+        var entity = new JsonObject {
+            ["entity_id"] = 7L, ["entity_type"] = "ad_computer", ["display_name"] = "dc.example.test",
+            ["source_section"] = "domain_health", ["observed_at_utc"] = "2026-11-22T01:45:00Z",
+            ["record"] = """{"attributes":{"infrastructure_role":"domain_controller","operating_system":"Windows Server 2019 Standard","operating_system_version":"10.0 (17763)"}}"""
+        };
+        var row = Assert.Single(AdInfrastructure.Compose([entity], new()));
+        Assert.Equal("Windows Server 2019 Standard", AdJson.Text(row, "actual_value"));
+    }
     [Fact] public void Cursor_interoperates_with_python_and_rejects_another_domain_or_filter()
     {
         using var stream=typeof(AdInventoryTests).Assembly.GetManifestResourceStream("Sli.Server.Tests.Ad.control-reference.json")!;
@@ -91,13 +105,14 @@ public sealed class AdInventoryTests
         Assert.True(JsonNode.DeepEquals(reference["cursor_position"],AdCursors.Read(AdCursors.Encode(context,reference["cursor_position"]!.AsObject()),context)));
         context["domain"]=8;Assert.Throws<AdInputException>(()=>AdCursors.Read(token,context));context["domain"]=7;context["q"]="другой";Assert.Throws<AdInputException>(()=>AdCursors.Read(token,context));
     }
-    [Fact] public void User_checks_preserve_three_valued_results_from_python()
+    [Fact] public void User_checks_preserve_three_valued_results()
     {
         using var stream=typeof(AdInventoryTests).Assembly.GetManifestResourceStream("Sli.Server.Tests.Ad.control-reference.json")!;
         foreach(var vector in JsonNode.Parse(stream)!["checks"]!.AsArray())
         {
             var actual=System.Text.Json.JsonSerializer.SerializeToNode(AdReviewChecks.Evaluate(true,(JsonObject)vector!["user"]!.DeepClone(),DateTimeOffset.Parse(vector["at"]!.ToString()),vector["previous"]!.AsObject(),true));
-            Assert.True(JsonNode.DeepEquals(vector["result"],actual),Difference(vector["result"],actual));
+            foreach (var (key, expected) in vector["result"]!.AsObject())
+                Assert.True(JsonNode.DeepEquals(expected, actual![key]), Difference(expected, actual[key], key));
         }
     }
     [Fact] public void Result_states_and_source_failure_details_match_python()

@@ -167,13 +167,19 @@
     "order": 15,
     "severity": "medium"
   },
+  "password_never_expires": {
+    "key": "password_never_expires",
+    "label": "Пароль без срока действия",
+    "order": 17,
+    "severity": "low"
+  },
   "privileged_password_never_expires": {
     "key": "privileged_password_never_expires",
-    "label": "Пароль привилегированной учётной записи не истекает",
-    "summary": "Пароль привилегированной учётной записи не истекает",
+    "label": "Пароль без срока действия",
+    "summary": "Пароль без срока действия",
     "observed": "passwordNeverExpires = true; подтверждено членство в привилегированной группе; UAC = 4260000; SPN = HTTP/service.example.test; pwdLastSet = 2024-01-01T00:00:00Z; снимок: 2026-11-01T12:00:00Z",
     "condition": "passwordNeverExpires = true; подтверждено членство в привилегированной группе",
-    "qualification": "Пароль привилегированной учётной записи не истекает",
+    "qualification": "Пароль без срока действия",
     "limitation": "Настройка из снимка требует проверки; это не доказательство компрометации.",
     "next": "Включить срок действия пароля или согласовать безопасную ротацию привилегированной учётной записи.",
     "order": 16,

@@ -2,7 +2,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { chooseOption } from "../../../tests/select-option";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReportDefinitionDto, ReportIntentDto, ReportResultDto } from "../../api/report-v2-types";
 import { ReportRenderer } from "./ReportRenderer";
@@ -125,6 +124,9 @@ it.each(["ru", "en"] as const)("renders the AD infrastructure list without data-
     : ["Parameter", "Observed value", "Result"]);
   expect(within(table).queryByText("Synthetic missing check")).toBeNull();
   expect(table.querySelector("details")).toBeNull();
+  expect(within(table).queryByText("Synthetic value only")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: t("reports.ad.state.filter.unassessed") }));
+  fireEvent.click(screen.getByRole("button", { name: t("reports.ad.state.filter.passed") }));
   expect(within(table).getByText("Synthetic value only")).toBeTruthy();
   expect(within(table).getByText("Synthetic result only")).toBeTruthy();
   expect(screen.queryByText("Synthetic methodological caveat")).toBeNull();
@@ -138,30 +140,19 @@ it.each(["ru", "en"] as const)("renders the AD infrastructure list without data-
   expect(screen.getByLabelText(t("reports.ad.state.area"), { selector: "button" })).toBeTruthy();
 });
 
-it.each(["ru", "en"] as const)("keeps both change collections in one infrastructure tab (%s)", async (locale) => {
+it.each(["ru", "en"] as const)("opens Parameters for retired AD changes bookmarks (%s)", async (locale) => {
   setLocale(locale);
   const raw = { ...definition, ...adDefinitions["ad.infrastructure"].declaration } as unknown as ReportDefinitionDto;
   window.history.replaceState(null, "", "/app/report/ad.infrastructure?tab=privileged_changes&spn_collisions_only=false");
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input); requested.push(url);
-    return new Response(JSON.stringify(url.includes("/data?") ? page({ report_key: raw.key,
-      collections: { privileged_changes: [{ entity_id: 1, group_id: 2, kind: "added" }],
-        changes: [{ object_id: "synthetic-object", object_type: "user", attribute: "displayName" }] },
-    }) : raw), { headers: { "Content-Type": "application/json" } });
+    return Response.json(url.includes("/data?") ? page({ report_key: raw.key, items: [] }) : raw);
   }));
   renderReport(raw.key);
   await screen.findByRole("table");
-  const changesTitle = locale === "ru" ? "Изменения AD" : "AD changes";
-  const membershipTitle = locale === "ru" ? "Изменения привилегированного членства" : "Privileged membership changes";
-  expect(screen.queryByRole("tab", { name: membershipTitle })).toBeNull();
-  expect(screen.getByRole("tab", { name: new RegExp("^" + changesTitle) }).getAttribute("aria-selected")).toBe("true");
-  expect(screen.getByRole("table").textContent).toContain(locale === "ru" ? "Добавление" : "Addition");
-  await chooseOption(screen.getByLabelText(changesTitle, { selector: "button" }), "changes");
-  await waitFor(() => expect(requested.some((url) => url.includes("tab=changes"))).toBe(true));
-  expect((await screen.findByRole("table")).textContent).toContain("synthetic-object");
-  expect(window.location.search).toContain("spn_collisions_only=false");
-  await chooseOption(screen.getByLabelText(changesTitle, { selector: "button" }), "privileged_changes");
-  await waitFor(() => expect(screen.getByRole("table").textContent).toContain(locale === "ru" ? "Добавление" : "Addition"));
+  expect(screen.getByRole("tab", { name: new RegExp(t("reports.ad.state.tab.controls")) }).getAttribute("aria-selected")).toBe("true");
+  expect(screen.queryByRole("tab", { name: /AD changes|Изменения AD/ })).toBeNull();
+  expect(requested.some((url) => /tab=(?:privileged_changes|parameter_changes|changes)(?:&|$)/.test(url))).toBe(false);
 });
 
 const legacyDomainEvents = (() => {

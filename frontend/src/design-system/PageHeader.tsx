@@ -26,6 +26,7 @@ export type PageHeaderControls = {
   scope?: ReactNode;
   showBreadcrumbs?: boolean;
   updatedAt?: string | number | null;
+  dataAsOf?: string | null;
   refreshing?: boolean;
   onRefresh?: () => void;
   showRefreshLabel?: boolean;
@@ -80,11 +81,14 @@ function HeaderPeriod({ value, presets, bounds, showBounds, showPrevious = !show
   </>;
 }
 
-function UpdatedTime({ value }: { value: string | number }) {
+function UpdatedTime({ value, snapshot }: { value: string | number; snapshot?: boolean }) {
   const { timeZone } = useTimeZone();
   const instant = new Date(value);
   if (!Number.isFinite(instant.getTime()) || (timeZone !== "browser" && !isValidTimeZone(timeZone))) return null;
   const clock = formatClockWithOffset(instant, timeZone);
+  if (snapshot) return <time className="sli-ds-header__updated" dateTime={instant.toISOString()}>{t("shell.header.dataAsOf", {
+    time: formatDateRange(instant, timeZone), zone: clock.zone,
+  })}</time>;
   return <time className="sli-ds-header__updated" dateTime={instant.toISOString()}>{t("shell.header.updated", { ...clock, date: formatDateTime(instant, false, timeZone) })}</time>;
 }
 
@@ -103,7 +107,7 @@ export function PageHeader({ title, titleId, subtitle, crumbs, actions, meta, co
   showDomain?: boolean;
 }) {
   const scope = useContext(PageHeaderContext);
-  const { period, scope: scopeControl, updatedAt, refreshing, onRefresh, showRefreshLabel, showBreadcrumbs } = controls ?? scope.controls ?? {};
+  const { period, scope: scopeControl, updatedAt, dataAsOf, refreshing, onRefresh, showRefreshLabel, showBreadcrumbs } = controls ?? scope.controls ?? {};
   const domainControl = domainPicker ?? (showDomain ? scope.domain?.(domain) : null);
   return <header className="sli-ds-header">
     {showBreadcrumbs && crumbs?.length ? <nav className="sli-ds-crumbs" aria-label={t("reports.breadcrumbs_aria")}>
@@ -114,8 +118,8 @@ export function PageHeader({ title, titleId, subtitle, crumbs, actions, meta, co
       {domainControl}
       {scopeControl}
       {periodPicker ?? (period ? <HeaderPeriod {...period}/> : null)}
-      {updatedAt || onRefresh || actions ? <div className="sli-ds-header__actions">
-        {updatedAt ? <UpdatedTime value={updatedAt}/> : null}
+      {dataAsOf || updatedAt || onRefresh || actions ? <div className="sli-ds-header__actions">
+        {dataAsOf ? <UpdatedTime value={dataAsOf} snapshot/> : updatedAt ? <UpdatedTime value={updatedAt}/> : null}
         {onRefresh ? <Button icon="refresh" aria-label={t("shell.header.refresh")} title={t("shell.header.refresh")} disabled={refreshing} onClick={onRefresh}>
           {showRefreshLabel ? t("shell.header.refresh") : null}
         </Button> : null}

@@ -42,7 +42,7 @@ export type TableColumn<Row> = {
 
 export function DataTable<Row>({
   columns, rows: resultRows, rowKey, sort, onSort, onRowClick, canActivateRow, selectedKey, caption, labelledBy,
-  hasMore = false, loadingMore = false, onLoadMore, total: serverTotal, stickyHeader = true, pagination: serverPaging, showFooter = true,
+  hasMore = false, loadingMore = false, onLoadMore, total: serverTotal, stickyHeader = true, pageScroll = false, pagination: serverPaging, showFooter = true,
   compact, density, expanded, afterRow, renderExpanded, toolbar, toolbarEnd, footerControls, wrapCells = false,
   pageSize: serverPageSize, localPagination, columnSample = resultRows, columnsControlTarget, rowGroup, rowDetail, expandedContent, emptyContent, renderExpandedRow,
 }: {
@@ -68,6 +68,7 @@ export function DataTable<Row>({
   renderExpandedRow?: (row: Row) => ReactNode;
   /** The table scrolls inside a bounded box so the header stays visible; pass false for small embedded tables. */
   stickyHeader?: boolean;
+  pageScroll?: boolean;
   renderExpanded?: (row: Row, visibleCells: number) => ReactNode;
   toolbar?: ReactNode;
   toolbarEnd?: ReactNode;
@@ -154,7 +155,7 @@ export function DataTable<Row>({
 
   return <div className="sli-ds-table" data-wrap={wrapCells || undefined} data-compact={compact || undefined} data-density={density}>
     {toolbar || toolbarEnd ? <div className="sli-ds-table__toolbar">{toolbar}{columnsMenu}{toolbarEnd}</div> : columnsMenu}
-    <div className="sli-ds-table__scroll" data-sticky={stickyHeader || undefined}>
+    <div className="sli-ds-table__scroll" data-sticky={stickyHeader && !pageScroll || undefined} data-page-scroll={pageScroll || undefined}>
       <table aria-labelledby={labelledBy} data-responsive={columns.some((column) => column.mobile === false) || undefined}>
         {caption ? <caption className="sli-ds-sr-only">{caption}</caption> : null}
         <thead>{table.getHeaderGroups().map((group) => <tr key={group.id}>{group.headers.map((header) => {

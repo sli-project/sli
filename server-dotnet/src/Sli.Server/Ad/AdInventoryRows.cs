@@ -107,11 +107,13 @@ internal static class AdInventoryRows
     {
         string TextValue(JsonNode? value)=>value is null||string.IsNullOrWhiteSpace(value.ToString())?"—":value.ToString();
         var observations=new List<JsonObject>();
+        bool privileged = Privileged(user);
         JsonObject Add(string key,string? summary=null,string? evidence=null)
         {
             var template = ReasonTemplates[key]!.AsObject();
             var item = includeDetails ? template.DeepClone().AsObject()
                 : new JsonObject { ["key"] = key, ["label"] = template["label"]?.DeepClone(), ["order"] = template["order"]?.DeepClone() };
+            item["severity"] = AdReviewChecks.UserSeverity(key, privileged) ?? template.Text("severity");
             if (includeDetails && summary is not null) item["summary"] = summary;
             if (includeDetails && evidence is not null) item["observed"] = evidence;
             observations.Add(item);
@@ -134,7 +136,7 @@ internal static class AdInventoryRows
         bool hasSpn = user["servicePrincipalNames"] is JsonArray { Count: > 0 };
         var spnPassword = hasSpn ? policy.Int("password_age") == 365 ? hygiene["password_age"]!
             : EvaluateHygiene(user, Date(JsonValue.Create(snapshot)), "passwordLastSet", "password_last_set", 365, includeDetails) : null;
-        foreach(var (key,condition) in new[]{("password_not_required",Bool(user["passwordNotRequired"])==true),("kerberos_no_preauth",Bool(user["doesNotRequirePreAuth"])==true),("spn_privileged",hasSpn&&Privileged(user)),("spn_old_password",spnPassword.Text("status")=="exceeded"),("privileged_password_never_expires",Bool(user["passwordNeverExpires"])==true&&Privileged(user))})
+        foreach(var (key,condition) in new[]{("password_not_required",Bool(user["passwordNotRequired"])==true),("kerberos_no_preauth",Bool(user["doesNotRequirePreAuth"])==true),("spn_privileged",hasSpn&&privileged),("spn_old_password",spnPassword.Text("status")=="exceeded"),(privileged ? "privileged_password_never_expires" : "password_never_expires", Bool(user["passwordNeverExpires"])==true)})
             if(condition)
             {
                 var item = Add(key);
@@ -177,7 +179,7 @@ internal static class AdInventoryRows
         foreach (var (kind, evaluation) in hygiene) row[kind + "_policy"] = evaluation!["status"]!.DeepClone();
         if (!includeDetails) return;
         row["hygiene"] = hygiene;
-        row["severity"] = reasons.Any(r => r.Text("severity") == "high") ? "high" : reasons.Length > 0 ? "medium" : null;
+        row["severity"] = reasons.Select(r => r.Text("severity")).OrderBy(AdReviewChecks.SeverityOrder).FirstOrDefault();
         row["service_exception"] = serviceException?.DeepClone();
         row["review_details"] = new JsonArray(observations.Select(r =>
         {

@@ -24,7 +24,7 @@ internal static class AdReviewChecks
             var disabled=lifecycle?.Int("event_id")==4725?AdInventoryRows.Date(lifecycle["time_created_utc"]):null;
             bool disabledLogon=disabled is not null&&related.Any(e=>e.Int("event_id")==4624&&(e["day"] is null?e.Time("time_created_utc"):e.Time("last_seen_utc"))>disabled);
             bool interactive=related.Any(e=>e.Int("event_id")==4624&&e.Text("logon_type") is "2" or "10");
-            var checks=new Dictionary<string,bool?>(){["disabled_logon"]=enabled==true?false:disabledLogon&&enabled==false?true:null,["new_privileged"]=And(privilege,old is null?null:!old.Value),["reversible_password"]=AdInventoryRows.Bool(raw["allowReversiblePasswordEncryption"]),["inactive_privileged"]=And(privilege,enabled==false||inactive==true?true:enabled is null||inactive is null?null:false),["spn_privileged"]=And(privilege,spnKnown?raw["servicePrincipalNames"]!.AsArray().Count>0:null),["privileged_password_never_expires"]=And(privilege,AdInventoryRows.Bool(raw["passwordNeverExpires"])),["locked_out"]=AdInventoryRows.Bool(raw["lockedOut"]),["service_interactive_logon"]=raw.Text("serviceAccountType") is not null&&interactive?true:raw.Text("serviceAccountType") is null&&spnKnown&&raw["objectClasses"] is JsonArray?false:null,["kerberos_no_preauth"]=AdInventoryRows.Bool(raw["doesNotRequirePreAuth"]),["inactive_enabled"]=And(enabled,inactive),["old_password"]=Over(Age(raw["passwordLastSet"],at),365),["password_never_expires"]=AdInventoryRows.Bool(raw["passwordNeverExpires"])}; if(raw.Text("serviceAccountType") is not null&&exceptions?[raw.Text("sid")?.ToUpperInvariant()??""] is not null){checks["old_password"]=false;checks["inactive_enabled"]=false;}return checks;
+            var checks=new Dictionary<string,bool?>(){["disabled_logon"]=enabled==true?false:disabledLogon&&enabled==false?true:null,["new_privileged"]=And(privilege,old is null?null:!old.Value),["reversible_password"]=AdInventoryRows.Bool(raw["allowReversiblePasswordEncryption"]),["inactive_privileged"]=And(privilege,enabled==false||inactive==true?true:enabled is null||inactive is null?null:false),["spn_privileged"]=And(privilege,spnKnown?raw["servicePrincipalNames"]!.AsArray().Count>0:null),["privileged_password_never_expires"]=And(privilege,AdInventoryRows.Bool(raw["passwordNeverExpires"])),["locked_out"]=AdInventoryRows.Bool(raw["lockedOut"]),["service_interactive_logon"]=raw.Text("serviceAccountType") is not null&&interactive?true:raw.Text("serviceAccountType") is null&&spnKnown&&raw["objectClasses"] is JsonArray?false:null,["kerberos_no_preauth"]=AdInventoryRows.Bool(raw["doesNotRequirePreAuth"]),["inactive_enabled"]=And(enabled,inactive),["old_password"]=Over(Age(raw["passwordLastSet"],at),365),["password_never_expires"]=AdInventoryRows.Bool(raw["passwordNeverExpires"]),["password_not_required"]=AdInventoryRows.Bool(raw["passwordNotRequired"])}; if(raw.Text("serviceAccountType") is not null&&exceptions?[raw.Text("sid")?.ToUpperInvariant()??""] is not null){checks["old_password"]=false;checks["inactive_enabled"]=false;}return checks;
         }
         var expiration=AdInventoryRows.Date(raw["lapsPasswordExpiration"])??AdInventoryRows.Date(raw["legacyLapsPasswordExpiration"]);
         bool? delegation=raw["userAccountControl"] is not null?(raw.Int("userAccountControl")&524288)!=0:AdInventoryRows.Bool(raw["trustedForDelegation"]);
@@ -36,10 +36,13 @@ internal static class AdReviewChecks
     internal static bool UsesAccountRows(AdV2Request request) =>
         request.Key == "ad.users.v2" && request.Tab == "checks" && request.Params.Text("account_rows") == "yes";
 
-    static int SeverityOrder(string? severity) => severity switch
+    internal static int SeverityOrder(string? severity) => severity switch
     {
         "critical" => 0, "high" => 1, "medium" => 2, "low" => 3, _ => 4
     };
+
+    internal static string? UserSeverity(string key, bool privileged) => key == "locked_out" && privileged
+        ? "high" : Templates["users"]!.AsObject().TryGetPropertyValue(key, out var template) ? template.Text("severity") : null;
 
     static string? CheckTitle(string? key, bool english)
     {
@@ -73,7 +76,7 @@ internal static class AdReviewChecks
         foreach (var option in (result["filter_options"]?["check"] as JsonArray ?? []).OfType<JsonObject>())
             option["label"] = CheckTitle(option.Text("value"), english);
     }
-    public static async Task<JsonObject> ReadAsync(NpgsqlConnection db,AdV2Request request,List<JsonObject> sources,CancellationToken ct,IConfiguration? config=null)
+    public static async Task<JsonObject> ReadAsync(NpgsqlConnection db,AdV2Request request,List<JsonObject> sources,CancellationToken ct,IConfiguration? config=null, bool fieldsPrivilege = false)
     {
         bool users=request.Key=="ad.users.v2";string kind=users?"users":"computers";
         bool accountRows = UsesAccountRows(request);
@@ -133,8 +136,10 @@ internal static class AdReviewChecks
                 var assessments=Evaluate(users,Prepare(raw,source,false),at,before.GetValueOrDefault(identity),Complete(previous,users),related,exceptions);
                 if (accountRows)
                 {
-                    var reasons = assessments.Where(pair => pair.Value == true).Select(pair =>
-                        new { key = pair.Key, severity = Templates[kind]![pair.Key].Text("severity"), label = Templates[kind]![pair.Key].Text("title") })
+                    var privileged = fieldsPrivilege && AdInventoryRows.Privileged(raw);
+                    var reasons = assessments.Where(pair => pair.Value == true &&
+                        (pair.Key != "password_never_expires" || assessments["privileged_password_never_expires"] != true)).Select(pair =>
+                        new { key = pair.Key, severity = UserSeverity(pair.Key, privileged), label = Templates[kind]![pair.Key].Text("title") })
                         .OrderBy(reason => SeverityOrder(reason.severity)).ToArray();
                     foreach (var (key, value) in assessments.Where(pair => pair.Value is null))
                     {
@@ -144,7 +149,7 @@ internal static class AdReviewChecks
                     if (reasons.Length == 0) continue;
                     affected.Add((source.Int("domain_id"), identity));
                     foreach (var reason in reasons) accountCounts[reason.key] = accountCounts.GetValueOrDefault(reason.key) + 1;
-                    if (request.Params.Text("check") is not {} filter || assessments[filter] == true)
+                    if (request.Params.Text("check") is not {} filter || reasons.Any(reason => reason.key == filter))
                     {
                         var account = ReviewAccount(raw, source, request.QualifyNames, identity, at);
                         account["review_reasons"] = Array(reasons);

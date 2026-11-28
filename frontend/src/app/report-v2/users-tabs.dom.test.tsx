@@ -15,11 +15,15 @@ const definition: ReportDefinitionDto = {
     { key: "account_rows", kind: "text", label: "Account rows", hidden: true },
     { key: "check", kind: "text", label: "Check", hidden: true },
     { key: "as_of", kind: "text", label: "Состав на дату", hidden: true },
+    { key: "department", kind: "choice", label: "Подразделение", options: [{ value: "Ops", label: "Ops" }] },
+    { key: "ou", kind: "choice", label: "OU", options: [{ value: "Support", label: "Support" }] },
     { key: "account_state", kind: "choice", label: "Состояние", options: [{ value: "disabled", label: "Отключена" }, { value: "unknown", label: "Нет данных" }] }],
   columns: [{ key: "name", label: "Пользователь", path: "display_name", kind: "text", link: "/app/entities/{entity_id}" },
     { key: "state", label: "Включена", path: "enabled", kind: "boolean" },
     { key: "activity", path: "activity_at", label: "Последняя активность", kind: "datetime" },
     { key: "reason", path: "reason_text", label: "Отклонение", kind: "text" },
+    { key: "department", path: "department", label: "Подразделение", kind: "text" },
+    { key: "last_workplace", path: "last_workplace", label: "Последний ПК", kind: "text" },
     { key: "privilege_basis", label: "Основание привилегий", path: "privilege_basis", kind: "list" }],
   views: Object.entries(titles).map(([key, title]) => ({ key, title, kind: "table", source: key === "checks" || key === "changes" ? key : "items",
     ...(key === "changes" ? { columns: [{ key: "name", path: "display_name", label: "Пользователь", kind: "text" as const },
@@ -37,6 +41,32 @@ const checkOptions = [
   { value: "disabled_logon", label: "Вход отключённой учётки", count: 1 },
   { value: "zero", label: "Zero check", count: 0 },
 ];
+
+it("puts the selected lockout first on an account with a higher-ranked deviation", async () => {
+  const lock = { key: "locked_out", label: "Account lockouts", severity: "high" };
+  window.history.replaceState(null, "", "/app/report/ad.users.v2?tab=checks&check=locked_out");
+  mock(() => Response.json(page("checks", { items: [{ ...reviewAccount, review_reasons: [{ ...mainReason, severity: "critical" }, lock] }],
+    filter_options: { check: [{ value: lock.key, label: lock.label, count: 1 }] } })));
+  show();
+  const row = (await screen.findByRole("button", { name: "synthetic-1" })).closest("tr")!;
+  expect(within(row).getByText(t("reports.ad.users.deviation.locked_out"))).toBeTruthy();
+  expect(within(row).queryByText(mainReason.label)).toBeNull();
+});
+
+it("uses the OU filter and shared density controls and hides empty optional columns", async () => {
+  window.history.replaceState(null, "", "/app/report/ad.users.v2?tab=all&department=Ops");
+  const { container } = show();
+  const table = await screen.findByRole("table", { name: titles.all });
+  expect(screen.getByLabelText("OU", { selector: "button" })).toBeTruthy();
+  expect(screen.queryByLabelText("Подразделение", { selector: "button" })).toBeNull();
+  expect(within(table).queryByRole("columnheader", { name: /Подразделение|Последний ПК/ })).toBeNull();
+  expect(calls[0].has("department")).toBe(false);
+  expect(calls[0].get("limit")).toBe("50");
+  const density = within(screen.getByRole("group", { name: t("table.density") }));
+  fireEvent.click(density.getByRole("button", { name: t("table.density.comfortable") }));
+  expect(density.getByRole("button", { name: t("table.density.comfortable"), pressed: true })).toBeTruthy();
+  expect(container.querySelector('.sli-ds-table[data-density="comfortable"] [data-page-scroll]')?.contains(table)).toBe(true);
+});
 function page(tab: string, overrides: Partial<ReportResultDto> = {}): ReportResultDto {
   return { contract_id: "sli.report-result.v2", report_key: definition.key, state: "ok",
     items: tab === "checks" ? [reviewAccount] : [account(1, `Synthetic ${tab}`)], filtered_count: 1,
@@ -96,11 +126,11 @@ it("starts with account rows, filters by nonempty checks, and opens the filtered
   const table = await screen.findByRole("table", { name: titles.checks });
   const row = within(table).getByRole("row", { name: /synthetic-1/ });
   expect(within(row).getByText(mainReason.label)).toBeTruthy();
-  expect(within(row).queryByText(otherReason.label)).toBeNull();
+  expect(within(row).queryByText(t("reports.ad.users.list.password_no_expiry"))).toBeNull();
   const more = within(row).getByRole("button", { name: t("reports.ad.users.list.more_deviations", { count: 1 }) });
   fireEvent.click(more);
   const unfilteredCard = within(await screen.findByRole("dialog"));
-  expect(unfilteredCard.getByText(otherReason.label)).toBeTruthy();
+  expect(unfilteredCard.getByText(t("reports.ad.users.list.password_no_expiry"))).toBeTruthy();
   fireEvent.click(unfilteredCard.getByRole("button", { name: t("drawer.close") }));
   expect(screen.queryByRole("button", { name: /Zero check/ })).toBeNull();
   expect(calls[0].get("account_rows")).toBe("yes");
@@ -111,7 +141,7 @@ it("starts with account rows, filters by nonempty checks, and opens the filtered
   fireEvent.click(filtered);
   const card = within(await screen.findByRole("dialog"));
   expect(card.getByRole("heading", { name: "Synthetic account 2" })).toBeTruthy();
-  expect(card.getByText(otherReason.label)).toBeTruthy();
+  expect(card.getByText(t("reports.ad.users.list.password_no_expiry"))).toBeTruthy();
   expect(calls.some((params) => params.get("limit") === "1")).toBe(false);
 });
 
@@ -154,7 +184,7 @@ it("shows nested privilege paths and links to account-scoped reports", async () 
   window.history.replaceState(null, "", "/app/report/ad.users.v2?tab=all&domain=8"); show();
   fireEvent.click(await screen.findByRole("button", { name: "synthetic-1" }));
   const card = within(await screen.findByRole("dialog"));
-  expect(await card.findByRole("heading", { name: "Компьютеры за 30 дней" })).toBeTruthy();
+  expect(card.getByRole("tab", { name: t("reports.ad.users.card.important"), selected: true })).toBeTruthy();
   const problems = new URL((await card.findByRole("link", { name: "Открытые проблемы: 4 →" })).getAttribute("href")!, window.location.origin);
   expect(problems.pathname).toBe("/app/report/security.problems");
   expect(Object.fromEntries(problems.searchParams)).toMatchObject({ entity_id: "1", domain: "8", population: "open" });
@@ -162,6 +192,8 @@ it("shows nested privilege paths and links to account-scoped reports", async () 
   expect(changes.pathname).toBe("/app/report/security.events.chains");
   expect(Object.fromEntries(changes.searchParams)).toMatchObject({ entity_id: "1", domain: "8", return_to: expect.stringContaining("tab=all") });
   expect(card.queryByRole("tab", { name: "Изменения" })).toBeNull();
+  fireEvent.click(card.getByRole("tab", { name: t("reports.ad.users.card.account") }));
+  expect(await card.findByRole("heading", { name: "Компьютеры за 30 дней" })).toBeTruthy();
   fireEvent.click(card.getByRole("tab", { name: "Права" }));
   expect(card.getAllByRole("list").at(-1)?.querySelectorAll("li")).toHaveLength(3);
   expect(card.getByRole("link", { name: "Synthetic admins" }).getAttribute("href")).toContain("/app/entities/3");
